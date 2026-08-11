@@ -1,0 +1,8 @@
+{
+  "name": "Gerenciador de Compras",
+  "description": "Um aplicativo de gerenciamento de compras simples, prático e elegante para organizar seus itens e gastos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
