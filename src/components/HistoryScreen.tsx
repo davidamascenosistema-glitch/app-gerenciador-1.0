@@ -1,4 +1,3 @@
-import React from 'react';
 import { 
   ArrowLeft, 
   Receipt, 
@@ -8,34 +7,36 @@ import {
   Calendar, 
   ChevronRight, 
   ShoppingBag,
-  TrendingUp
+  RotateCcw,
+  X
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Purchase } from '../types';
 import { calculatePurchaseTotal, formatCurrencyBRL, formatDateBRL } from '../utils/purchaseHelpers';
+import { BottomNavBar } from './BottomNavBar';
 
 interface HistoryScreenProps {
   finishedPurchases: Purchase[];
+  selectionMode?: boolean;
   onBack: () => void;
-  onSelectPurchase?: (purchaseId: string) => void;
+  onSelectPurchase?: (purchase: Purchase) => void;
+  onNavigateToHome?: () => void;
+  onNavigateToProfile?: () => void;
+  onCreateNewList?: () => void;
+  onRegisterManual?: () => void;
+  onRepeatPurchase?: () => void;
 }
 
 // Origin badge configuration corresponding to HomeScreen intent options
 const ORIGIN_CONFIG: Record<
   string,
-  { label: string; icon: typeof ShoppingCart; style: string; iconBg: string }
+  { label: string; icon: typeof ShoppingCart | typeof ClipboardList | typeof Receipt | typeof FileText; style: string; iconBg: string }
 > = {
   list: {
     label: 'Planejada',
     icon: ClipboardList,
     style: 'bg-blue-50 text-blue-700 border-blue-200/80',
     iconBg: 'bg-blue-100 text-blue-700',
-  },
-  direct: {
-    label: 'Compra direta',
-    icon: ShoppingCart,
-    style: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
-    iconBg: 'bg-emerald-100 text-emerald-700',
   },
   manual: {
     label: 'Registro manual',
@@ -53,8 +54,14 @@ const ORIGIN_CONFIG: Record<
 
 export function HistoryScreen({
   finishedPurchases,
+  selectionMode = false,
   onBack,
   onSelectPurchase,
+  onNavigateToHome,
+  onNavigateToProfile,
+  onCreateNewList,
+  onRegisterManual,
+  onRepeatPurchase,
 }: HistoryScreenProps) {
   const totalSpentAllTime = finishedPurchases.reduce(
     (acc, p) => acc + calculatePurchaseTotal(p),
@@ -62,59 +69,83 @@ export function HistoryScreen({
   );
 
   return (
-    <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 flex flex-col justify-between selection:bg-emerald-500 selection:text-white font-sans">
+    <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 flex flex-col justify-between selection:bg-emerald-500 selection:text-white font-sans relative">
       {/* Header Sticky */}
       <header className="w-full bg-white border-b border-zinc-200/80 sticky top-0 z-20 shadow-2xs">
         <div className="w-full max-w-md md:max-w-xl mx-auto px-3.5 py-3 sm:px-6 flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
+          <div className="flex items-center space-x-2.5 min-w-0 flex-1">
             <button
               type="button"
-              onClick={onBack}
+              onClick={() => onBack()}
               className="w-10 h-10 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 flex items-center justify-center transition-colors cursor-pointer shrink-0 min-h-[44px] min-w-[44px]"
-              aria-label="Voltar para a página inicial"
+              aria-label={selectionMode ? "Cancelar seleção" : "Voltar para a página inicial"}
             >
-              <ArrowLeft className="w-5 h-5" />
+              {selectionMode ? <X className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
             </button>
-            <div>
-              <h1 className="text-base sm:text-lg font-bold tracking-tight text-zinc-900 leading-tight">
-                Histórico de Compras
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base sm:text-lg font-bold tracking-tight text-zinc-900 leading-tight truncate">
+                {selectionMode ? 'Repetir Compra' : 'Histórico de Compras'}
               </h1>
-              <p className="text-[11px] sm:text-xs text-zinc-500 font-medium leading-none mt-0.5">
-                {finishedPurchases.length === 1
+              <p className="text-[11px] sm:text-xs text-zinc-500 font-medium leading-none mt-0.5 truncate">
+                {selectionMode
+                  ? 'Escolha uma compra para clonar os itens'
+                  : finishedPurchases.length === 1
                   ? '1 compra realizada'
                   : `${finishedPurchases.length} compras realizadas`}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/80 text-xs font-semibold text-purple-800 shrink-0">
-            <Receipt className="w-3.5 h-3.5 text-purple-600" />
-            <span>{formatCurrencyBRL(totalSpentAllTime)}</span>
-          </div>
+          {selectionMode ? (
+            <button
+              type="button"
+              onClick={() => onBack()}
+              className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 text-xs font-semibold transition-colors cursor-pointer min-h-[36px] shrink-0 ml-2"
+            >
+              Cancelar
+            </button>
+          ) : (
+            <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/80 text-xs font-semibold text-purple-800 shrink-0 ml-2">
+              <Receipt className="w-3.5 h-3.5 text-purple-600" />
+              <span>{formatCurrencyBRL(totalSpentAllTime)}</span>
+            </div>
+          )}
         </div>
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-4 sm:py-6 flex flex-col">
+      <main
+        className={`flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-4 sm:py-6 flex flex-col ${
+          selectionMode ? 'pb-8 sm:pb-12' : 'pb-28 sm:pb-32'
+        }`}
+      >
         {finishedPurchases.length === 0 ? (
           /* Empty State */
           <div className="flex-1 flex flex-col items-center justify-center text-center py-12 px-4">
             <div className="w-16 h-16 rounded-2xl bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-400 mb-4 shadow-2xs">
-              <ShoppingBag className="w-8 h-8" />
+              {selectionMode ? (
+                <RotateCcw className="w-8 h-8 text-blue-500" />
+              ) : (
+                <ShoppingBag className="w-8 h-8" />
+              )}
             </div>
             <h2 className="text-lg font-bold text-zinc-900 tracking-tight">
-              Nenhuma compra no histórico
+              {selectionMode
+                ? 'Nenhuma compra para repetir'
+                : 'Nenhuma compra no histórico'}
             </h2>
             <p className="text-xs text-zinc-500 max-w-xs mt-1.5 leading-relaxed">
-              O seu histórico de compras aparecerá aqui assim que você finalizar a sua primeira compra.
+              {selectionMode
+                ? 'Você ainda não possui compras finalizadas no histórico para usar como modelo. Conclua uma compra primeiro para poder repeti-la.'
+                : 'O seu histórico de compras aparecerá aqui assim que você finalizar a sua primeira compra.'}
             </p>
 
             <button
               type="button"
-              onClick={onBack}
+              onClick={() => onBack()}
               className="mt-6 inline-flex items-center space-x-2 py-2.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer"
             >
-              <span>Voltar e iniciar compra</span>
+              <span>{selectionMode ? 'Voltar para o Início' : 'Voltar e iniciar compra'}</span>
             </button>
           </div>
         ) : (
@@ -123,11 +154,13 @@ export function HistoryScreen({
             {/* Quick summary header */}
             <div className="flex items-center justify-between px-1 mb-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                Compras Finalizadas
+                {selectionMode ? 'Selecione para clonar' : 'Compras Finalizadas'}
               </span>
-              <span className="text-xs text-zinc-400 font-medium">
-                Total acumulado: <strong className="text-zinc-700 font-bold">{formatCurrencyBRL(totalSpentAllTime)}</strong>
-              </span>
+              {!selectionMode && (
+                <span className="text-xs text-zinc-400 font-medium">
+                  Total acumulado: <strong className="text-zinc-700 font-bold">{formatCurrencyBRL(totalSpentAllTime)}</strong>
+                </span>
+              )}
             </div>
 
             {finishedPurchases.map((purchase) => {
@@ -144,16 +177,26 @@ export function HistoryScreen({
                 <motion.div
                   key={purchase.id}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => onSelectPurchase && onSelectPurchase(purchase.id)}
-                  className="w-full bg-white rounded-2xl border border-zinc-200/90 shadow-2xs hover:border-zinc-300 active:bg-zinc-50 p-4 transition-all text-left flex flex-col justify-between cursor-pointer"
+                  onClick={() => onSelectPurchase && onSelectPurchase(purchase)}
+                  className={`w-full bg-white rounded-2xl border shadow-2xs p-4 transition-all text-left flex flex-col justify-between cursor-pointer ${
+                    selectionMode
+                      ? 'border-blue-200/90 hover:border-blue-400 hover:shadow-sm active:bg-blue-50/40 ring-1 ring-blue-100/50'
+                      : 'border-zinc-200/90 hover:border-zinc-300 active:bg-zinc-50'
+                  }`}
                 >
                   <div className="flex items-start justify-between space-x-3">
                     <div className="flex items-start space-x-3 min-w-0 flex-1">
                       {/* Icon */}
                       <div
-                        className={`w-10 h-10 rounded-xl ${originInfo.iconBg} flex items-center justify-center shrink-0 mt-0.5`}
+                        className={`w-10 h-10 rounded-xl ${
+                          selectionMode ? 'bg-blue-100 text-blue-700' : originInfo.iconBg
+                        } flex items-center justify-center shrink-0 mt-0.5`}
                       >
-                        <OriginIcon className="w-5 h-5" />
+                        {selectionMode ? (
+                          <RotateCcw className="w-5 h-5" />
+                        ) : (
+                          <OriginIcon className="w-5 h-5" />
+                        )}
                       </div>
 
                       <div className="min-w-0 flex-1">
@@ -161,12 +204,18 @@ export function HistoryScreen({
                           <h3 className="text-sm font-bold text-zinc-900 line-clamp-2 break-words leading-snug">
                             {purchase.name || 'Compra Finalizada'}
                           </h3>
-                          {/* Badge de Origem */}
-                          <span
-                            className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${originInfo.style}`}
-                          >
-                            <span>{originInfo.label}</span>
-                          </span>
+                          {/* Badge de Origem ou de Repetição */}
+                          {selectionMode ? (
+                            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border bg-blue-50 text-blue-700 border-blue-200/80">
+                              <span>Toque para repetir</span>
+                            </span>
+                          ) : (
+                            <span
+                              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${originInfo.style}`}
+                            >
+                              <span>{originInfo.label}</span>
+                            </span>
+                          )}
                         </div>
 
                         {/* Date */}
@@ -178,18 +227,20 @@ export function HistoryScreen({
                     </div>
 
                     {/* Right Arrow icon */}
-                    <ChevronRight className="w-4 h-4 text-zinc-300 shrink-0 mt-1" />
+                    <ChevronRight className={`w-4 h-4 shrink-0 mt-1 ${
+                      selectionMode ? 'text-blue-500' : 'text-zinc-300'
+                    }`} />
                   </div>
 
                   {/* Bottom Stats Footer */}
                   <div className="mt-3.5 pt-3 border-t border-zinc-100 flex items-center justify-between text-xs">
                     <div className="text-zinc-500 font-medium">
-                      {itemsCount === 1 ? '1 item comprado' : `${itemsCount} itens comprados`}
+                      {itemsCount === 1 ? '1 item na lista' : `${itemsCount} itens na lista`}
                     </div>
 
                     <div className="text-right">
                       <span className="text-[11px] text-zinc-400 block font-normal leading-none mb-0.5">
-                        Total da compra
+                        Valor de referência
                       </span>
                       <span className="font-extrabold text-zinc-900 text-sm">
                         {formatCurrencyBRL(total)}
@@ -203,12 +254,17 @@ export function HistoryScreen({
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="w-full border-t border-zinc-200/80 bg-white py-3 mt-4">
-        <div className="w-full max-w-md md:max-w-xl mx-auto px-3.5 text-center text-[11px] text-zinc-400">
-          Gerenciador de Compras &copy; {new Date().getFullYear()} &bull; Histórico
-        </div>
-      </footer>
+      {/* Barra de Navegação Fixa Inferior apenas no modo padrão de navegação (oculta no selectionMode) */}
+      {!selectionMode && (
+        <BottomNavBar
+          currentScreen="history"
+          onNavigateToHome={onNavigateToHome || onBack}
+          onNavigateToHistory={() => {}}
+          onCreateNewList={onCreateNewList || (() => {})}
+          onRegisterManual={onRegisterManual || (() => {})}
+          onRepeatPurchase={onRepeatPurchase}
+        />
+      )}
     </div>
   );
 }

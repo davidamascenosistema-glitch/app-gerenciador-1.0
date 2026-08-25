@@ -5,12 +5,12 @@ const INITIAL_PURCHASES: Purchase[] = [
   {
     id: 'pending-default',
     name: 'Feira do Mês',
-    status: 'in_progress',
-    origin: 'direct',
+    status: 'pending',
+    origin: 'list',
     createdAt: new Date().toISOString(),
     items: [
       { id: '1', name: 'Arroz 5kg', category: 'Alimentos', quantity: 1, isWeighted: false, price: 24.90, bought: false },
-      { id: '2', name: 'Carne Moída (kg)', category: 'Açougue', quantity: 1, weight: 0.85, isWeighted: true, price: 32.00, bought: true },
+      { id: '2', name: 'Carne Moída', category: 'Açougue', quantity: 1, weight: 0.85, isWeighted: true, price: 32.00, bought: true },
     ]
   }
 ];
@@ -19,17 +19,35 @@ export function usePurchases() {
   const [purchases, setPurchases] = useState<Purchase[]>(INITIAL_PURCHASES);
 
   /**
-   * Busca a compra pendente atual (status 'planning' ou 'in_progress').
-   * Apenas compras com origem 'list' ou 'direct' aparecem no card de compra pendente.
-   * Retorna null se não houver nenhuma.
+   * Busca todas as compras pendentes (status 'pending').
+   * Apenas compras com origem 'list' e com pelo menos 1 item são retornadas,
+   * ordenadas da mais recente para a mais antiga (por createdAt).
    */
-  const getPendingPurchase = (): Purchase | null => {
-    return (
-      purchases.find(
+  const getPendingPurchases = (): Purchase[] => {
+    return purchases
+      .filter(
         (p) =>
-          (p.status === 'planning' || p.status === 'in_progress') &&
-          (p.origin === 'list' || p.origin === 'direct')
-      ) || null
+          p.status === 'pending' &&
+          p.origin === 'list' &&
+          p.items &&
+          p.items.length > 0
+      )
+      .sort((a, b) => {
+        const dateA = new Date(a.createdAt).getTime();
+        const dateB = new Date(b.createdAt).getTime();
+        return dateB - dateA;
+      });
+  };
+
+  /**
+   * Remove compras não finalizadas que não possuem nenhum item adicionado (0 itens),
+   * evitando o acúmulo de registros vazios na memória quando o usuário navega de volta.
+   */
+  const cleanUpEmptyPurchases = (): void => {
+    setPurchases((prev) =>
+      prev.filter(
+        (p) => p.status === 'finished' || (p.items && p.items.length > 0)
+      )
     );
   };
 
@@ -42,11 +60,7 @@ export function usePurchases() {
         return prev.filter((p) => p.id !== purchaseId);
       }
       return prev.filter(
-        (p) =>
-          !(
-            (p.status === 'planning' || p.status === 'in_progress') &&
-            (p.origin === 'list' || p.origin === 'direct')
-          )
+        (p) => !(p.status === 'pending' && p.origin === 'list')
       );
     });
   };
@@ -59,15 +73,41 @@ export function usePurchases() {
   };
 
   /**
-   * Cria e armazena uma nova compra na lista em memória
+   * Cria e armazena uma nova compra a partir de um modelo existente (compra finalizada),
+   * clonando todos os itens com bought=false e gerando novos IDs únicos.
+   */
+  const createPurchaseFromTemplate = (originalPurchase: Purchase): Purchase => {
+    const clonedItems: Item[] = (originalPurchase.items || []).map((item) => ({
+      id: crypto.randomUUID(),
+      name: item.name,
+      category: item.category || 'Geral',
+      quantity: item.quantity || 1,
+      weight: item.weight,
+      isWeighted: item.isWeighted || false,
+      price: item.price,
+      bought: false,
+    }));
+
+    const newPurchase: Purchase = {
+      id: crypto.randomUUID(),
+      name: originalPurchase.name || 'Planejamento de compra',
+      status: 'pending',
+      origin: 'list',
+      createdAt: new Date().toISOString(),
+      items: clonedItems,
+    };
+
+    setPurchases((prev) => [newPurchase, ...prev]);
+    return newPurchase;
+  };
+
+  /**
+   * Cria e armazena uma nova compra na lista em memória sem afetar compras existentes.
    */
   const createPurchase = (
     purchaseData: Omit<Purchase, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
   ): Purchase => {
     const origin = purchaseData.origin || 'manual';
-    const isNewPending =
-      (purchaseData.status === 'planning' || purchaseData.status === 'in_progress') &&
-      (origin === 'list' || origin === 'direct');
 
     const items = (purchaseData.items || []).map((item) => ({
       ...item,
@@ -77,28 +117,14 @@ export function usePurchases() {
     const newPurchase: Purchase = {
       id: purchaseData.id || crypto.randomUUID(),
       name: purchaseData.name || 'Nova Compra',
-      status: purchaseData.status || 'planning',
+      status: purchaseData.status || 'pending',
       origin,
       createdAt: purchaseData.createdAt || new Date().toISOString(),
       finishedAt: purchaseData.finishedAt,
       items,
     };
 
-    setPurchases((prev) => {
-      // Se a nova compra for uma compra pendente real (origin 'list' ou 'direct'),
-      // removemos a compra pendente real anterior para garantir no máximo 1 pendente por vez.
-      const filtered = isNewPending
-        ? prev.filter(
-            (p) =>
-              !(
-                (p.status === 'planning' || p.status === 'in_progress') &&
-                (p.origin === 'list' || p.origin === 'direct')
-              )
-          )
-        : prev;
-      return [newPurchase, ...filtered];
-    });
-
+    setPurchases((prev) => [newPurchase, ...prev]);
     return newPurchase;
   };
 
@@ -196,8 +222,6 @@ export function usePurchases() {
 
   /**
    * Alterna o estado de 'comprado' de um item
-   * Transição automática: Se a compra estiver com status 'planning' e pelo menos um item for marcado como comprado,
-   * o status da compra muda automaticamente para 'in_progress' e não reverte.
    */
   const toggleItemBought = (purchaseId: string, itemId: string): void => {
     setPurchases((prev) =>
@@ -208,12 +232,8 @@ export function usePurchases() {
           item.id === itemId ? { ...item, bought: !item.bought } : item
         );
 
-        const hasAnyBought = updatedItems.some((i) => i.bought);
-        const newStatus = p.status === 'planning' && hasAnyBought ? 'in_progress' : p.status;
-
         return {
           ...p,
-          status: newStatus,
           items: updatedItems,
         };
       })
@@ -222,42 +242,50 @@ export function usePurchases() {
 
   /**
    * Finaliza uma compra: altera status para 'finished', registra a data de finalização (finishedAt),
-   * e mantém os itens como estão.
+   * e mantém os itens como estão, garantindo idempotência.
    */
   const finishPurchase = (purchaseId: string): void => {
     setPurchases((prev) =>
       prev.map((p) => {
         if (p.id !== purchaseId) return p;
+        if (p.status === 'finished') return p; // já finalizada, evita re-execuções
         return {
           ...p,
           status: 'finished',
-          finishedAt: new Date().toISOString(),
+          finishedAt: p.finishedAt || new Date().toISOString(),
         };
       })
     );
   };
 
   /**
-   * Retorna apenas as compras com status 'finished', ordenadas da mais recente para a mais antiga (por finishedAt).
+   * Retorna apenas as compras com status 'finished', sem duplicações por ID,
+   * ordenadas da mais recente para a mais antiga (por finishedAt).
    */
   const getFinishedPurchases = (): Purchase[] => {
-    return purchases
-      .filter((p) => p.status === 'finished')
-      .sort((a, b) => {
-        const dateA = new Date(a.finishedAt || a.createdAt).getTime();
-        const dateB = new Date(b.finishedAt || b.createdAt).getTime();
-        return dateB - dateA;
-      });
+    const uniqueMap = new Map<string, Purchase>();
+    purchases.forEach((p) => {
+      if (p.status === 'finished' && !uniqueMap.has(p.id)) {
+        uniqueMap.set(p.id, p);
+      }
+    });
+
+    return Array.from(uniqueMap.values()).sort((a, b) => {
+      const dateA = new Date(a.finishedAt || a.createdAt).getTime();
+      const dateB = new Date(b.finishedAt || b.createdAt).getTime();
+      return dateB - dateA;
+    });
   };
 
   return {
     purchases,
-    getPendingPurchase,
+    getPendingPurchases,
     getFinishedPurchases,
     getPurchaseById,
     discardPendingPurchase,
     discardPurchase,
     createPurchase,
+    createPurchaseFromTemplate,
     updatePurchaseName,
     addItemToPurchase,
     editItemInPurchase,
@@ -265,5 +293,6 @@ export function usePurchases() {
     toggleItemBought,
     finishPurchase,
     getPurchases,
+    cleanUpEmptyPurchases,
   };
 }

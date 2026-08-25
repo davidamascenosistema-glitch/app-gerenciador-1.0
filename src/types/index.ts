@@ -12,8 +12,8 @@ export interface Item {
 export interface Purchase {
   id: string;
   name?: string;
-  status: 'planning' | 'in_progress' | 'finished';
-  origin: 'list' | 'direct' | 'invoice' | 'manual';
+  status: 'pending' | 'finished';
+  origin: 'list' | 'invoice' | 'manual';
   createdAt: string;
   finishedAt?: string;
   items: Item[];

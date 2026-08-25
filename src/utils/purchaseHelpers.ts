@@ -167,15 +167,12 @@ export const generatePurchaseExportText = (purchase: Purchase): string => {
   const totalItems = purchase.items ? purchase.items.length : 0;
   const boughtItems = purchase.items ? purchase.items.filter((i) => i.bought).length : 0;
 
-  let statusText = 'Em andamento';
+  let statusText = 'Pendente';
   if (purchase.status === 'finished') statusText = 'Finalizada';
-  else if (purchase.status === 'planning') statusText = 'Planejamento';
 
   const originText =
     purchase.origin === 'list'
       ? 'Planejada'
-      : purchase.origin === 'direct'
-      ? 'Compra direta'
       : purchase.origin === 'invoice'
       ? 'Nota fiscal'
       : 'Registro manual';
@@ -319,6 +316,30 @@ export const calculateComparisonInsight = (
       sampleCount: count,
     };
   }
+};
+
+/**
+ * Lista de nomes padrões automáticos atribuídos pelo sistema
+ */
+export const DEFAULT_PURCHASE_NAMES = [
+  'Planejamento de compra',
+  'Registro de compra',
+  'Registro manual',
+  'Nova compra',
+  'Nova Compra',
+  'Compra rápida',
+  'Nota fiscal',
+  'Importação por nota fiscal',
+  'Compra sem nome',
+];
+
+/**
+ * Verifica se uma Purchase possui o nome padrão automático (nunca foi renomeada manualmente)
+ */
+export const isDefaultPurchaseName = (name?: string | null): boolean => {
+  if (!name || !name.trim()) return true;
+  const trimmed = name.trim().toLowerCase();
+  return DEFAULT_PURCHASE_NAMES.some((def) => def.toLowerCase() === trimmed);
 };
 
 
