@@ -1,22 +1,46 @@
 import { useState } from 'react';
+import { ShoppingCart, Loader2 } from 'lucide-react';
 import { HomeScreen } from './components/HomeScreen';
 import { PurchaseScreen } from './components/PurchaseScreen';
 import { PurchaseDetailScreen } from './components/PurchaseDetailScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { ProfileScreen } from './components/ProfileScreen';
+import { AuthScreen } from './components/AuthScreen';
 import { usePurchases } from './hooks/usePurchases';
+import { useAuth } from './hooks/useAuth';
 import { ToastProvider, useToast } from './components/Toast';
 import { Purchase } from './types';
 
 /**
- * Conteúdo principal da aplicação envolto pelo ToastProvider.
+ * Conteúdo principal da aplicação envolto pelo ToastProvider e gerenciado por useAuth.
  */
 function MainApp() {
-  const purchasesHook = usePurchases();
+  const auth = useAuth();
+  const purchasesHook = usePurchases(auth.user?.id);
   const { showToast } = useToast();
   const [activeScreen, setActiveScreen] = useState<'home' | 'history' | 'profile' | 'history_select'>('home');
   const [activePurchaseId, setActivePurchaseId] = useState<string | null>(null);
   const [selectedDetailPurchaseId, setSelectedDetailPurchaseId] = useState<string | null>(null);
+
+  // 1. Enquanto carrega a sessão do Supabase, exibe splash screen discreto
+  if (auth.loading) {
+    return (
+      <div className="min-h-screen w-full bg-zinc-50 flex flex-col items-center justify-center p-6 text-zinc-800">
+        <div className="w-16 h-16 rounded-2xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 flex items-center justify-center mb-4 border-2 border-white animate-pulse">
+          <ShoppingCart className="w-8 h-8 stroke-[2.2]" />
+        </div>
+        <div className="flex items-center space-x-2 text-zinc-600 text-sm font-semibold">
+          <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+          <span>Carregando sessão...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Se o usuário NÃO estiver autenticado, exibe a AuthScreen
+  if (!auth.user) {
+    return <AuthScreen authHook={auth} />;
+  }
 
   const handleBackFromPurchase = (message?: string) => {
     purchasesHook.cleanUpEmptyPurchases();
@@ -66,6 +90,14 @@ function MainApp() {
     setActivePurchaseId(newPurchase.id);
   };
 
+  const handleSignOut = async () => {
+    await auth.signOut();
+    setActiveScreen('home');
+    setActivePurchaseId(null);
+    setSelectedDetailPurchaseId(null);
+    showToast('Sessão encerrada com sucesso.');
+  };
+
   // Se uma compra finalizada foi selecionada no histórico, exibe a tela de detalhes somente leitura
   if (selectedDetailPurchase && selectedDetailPurchase.status === 'finished') {
     return (
@@ -81,6 +113,7 @@ function MainApp() {
   if (activePurchase && activePurchase.status === 'pending') {
     return (
       <PurchaseScreen
+        userId={auth.user?.id}
         purchase={activePurchase}
         allPurchases={purchasesHook.purchases}
         onBack={handleBackFromPurchase}
@@ -127,6 +160,8 @@ function MainApp() {
   if (activeScreen === 'profile') {
     return (
       <ProfileScreen
+        user={auth.user}
+        onSignOut={handleSignOut}
         onBack={() => setActiveScreen('home')}
         onNavigateToHome={() => setActiveScreen('home')}
         onNavigateToHistory={() => setActiveScreen('history')}
@@ -150,6 +185,9 @@ function MainApp() {
         setActiveScreen('profile');
       }}
       onRepeatPurchase={handleStartRepeatPurchase}
+      onSelectFinishedPurchase={(purchase) => {
+        setSelectedDetailPurchaseId(purchase.id);
+      }}
     />
   );
 }
@@ -161,5 +199,6 @@ export default function App() {
     </ToastProvider>
   );
 }
+
 
 

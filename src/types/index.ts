@@ -9,6 +9,14 @@ export interface Item {
   bought: boolean;
 }
 
+export interface ItemSuggestion {
+  id?: string;
+  name: string;
+  category: string;
+  count?: number;
+  source: 'personal' | 'generic';
+}
+
 export interface Purchase {
   id: string;
   name?: string;

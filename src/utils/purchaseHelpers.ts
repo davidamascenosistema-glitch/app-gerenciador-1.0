@@ -44,6 +44,9 @@ export const calculatePurchaseTotal = (purchase: Purchase): number => {
   return purchase.items.reduce((total, item) => total + calculateItemSubtotal(item), 0);
 };
 
+export const STANDARD_CATEGORIES = ['Geral', 'Alimentos', 'Bebidas', 'Limpeza', 'Higiene'];
+export const WEIGHT_CATEGORIES = ['Açougue', 'Frutas/Legumes', 'Frios', 'Padaria', 'Hortifruti'];
+
 export interface ParsedBatchItem {
   name: string;
   quantity: number;
@@ -143,7 +146,7 @@ export const DEFAULT_QUICK_SUGGESTIONS = [
 ];
 
 /**
- * Retorna a lista de sugestões rápidas filtradas (remove os itens que já existem na compra atual)
+ * Retorna a lista de sugestões rápidas filtradas (remove os itens que já existem na compra atual e deduplica)
  */
 export const getFilteredQuickSuggestions = (
   existingItems: Item[],
@@ -153,9 +156,21 @@ export const getFilteredQuickSuggestions = (
     (existingItems || []).map((i) => i.name.trim().toLowerCase())
   );
 
-  return suggestionsList.filter(
-    (suggestion) => !existingNames.has(suggestion.trim().toLowerCase())
-  );
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const suggestion of suggestionsList) {
+    const trimmed = (suggestion || '').trim();
+    if (!trimmed) continue;
+    const lower = trimmed.toLowerCase();
+
+    if (!existingNames.has(lower) && !seen.has(lower)) {
+      seen.add(lower);
+      result.push(trimmed);
+    }
+  }
+
+  return result;
 };
 
 /**

@@ -31,8 +31,13 @@ import {
   Bookmark,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Item, Purchase } from '../types';
+import { Item, Purchase, ItemSuggestion } from '../types';
 import { parseReceiptImage, ExtractedReceiptItem } from '../services/geminiService';
+import { useItemSuggestions } from '../hooks/useItemSuggestions';
+import { ItemSearchBar } from './ItemSearchBar';
+import { PurchaseItemCard } from './PurchaseItemCard';
+import { BatchAddModal } from './BatchAddModal';
+import { EditItemModal } from './EditItemModal';
 import {
   calculateItemSubtotal,
   calculatePurchaseTotal,
@@ -41,13 +46,11 @@ import {
   calculateComparisonInsight,
   exportPurchaseAsTxt,
   generatePurchaseExportText,
-  getFilteredQuickSuggestions,
   isDefaultPurchaseName,
+  STANDARD_CATEGORIES,
+  WEIGHT_CATEGORIES,
 } from '../utils/purchaseHelpers';
 import { useToast } from './Toast';
-
-const STANDARD_CATEGORIES = ['Geral', 'Alimentos', 'Bebidas', 'Limpeza', 'Higiene'];
-const WEIGHT_CATEGORIES = ['Açougue', 'Frutas/Legumes', 'Frios', 'Padaria', 'Hortifruti'];
 
 const getCategoryBadgeStyle = (category: string) => {
   switch (category) {
@@ -76,6 +79,7 @@ const getCategoryBadgeStyle = (category: string) => {
 };
 
 interface PurchaseScreenProps {
+  userId?: string | null;
   purchase: Purchase;
   allPurchases?: Purchase[];
   onBack: (message?: string) => void;
@@ -89,6 +93,7 @@ interface PurchaseScreenProps {
 }
 
 export function PurchaseScreen({
+  userId,
   purchase,
   allPurchases = [],
   onBack,
@@ -100,6 +105,9 @@ export function PurchaseScreen({
   onToggleBought,
   onFinishPurchase,
 }: PurchaseScreenProps) {
+  const suggestionsHook = useItemSuggestions(userId, allPurchases);
+  const selectedFromSuggestionRef = useRef<boolean>(false);
+
   const [titleValue, setTitleValue] = useState(() =>
     isDefaultPurchaseName(purchase.name) ? '' : (purchase.name || '')
   );
@@ -122,19 +130,10 @@ export function PurchaseScreen({
   const [finishNameInput, setFinishNameInput] = useState('');
   const [isFinishedSummaryOpen, setIsFinishedSummaryOpen] = useState(false);
 
-  // Modal State for Add / Edit Item
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Modais de Adicionar em Lote e Edição Completa
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
-  const [modalTab, setModalTab] = useState<'single' | 'batch'>('single');
-  const [batchText, setBatchText] = useState('');
-
-  // Single Item Form State
-  const [itemName, setItemName] = useState('');
-  const [category, setCategory] = useState('Geral');
-  const [quantity, setQuantity] = useState<number>(1);
-  const [priceStr, setPriceStr] = useState('');
-  const [isWeighted, setIsWeighted] = useState(false);
-  const [weightStr, setWeightStr] = useState('');
 
   // Toast feedback hook
   const { showToast } = useToast();
@@ -154,6 +153,34 @@ export function PurchaseScreen({
 
   // Header 3-dots Menu State
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // Auto-fechar o menu de 3 pontinhos ao rolar a página, redimensionar a tela ou pressionar Escape
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const handleScrollOrResize = () => {
+      setIsMenuOpen(false);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsMenuOpen(false);
+      }
+    };
+
+    // Usar capture: true para detectar qualquer evento de scroll na janela ou em containers filhos
+    window.addEventListener('scroll', handleScrollOrResize, { passive: true, capture: true });
+    window.addEventListener('touchmove', handleScrollOrResize, { passive: true, capture: true });
+    window.addEventListener('resize', handleScrollOrResize, { passive: true });
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('scroll', handleScrollOrResize, { capture: true });
+      window.removeEventListener('touchmove', handleScrollOrResize, { capture: true });
+      window.removeEventListener('resize', handleScrollOrResize);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isMenuOpen]);
 
   // Floating Action Button Speed Dial Menu State
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
@@ -212,7 +239,7 @@ export function PurchaseScreen({
         });
         showFeedbackToast('Lista compartilhada com sucesso!');
       } catch (err: any) {
-        // Se o usuário não cancelou a janela, tenta o fallback
+        // Se o usuário não cancelou a janela, copia para a área de transferência
         if (err.name !== 'AbortError') {
           await copyToClipboard(shareText);
         }
@@ -363,85 +390,33 @@ export function PurchaseScreen({
     }
   };
 
-  // Open Modal for Create (supports single or batch mode directly)
-  const handleOpenAddModal = (mode: 'single' | 'batch' = 'single') => {
-    setEditingItem(null);
-    setModalTab(mode);
-    setBatchText('');
-    setItemName('');
-    setCategory('Geral');
-    setQuantity(1);
-    setPriceStr('');
-    setIsWeighted(false);
-    setWeightStr('');
-    setIsFabMenuOpen(false);
-    setIsModalOpen(true);
+  // Adição direta vinda da ItemSearchBar
+  const handleAddItemFromSearch = (name: string, category: string = 'Geral', isWeighted: boolean = false) => {
+    onAddItem(purchase.id, {
+      name,
+      category,
+      isWeighted,
+      quantity: 1,
+      price: undefined,
+      bought: purchase.origin === 'manual' ? true : false,
+    });
+    showFeedbackToast(`"${name}" adicionado à lista`);
   };
 
-  // Open Modal for Edit
-  const handleOpenEditModal = (item: Item) => {
+  // Abrir Modal de Edição Completa
+  const handleOpenFullEdit = (item: Item) => {
     setEditingItem(item);
-    setModalTab('single');
-    setItemName(item.name);
-    setCategory(item.category || (item.isWeighted ? 'Açougue' : 'Geral'));
-    setQuantity(item.quantity || 1);
-    setPriceStr(item.price ? item.price.toString() : '');
-    setIsWeighted(item.isWeighted || false);
-    setWeightStr(item.weight ? item.weight.toString() : '');
-    setIsModalOpen(true);
+    setIsEditModalOpen(true);
   };
 
-  // Handle Weighted toggle changes & switch active categories accordingly
-  const handleToggleWeighted = (checked: boolean) => {
-    setIsWeighted(checked);
-    if (checked) {
-      if (!WEIGHT_CATEGORIES.includes(category)) {
-        setCategory('Açougue');
-      }
-    } else {
-      if (!STANDARD_CATEGORIES.includes(category)) {
-        setCategory('Geral');
-      }
-    }
+  // Salvar Modal de Edição Completa
+  const handleSaveFullEdit = (itemId: string, updates: Partial<Item>) => {
+    onEditItem(purchase.id, itemId, updates);
+    showFeedbackToast(`"${updates.name || 'Item'}" atualizado`);
   };
 
-  // Save Item Submit
-  const handleSubmitItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!itemName.trim()) return;
-
-    const parsedPrice = priceStr ? parseFloat(priceStr.replace(',', '.')) : undefined;
-    const parsedWeight = isWeighted && weightStr ? parseFloat(weightStr.replace(',', '.')) : undefined;
-
-    if (editingItem) {
-      onEditItem(purchase.id, editingItem.id, {
-        name: itemName.trim(),
-        category,
-        quantity: Math.max(1, quantity),
-        price: parsedPrice && !isNaN(parsedPrice) ? parsedPrice : undefined,
-        isWeighted,
-        weight: parsedWeight && !isNaN(parsedWeight) ? parsedWeight : undefined,
-      });
-      showToast(`"${itemName.trim()}" atualizado`);
-    } else {
-      onAddItem(purchase.id, {
-        name: itemName.trim(),
-        category,
-        quantity: Math.max(1, quantity),
-        price: parsedPrice && !isNaN(parsedPrice) ? parsedPrice : undefined,
-        isWeighted,
-        weight: parsedWeight && !isNaN(parsedWeight) ? parsedWeight : undefined,
-        bought: purchase.origin === 'manual' ? true : false,
-      });
-      showToast(`"${itemName.trim()}" adicionado à lista`);
-    }
-
-    setIsModalOpen(false);
-  };
-
-  // Save Batch Items Submit
-  const handleSubmitBatch = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Submissão do Modal de Adicionar em Lote
+  const handleSubmitBatch = (batchText: string) => {
     const parsed = parseBatchItemsInput(batchText);
     if (parsed.length === 0) return;
 
@@ -453,20 +428,6 @@ export function PurchaseScreen({
     });
 
     showToast(`${parsed.length} ${parsed.length === 1 ? 'item adicionado' : 'itens adicionados'} à lista`);
-    setIsModalOpen(false);
-  };
-
-  const availableSuggestions = getFilteredQuickSuggestions(purchase.items || []);
-
-  const handleAddQuickSuggestion = (suggestionName: string) => {
-    onAddItem(purchase.id, {
-      name: suggestionName,
-      category: 'Geral',
-      quantity: 1,
-      isWeighted: false,
-      bought: purchase.origin === 'manual' ? true : false,
-    });
-    showFeedbackToast(`"${suggestionName}" adicionado à lista`);
   };
 
   const handleBackClick = () => {
@@ -567,7 +528,7 @@ export function PurchaseScreen({
   return (
     <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 flex flex-col justify-between selection:bg-emerald-500 selection:text-white font-sans">
       {/* Header (Compacto & Sticky) */}
-      <header className="w-full bg-white border-b border-zinc-200/80 sticky top-0 z-30 shadow-2xs">
+      <header className="w-full bg-white border-b border-zinc-200/80 sticky top-0 z-40 shadow-2xs">
         <div className="w-full max-w-md md:max-w-xl mx-auto px-3 py-2.5 sm:px-6 flex items-center justify-between gap-2">
           {/* Lado Esquerdo: Botão Voltar + Nome Editável */}
           <div className="flex items-center space-x-2 min-w-0 flex-1">
@@ -618,41 +579,54 @@ export function PurchaseScreen({
                 onClick={() => setIsMenuOpen((prev) => !prev)}
                 aria-label="Mais opções"
                 title="Mais opções"
-                className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl bg-zinc-100 hover:bg-zinc-200/80 active:bg-zinc-300 flex items-center justify-center text-zinc-700 transition-colors shrink-0 cursor-pointer active:scale-95"
+                className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl flex items-center justify-center transition-colors shrink-0 cursor-pointer active:scale-95 ${
+                  isMenuOpen
+                    ? 'bg-zinc-200 text-zinc-900'
+                    : 'bg-zinc-100 hover:bg-zinc-200/80 active:bg-zinc-300 text-zinc-700'
+                }`}
               >
                 <MoreVertical className="w-5 h-5 text-zinc-700" />
               </button>
 
-              {isMenuOpen && (
-                <>
-                  {/* Backdrop para fechar ao clicar fora */}
-                  <div
-                    className="fixed inset-0 z-30"
-                    onClick={() => setIsMenuOpen(false)}
-                  />
-                  <div className="absolute right-0 mt-1.5 w-48 bg-white rounded-2xl shadow-xl border border-zinc-200/90 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100">
-                    {/* Compartilhar */}
-                    <button
-                      type="button"
-                      onClick={handleSharePurchase}
-                      className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
+              <AnimatePresence>
+                {isMenuOpen && (
+                  <>
+                    {/* Backdrop para fechar ao tocar fora */}
+                    <div
+                      className="fixed inset-0 z-40 bg-transparent"
+                      onClick={() => setIsMenuOpen(false)}
+                    />
+                    {/* Menu Popover */}
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                      transition={{ duration: 0.12 }}
+                      className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-xl border border-zinc-200/90 py-1.5 z-50 overflow-hidden"
                     >
-                      <Share2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>Compartilhar</span>
-                    </button>
+                      {/* Compartilhar */}
+                      <button
+                        type="button"
+                        onClick={handleSharePurchase}
+                        className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
+                      >
+                        <Share2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Compartilhar</span>
+                      </button>
 
-                    {/* Exportar lista */}
-                    <button
-                      type="button"
-                      onClick={handleExportPurchase}
-                      className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
-                    >
-                      <Download className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>Exportar lista (.txt)</span>
-                    </button>
-                  </div>
-                </>
-              )}
+                      {/* Exportar lista */}
+                      <button
+                        type="button"
+                        onClick={handleExportPurchase}
+                        className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
+                      >
+                        <Download className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Exportar lista (.txt)</span>
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </div>
@@ -693,7 +667,6 @@ export function PurchaseScreen({
                 type="button"
                 onClick={() => {
                   setRegistrationMode('manual');
-                  handleOpenAddModal('single');
                 }}
                 className="w-full p-3.5 sm:p-4 rounded-xl border border-zinc-200 hover:border-emerald-500 bg-zinc-50/80 hover:bg-emerald-50/50 transition-all flex items-center space-x-3.5 text-left cursor-pointer group active:scale-[0.98] min-h-[60px]"
               >
@@ -1087,455 +1060,71 @@ export function PurchaseScreen({
 
         {/* Items List or Empty State (Hidden when choosing registration mode or taking photo) */}
         {purchase.origin === 'manual' && (registrationMode === 'choose' || registrationMode === 'photo') ? null : (
-          totalItemsCount === 0 ? (
-            <div className="flex-1 min-h-[460px] sm:min-h-[520px] flex flex-col items-center justify-center py-10 px-4 sm:px-6 text-center bg-white rounded-3xl border border-zinc-200/80 my-2 shadow-2xs">
-              <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 shadow-2xs">
-                <ShoppingBag className="w-8 h-8" />
+          <div className="space-y-3 pb-28 sm:pb-32">
+            {/* Barra de Busca Fixa no Topo da Lista durante o Scroll */}
+            {purchase.status !== 'finished' && (
+              <div className="sticky top-[61px] sm:top-[65px] z-30 bg-zinc-50/95 backdrop-blur-md pt-1 pb-2">
+                <ItemSearchBar
+                  onAddItem={handleAddItemFromSearch}
+                  onOpenBatchModal={() => setIsBatchModalOpen(true)}
+                  getSuggestions={suggestionsHook.getCombinedSuggestions}
+                  recordManualItem={suggestionsHook.recordManualItem}
+                />
               </div>
-              <h3 className="text-lg font-bold text-zinc-900 mb-1.5">Sua lista está vazia</h3>
-              <p className="text-xs text-zinc-500 max-w-xs leading-relaxed mb-5">
-                Toque no botão abaixo para começar a montar sua lista ou escolha uma sugestão rápida.
-              </p>
-              {/* Botão de + verde chamativo abaixo do subtítulo */}
-              <motion.button
-                whileTap={{ scale: 0.92 }}
-                whileHover={{ scale: 1.08 }}
-                onClick={() => handleOpenAddModal('single')}
-                aria-label="Adicionar item"
-                title="Adicionar item"
-                className="w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white flex items-center justify-center shadow-lg shadow-emerald-600/35 cursor-pointer transition-all active:scale-95 mb-6"
-              >
-                <Plus className="w-7 h-7 stroke-[2.5]" />
-              </motion.button>
+            )}
 
-              {/* Sugestões Rápidas no Card Vazio */}
-              {availableSuggestions.length > 0 && (
-                <div className="w-full max-w-sm pt-5 border-t border-zinc-100">
-                  <div className="flex items-center justify-center space-x-1.5 text-xs font-bold text-zinc-700 mb-3">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span>Sugestões rápidas para começar</span>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    {availableSuggestions.slice(0, 8).map((suggestion) => (
-                      <motion.button
-                        whileTap={{ scale: 0.94 }}
-                        whileHover={{ scale: 1.04 }}
-                        key={suggestion}
-                        type="button"
-                        onClick={() => handleAddQuickSuggestion(suggestion)}
-                        className="px-3.5 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200/80 text-emerald-800 text-xs font-bold shrink-0 cursor-pointer transition-all flex items-center space-x-1 shadow-2xs"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>{suggestion}</span>
-                      </motion.button>
-                    ))}
-                  </div>
+            {totalItemsCount === 0 ? (
+              <div className="flex-1 min-h-[380px] sm:min-h-[440px] flex flex-col items-center justify-center py-8 px-4 sm:px-6 text-center bg-white rounded-3xl border border-zinc-200/80 my-2 shadow-2xs">
+                <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3 shadow-2xs">
+                  <ShoppingBag className="w-8 h-8" />
                 </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3 pb-28 sm:pb-32">
-              {/* Barra de Sugestões Rápidas na Tela com Itens */}
-              {availableSuggestions.length > 0 && (
-                <div className="bg-white rounded-2xl border border-zinc-200/80 p-3 shadow-2xs">
-                  <div className="flex items-center justify-between mb-2 px-1">
-                    <div className="flex items-center space-x-1.5 text-xs font-bold text-zinc-700">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      <span>Sugestões rápidas</span>
-                    </div>
-                    <span className="text-[10px] text-zinc-400 font-medium">Toque para adicionar</span>
-                  </div>
-
-                  <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none snap-x">
-                    {availableSuggestions.map((suggestion) => (
-                      <motion.button
-                        whileTap={{ scale: 0.94 }}
-                        key={suggestion}
-                        type="button"
-                        onClick={() => handleAddQuickSuggestion(suggestion)}
-                        className="px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200/80 text-emerald-800 text-xs font-bold shrink-0 cursor-pointer transition-all flex items-center space-x-1 min-h-[34px] snap-start shadow-2xs whitespace-nowrap"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>{suggestion}</span>
-                      </motion.button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {purchase.items.map((item) => {
-              const subtotal = calculateItemSubtotal(item);
-              const badgeStyle = getCategoryBadgeStyle(item.category);
-              // Remove redundant (kg) or (un) suffix if present in the stored name
-              const cleanItemName = item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, '').trim();
-
-              return (
-                <div
-                  key={item.id}
-                  className={`w-full rounded-2xl border transition-all p-3 sm:p-3.5 flex items-center justify-between gap-2 sm:gap-2.5 ${
-                    item.bought
-                      ? 'bg-zinc-100/70 border-zinc-200/70 text-zinc-500'
-                      : 'bg-white border-zinc-200/90 shadow-2xs text-zinc-900'
-                  }`}
-                >
-                  {/* Checkbox + Info (Linha 1: Nome + Badge / Linha 2: Frase Compacta) */}
-                  <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
-                    <button
-                      type="button"
-                      onClick={() => onToggleBought(purchase.id, item.id)}
-                      aria-label={item.bought ? 'Marcar como não comprado' : 'Marcar como comprado'}
-                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-11 sm:h-11 sm:min-w-[44px] sm:min-h-[44px] flex items-center justify-center shrink-0 cursor-pointer rounded-xl hover:bg-zinc-100/80 active:scale-95 transition-all"
-                    >
-                      <div
-                        className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-all ${
-                          item.bought
-                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-2xs'
-                            : 'border-zinc-300 bg-white hover:border-emerald-500'
-                        }`}
-                      >
-                        {item.bought && <Check className="w-4 h-4 stroke-[3]" />}
-                      </div>
-                    </button>
-
-                    <div className="min-w-0 flex-1 pr-1">
-                      {/* LINHA 1 (informação primária): nome do item + badge de categoria na MESMA linha */}
-                      <div className="flex items-center space-x-1.5 sm:space-x-2 flex-wrap gap-y-1">
-                        <span className={`text-sm sm:text-base font-bold leading-snug break-words ${item.bought ? 'line-through text-zinc-400' : 'text-zinc-900'}`}>
-                          {cleanItemName}
-                        </span>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${badgeStyle}`}>
-                          {item.category}
-                        </span>
-                      </div>
-
-                      {/* LINHA 2 (informação secundária): frase compacta e única sem quebras prematuras */}
-                      <p className="text-[11px] sm:text-xs text-zinc-500 mt-0.5 font-medium leading-tight">
-                        {item.isWeighted ? (
-                          item.price ? (
-                            `${item.weight ? item.weight.toString().replace('.', ',') : item.quantity.toString().replace('.', ',')} kg × ${formatCurrencyBRL(item.price)}/kg`
-                          ) : (
-                            `${item.weight ? item.weight.toString().replace('.', ',') : item.quantity.toString().replace('.', ',')} kg`
-                          )
-                        ) : (
-                          item.price ? (
-                            `${item.quantity} un × ${formatCurrencyBRL(item.price)}`
-                          ) : (
-                            `${item.quantity} un`
-                          )
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Subtotal & Action Buttons */}
-                  <div className="flex items-center space-x-1 sm:space-x-2 shrink-0">
-                    {/* Subtotal em destaque visual */}
-                    <div className="text-right">
-                      <p className={`text-sm sm:text-base font-black tracking-tight ${item.bought ? 'text-zinc-400' : 'text-zinc-900'}`}>
-                        {formatCurrencyBRL(subtotal)}
-                      </p>
-                    </div>
-
-                    {/* Botões de Ação com ícones discretos */}
-                    <div className="flex items-center">
-                      <button
-                        onClick={() => handleOpenEditModal(item)}
-                        title="Editar item"
-                        aria-label="Editar item"
-                        className="w-9 h-9 min-h-[38px] min-w-[38px] sm:w-10 sm:h-10 sm:min-h-[44px] sm:min-w-[44px] rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors flex items-center justify-center cursor-pointer active:scale-95"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          onRemoveItem(purchase.id, item.id);
-                          showToast(`"${item.name}" removido da lista`);
-                        }}
-                        title="Remover item"
-                        aria-label="Remover item"
-                        className="w-9 h-9 min-h-[38px] min-w-[38px] sm:w-10 sm:h-10 sm:min-h-[44px] sm:min-w-[44px] rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center cursor-pointer active:scale-95"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </main>
-
-      {/* Item Form Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-zinc-900/60 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-md max-h-[88vh] bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden flex flex-col my-auto"
-            >
-              {/* Modal Header (Fixed Top) */}
-              <div className="px-4 sm:px-5 py-3.5 border-b border-zinc-200/80 flex items-center justify-between shrink-0 bg-white z-10">
-                <h3 className="text-base font-bold text-zinc-900">
-                  {editingItem ? 'Editar Item' : 'Novo Item'}
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="w-11 h-11 rounded-xl text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer flex items-center justify-center shrink-0"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <h3 className="text-lg font-bold text-zinc-900 mb-1">Sua lista está vazia</h3>
+                <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">
+                  Use a barra de busca acima para pesquisar ou adicionar itens à sua lista.
+                </p>
               </div>
-
-              {/* Modal Content */}
-              {modalTab === 'batch' && !editingItem ? (
-                /* Batch Addition Form */
-                <form onSubmit={handleSubmitBatch} className="flex flex-col min-h-0 flex-1 overflow-hidden">
-                  {/* Scrollable Body */}
-                  <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
-                    {/* Tab selector for new items */}
-                    <div className="flex bg-zinc-100 p-1 rounded-xl border border-zinc-200/80">
-                      <button
-                        type="button"
-                        onClick={() => setModalTab('single')}
-                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                          modalTab === 'single'
-                            ? 'bg-white text-zinc-900 shadow-2xs'
-                            : 'text-zinc-500 hover:text-zinc-800'
-                        }`}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Item Único</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setModalTab('batch')}
-                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                          modalTab === 'batch'
-                            ? 'bg-white text-zinc-900 shadow-2xs'
-                            : 'text-zinc-500 hover:text-zinc-800'
-                        }`}
-                      >
-                        <Layers className="w-3.5 h-3.5" />
-                        <span>Adicionar Vários</span>
-                      </button>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-zinc-700 mb-1.5">
-                        Lista de itens (um por linha) <span className="text-red-500">*</span>
-                      </label>
-                      <textarea
-                        rows={5}
-                        required
-                        placeholder={`2 Leite\n1 Arroz 5kg\nCafé\n3 Sabão em pó`}
-                        value={batchText}
-                        onChange={(e) => setBatchText(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-zinc-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm font-medium text-zinc-900 placeholder-zinc-400 font-mono"
-                      />
-                    </div>
-
-                    <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-xl p-3 text-xs text-emerald-900 leading-relaxed">
-                      <span className="font-bold block mb-1">💡 Exemplo de uso:</span>
-                      Digite ou cole vários itens, um por linha. Você pode incluir a quantidade no início (ex: <code className="bg-emerald-100 px-1 rounded font-bold text-emerald-950">2 Leite</code> ou apenas <code className="bg-emerald-100 px-1 rounded font-bold text-emerald-950">Leite</code>). Todos serão criados na categoria <strong className="font-bold">Geral</strong> e você poderá ajustar preços, peso ou categorias individualmente depois.
-                    </div>
-                  </div>
-
-                  {/* Fixed Footer Actions */}
-                  <div className="p-4 sm:px-5 border-t border-zinc-200/80 bg-white flex items-center space-x-2 shrink-0 z-10">
-                    <button
-                      type="button"
-                      onClick={() => setIsModalOpen(false)}
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer active:scale-95"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={!batchText.trim()}
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
-                    >
-                      {parseBatchItemsInput(batchText).length > 1
-                        ? `Adicionar ${parseBatchItemsInput(batchText).length} Itens`
-                        : 'Adicionar Itens'}
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                /* Single Item Form */
-                <form onSubmit={handleSubmitItem} className="flex flex-col min-h-0 flex-1 overflow-hidden">
-                  {/* Scrollable Body */}
-                  <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
-                    {/* Tab selector for new items */}
-                    {!editingItem && (
-                      <div className="flex bg-zinc-100 p-1 rounded-xl border border-zinc-200/80">
-                        <button
-                          type="button"
-                          onClick={() => setModalTab('single')}
-                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                            modalTab === 'single'
-                              ? 'bg-white text-zinc-900 shadow-2xs'
-                              : 'text-zinc-500 hover:text-zinc-800'
-                          }`}
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Item Único</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setModalTab('batch')}
-                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                            modalTab === 'batch'
-                              ? 'bg-white text-zinc-900 shadow-2xs'
-                              : 'text-zinc-500 hover:text-zinc-800'
-                          }`}
-                        >
-                          <Layers className="w-3.5 h-3.5" />
-                          <span>Adicionar Vários</span>
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Nome do Item */}
-                    <div>
-                      <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                        Nome do Item <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Ex: Arroz, Leite, Sabão em pó..."
-                        value={itemName}
-                        onChange={(e) => setItemName(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-zinc-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm font-medium text-zinc-900 placeholder-zinc-400"
-                      />
-                    </div>
-
-                    {/* Produto por peso (kg) toggle */}
-                    <div className="pt-0.5">
-                      <label className="flex items-center space-x-2.5 cursor-pointer py-1 min-h-[44px]">
-                        <input
-                          type="checkbox"
-                          checked={isWeighted}
-                          onChange={(e) => handleToggleWeighted(e.target.checked)}
-                          className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-zinc-300 cursor-pointer"
-                        />
-                        <span className="text-xs font-bold text-zinc-800">Produto vendido por peso (kg)</span>
-                      </label>
-
-                      {isWeighted && (
-                        <div className="mt-2">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="Peso estimado em kg (ex: 0,85)"
-                            value={weightStr}
-                            onChange={(e) => setWeightStr(e.target.value)}
-                            className="w-full px-3 py-2.5 rounded-xl border border-zinc-300 focus:border-emerald-500 text-sm font-medium text-zinc-900"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Categoria */}
-                    <div>
-                      <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                        Categoria {isWeighted && <span className="text-emerald-700 font-bold">(Produtos por Peso)</span>}
-                      </label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {(isWeighted ? WEIGHT_CATEGORIES : STANDARD_CATEGORIES).map((cat) => (
-                          <button
-                            type="button"
-                            key={cat}
-                            onClick={() => setCategory(cat)}
-                            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer min-h-[40px] active:scale-95 flex items-center justify-center ${
-                              category === cat
-                                ? 'bg-emerald-600 text-white shadow-2xs'
-                                : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200/80 border border-zinc-200/80'
-                            }`}
-                          >
-                            {cat}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Quantidade e Preço Unitário */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                          Quantidade
-                        </label>
-                        <div className="flex items-center space-x-1">
-                          <button
-                            type="button"
-                            onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                            className="w-11 h-11 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 font-bold text-zinc-700 flex items-center justify-center min-h-[44px] min-w-[44px] shrink-0 cursor-pointer active:scale-95 transition-all text-base"
-                            aria-label="Diminuir quantidade"
-                          >
-                            -
-                          </button>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min="1"
-                            value={quantity}
-                            onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                            className="w-full text-center py-2.5 rounded-xl border border-zinc-300 text-sm font-bold text-zinc-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 h-11"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setQuantity((q) => q + 1)}
-                            className="w-11 h-11 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 font-bold text-zinc-700 flex items-center justify-center min-h-[44px] min-w-[44px] shrink-0 cursor-pointer active:scale-95 transition-all text-base"
-                            aria-label="Aumentar quantidade"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
-                          {isWeighted ? 'Preço por kg (R$)' : 'Preço Unitário (R$)'}
-                        </label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="0,00 (opcional)"
-                          value={priceStr}
-                          onChange={(e) => setPriceStr(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-zinc-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm font-medium text-zinc-900 placeholder-zinc-400"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Fixed Footer Actions */}
-                  <div className="p-4 sm:px-5 border-t border-zinc-200/80 bg-white flex items-center space-x-2 shrink-0 z-10">
-                    <button
-                      type="button"
-                      onClick={() => setIsModalOpen(false)}
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer active:scale-95"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer active:scale-95"
-                    >
-                      {editingItem ? 'Salvar alterações' : 'Adicionar Item'}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </motion.div>
+            ) : (
+              <div className="space-y-2.5">
+                {/* Lista de Cards de Itens com Edição Inline */}
+                <div className="space-y-2">
+                  {purchase.items.map((item) => (
+                    <PurchaseItemCard
+                      key={item.id}
+                      item={item}
+                      purchaseId={purchase.id}
+                      onToggleBought={onToggleBought}
+                      onEditItem={onEditItem}
+                      onRemoveItem={(pId, iId) => {
+                        onRemoveItem(pId, iId);
+                        showToast(`"${item.name}" removido da lista`);
+                      }}
+                      getCategoryBadgeStyle={getCategoryBadgeStyle}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
-      </AnimatePresence>
+      </main>
+
+      {/* Modal de Adicionar em Lote */}
+      <BatchAddModal
+        isOpen={isBatchModalOpen}
+        onClose={() => setIsBatchModalOpen(false)}
+        onSubmit={handleSubmitBatch}
+      />
+
+      {/* Modal de Edição Completa */}
+      <EditItemModal
+        isOpen={isEditModalOpen}
+        item={editingItem}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingItem(null);
+        }}
+        onSave={handleSaveFullEdit}
+      />
 
       {/* Modal de Confirmação de Finalização */}
       <AnimatePresence>
@@ -1766,95 +1355,7 @@ export function PurchaseScreen({
         )}
       </AnimatePresence>
 
-      {/* Botão Flutuante (FAB) com Speed Dial Animado para Item Único e Adicionar Vários */}
-      {totalItemsCount > 0 && (
-        <div className="fixed bottom-26 sm:bottom-28 right-4 sm:right-6 md:right-[calc(50%-270px)] z-40 flex flex-col items-end">
-          {/* Backdrop sutil ao abrir o menu flutuante para fechar com clique fora */}
-          <AnimatePresence>
-            {isFabMenuOpen && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                onClick={() => setIsFabMenuOpen(false)}
-                className="fixed inset-0 z-30 bg-black/25 backdrop-blur-2xs cursor-pointer"
-              />
-            )}
-          </AnimatePresence>
 
-          {/* Opções Flutuantes do Menu (Item Único e Adicionar Vários) */}
-          <AnimatePresence>
-            {isFabMenuOpen && (
-              <div className="relative z-40 flex flex-col items-end space-y-2.5 mb-3">
-                {/* Opção 1: Adicionar Vários */}
-                <motion.div
-                  initial={{ opacity: 0, y: 15, scale: 0.85 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.85 }}
-                  transition={{ duration: 0.18, delay: 0.04 }}
-                  className="flex items-center space-x-2.5"
-                >
-                  <span className="bg-zinc-900/90 backdrop-blur-md text-white text-xs font-semibold px-3 py-1.5 rounded-xl shadow-md pointer-events-none whitespace-nowrap">
-                    Adicionar Vários
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenAddModal('batch')}
-                    aria-label="Adicionar vários itens"
-                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-white text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 border border-emerald-200/80 shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95"
-                  >
-                    <Layers className="w-5 h-5" />
-                  </button>
-                </motion.div>
-
-                {/* Opção 2: Item Único */}
-                <motion.div
-                  initial={{ opacity: 0, y: 15, scale: 0.85 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.85 }}
-                  transition={{ duration: 0.18 }}
-                  className="flex items-center space-x-2.5"
-                >
-                  <span className="bg-zinc-900/90 backdrop-blur-md text-white text-xs font-semibold px-3 py-1.5 rounded-xl shadow-md pointer-events-none whitespace-nowrap">
-                    Item Único
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenAddModal('single')}
-                    aria-label="Adicionar item único"
-                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95"
-                  >
-                    <Plus className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5]" />
-                  </button>
-                </motion.div>
-              </div>
-            )}
-          </AnimatePresence>
-
-          {/* Botão Principal FAB (+) com rotação animada */}
-          <motion.button
-            type="button"
-            whileTap={{ scale: 0.92 }}
-            whileHover={{ scale: 1.05 }}
-            onClick={() => setIsFabMenuOpen((prev) => !prev)}
-            aria-label={isFabMenuOpen ? 'Fechar opções de adicionar' : 'Abrir opções de adicionar item'}
-            title={isFabMenuOpen ? 'Fechar' : 'Adicionar itens'}
-            className={`relative z-40 w-13 h-13 sm:w-14 sm:h-14 rounded-full flex items-center justify-center shadow-xl shadow-emerald-950/25 border border-white/30 cursor-pointer transition-all ${
-              isFabMenuOpen
-                ? 'bg-zinc-800 text-white hover:bg-zinc-900 shadow-zinc-950/30'
-                : 'bg-emerald-600/95 hover:bg-emerald-600 active:bg-emerald-700 text-white backdrop-blur-xs'
-            }`}
-          >
-            <motion.div
-              animate={{ rotate: isFabMenuOpen ? 45 : 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <Plus className="w-7 h-7 stroke-[2.5]" />
-            </motion.div>
-          </motion.button>
-        </div>
-      )}
 
       {/* Modal Customizado para Registrar Compra Já Feita (ao clicar em Voltar com 1+ itens) */}
       <AnimatePresence>

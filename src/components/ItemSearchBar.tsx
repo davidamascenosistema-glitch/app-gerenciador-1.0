@@ -1,0 +1,440 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Search, Plus, ListPlus, History, Sparkles, X, CornerDownLeft, Mic, MicOff } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { ItemSuggestion } from '../types';
+import { WEIGHT_CATEGORIES } from '../utils/purchaseHelpers';
+
+interface ItemSearchBarProps {
+  onAddItem: (name: string, category?: string, isWeighted?: boolean) => void;
+  onOpenBatchModal: () => void;
+  getSuggestions: (query: string) => ItemSuggestion[];
+  recordManualItem: (name: string, category?: string) => void;
+}
+
+export function ItemSearchBar({
+  onAddItem,
+  onOpenBatchModal,
+  getSuggestions,
+  recordManualItem,
+}: ItemSearchBarProps) {
+  const [query, setQuery] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const [isListening, setIsListening] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  const suggestions = getSuggestions(query);
+  const personalSuggestions = suggestions.filter((s) => s.source === 'personal');
+  const genericSuggestions = suggestions.filter((s) => s.source === 'generic');
+
+  const allFilteredSuggestions = [...personalSuggestions, ...genericSuggestions];
+
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Limpar erro de voz após 4 segundos
+  useEffect(() => {
+    if (speechError) {
+      const timer = setTimeout(() => setSpeechError(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [speechError]);
+
+  // Limpar reconhecimento de voz ao desmontar
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {}
+      }
+    };
+  }, []);
+
+  const toggleVoiceRecognition = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert('Seu navegador não possui suporte para reconhecimento de voz.');
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setSpeechError(null);
+      };
+
+      recognition.onresult = (event: any) => {
+        const results = event.results;
+        if (results && results.length > 0) {
+          const transcript = results[0][0]?.transcript || '';
+          if (transcript) {
+            const cleanTranscript = transcript.replace(/[.,!?]+$/, '').trim();
+            setQuery(cleanTranscript);
+            setIsOpen(true);
+            setSelectedIndex(-1);
+          }
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        setIsListening(false);
+        if (event.error === 'not-allowed') {
+          setSpeechError('Permissão do microfone negada no navegador.');
+        } else if (event.error === 'no-speech') {
+          setSpeechError(null);
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        inputRef.current?.focus();
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Erro ao iniciar reconhecimento de voz:', err);
+      setIsListening(false);
+    }
+  };
+
+  const handleSelectSuggestion = (suggestion: ItemSuggestion) => {
+    const isWeight = WEIGHT_CATEGORIES.includes(suggestion.category);
+    onAddItem(suggestion.name, suggestion.category, isWeight);
+    setQuery('');
+    setIsOpen(false);
+    setSelectedIndex(-1);
+    inputRef.current?.blur();
+  };
+
+  const handleAddFreeText = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    // Verificar se existe correspondência exata nas sugestões
+    const exactMatch = allFilteredSuggestions.find(
+      (s) => s.name.toLowerCase() === trimmed.toLowerCase()
+    );
+
+    if (exactMatch) {
+      handleSelectSuggestion(exactMatch);
+      return;
+    }
+
+    // Item novo/livre
+    const isWeight = WEIGHT_CATEGORIES.some((cat) =>
+      trimmed.toLowerCase().includes(cat.toLowerCase())
+    );
+    const defaultCategory = 'Geral';
+
+    recordManualItem(trimmed, defaultCategory);
+    onAddItem(trimmed, defaultCategory, isWeight);
+    setQuery('');
+    setIsOpen(false);
+    setSelectedIndex(-1);
+    inputRef.current?.blur();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedIndex >= 0 && selectedIndex < allFilteredSuggestions.length) {
+        handleSelectSuggestion(allFilteredSuggestions[selectedIndex]);
+      } else if (query.trim()) {
+        handleAddFreeText(query);
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((prev) =>
+        prev < allFilteredSuggestions.length - 1 ? prev + 1 : prev
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev > -1 ? prev - 1 : -1));
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="w-full relative z-30">
+      <div className="flex items-center gap-2">
+        {/* Input da Barra de Busca */}
+        <div className="relative flex-1 group">
+          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-emerald-600 transition-colors pointer-events-none">
+            <Search className="w-4 h-4" />
+          </div>
+
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setIsOpen(true);
+              setSelectedIndex(-1);
+            }}
+            onFocus={() => setIsOpen(true)}
+            onClick={() => setIsOpen(true)}
+            onKeyDown={handleKeyDown}
+            placeholder={isListening ? 'Ouvindo... Fale o nome do item' : 'Buscar ou adicionar item...'}
+            className={`w-full bg-white border ${
+              isListening
+                ? 'border-rose-400 ring-2 ring-rose-400/20'
+                : 'border-zinc-200/90 hover:border-zinc-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
+            } rounded-2xl pl-9 ${
+              isListening
+                ? 'pr-28'
+                : query.trim().length > 0
+                ? 'pr-28 sm:pr-32'
+                : 'pr-11'
+            } py-2.5 sm:py-3 text-xs sm:text-sm font-medium text-zinc-900 placeholder:text-zinc-400 shadow-2xs transition-all outline-none`}
+          />
+
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1">
+            {/* Indicador quando está ouvindo voz */}
+            {isListening ? (
+              <button
+                type="button"
+                onClick={toggleVoiceRecognition}
+                className="flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold transition-all cursor-pointer shadow-2xs animate-pulse"
+                title="Clique para parar de ouvir"
+              >
+                <Mic className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
+                <span className="text-[11px]">Ouvindo...</span>
+              </button>
+            ) : (
+              /* Botão de Microfone / Pesquisa por Voz */
+              <button
+                type="button"
+                onClick={toggleVoiceRecognition}
+                className="w-8 h-8 rounded-xl hover:bg-emerald-50 active:bg-emerald-100 text-zinc-500 hover:text-emerald-700 active:text-emerald-800 flex items-center justify-center cursor-pointer transition-colors"
+                title="Pesquisar ou adicionar por voz"
+                aria-label="Pesquisar por voz"
+              >
+                <Mic className="w-4 h-4" />
+              </button>
+            )}
+
+            {query.trim().length > 0 && !isListening && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery('');
+                  inputRef.current?.focus();
+                }}
+                className="w-7 h-7 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-400 hover:text-zinc-600 flex items-center justify-center cursor-pointer transition-colors"
+                title="Limpar texto"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {query.trim().length > 0 && !isListening && (
+              <button
+                type="button"
+                onClick={() => handleAddFreeText(query)}
+                className="h-8 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs flex items-center space-x-1 cursor-pointer transition-all shadow-2xs active:scale-95"
+                title="Adicionar item"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span className="hidden sm:inline">Adicionar</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Botão Secundário: Adicionar Vários em Lote */}
+        <button
+          type="button"
+          onClick={onOpenBatchModal}
+          title="Adicionar vários itens em lote (colar lista)"
+          aria-label="Adicionar vários itens"
+          className="h-11 px-3 sm:px-3.5 rounded-2xl bg-white hover:bg-emerald-50 active:bg-emerald-100 border border-zinc-200/90 hover:border-emerald-200 text-zinc-700 hover:text-emerald-800 flex items-center space-x-1.5 shrink-0 shadow-2xs transition-all cursor-pointer active:scale-95 font-semibold text-xs min-h-[44px]"
+        >
+          <ListPlus className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span className="hidden md:inline">Adicionar Vários</span>
+        </button>
+      </div>
+
+      {/* Painel de Sugestões Dropdown */}
+      <AnimatePresence>
+        {isOpen && (allFilteredSuggestions.length > 0 || query.trim().length > 0) && (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: 0.12 }}
+            className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-zinc-200 rounded-2xl shadow-xl overflow-hidden max-h-72 overflow-y-auto z-50 divide-y divide-zinc-100"
+          >
+            {/* Opção rápida de adicionar texto livre caso digitado */}
+            {query.trim().length > 0 && (
+              <div className="p-1.5 bg-zinc-50/70 border-b border-zinc-100">
+                <button
+                  type="button"
+                  onClick={() => handleAddFreeText(query)}
+                  className="w-full text-left px-3 py-2 rounded-xl bg-white hover:bg-emerald-50 active:bg-emerald-100 border border-zinc-200/80 hover:border-emerald-300 transition-colors flex items-center justify-between text-xs font-bold text-emerald-700 cursor-pointer"
+                >
+                  <div className="flex items-center space-x-2 truncate">
+                    <Plus className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="truncate">
+                      Adicionar <span className="text-zinc-900 font-extrabold">"{query.trim()}"</span> como novo item
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-zinc-400 font-normal flex items-center space-x-1 shrink-0">
+                    <span>Enter</span>
+                    <CornerDownLeft className="w-3 h-3" />
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {/* Seção 1: Histórico Pessoal */}
+            {personalSuggestions.length > 0 && (
+              <div>
+                <div className="px-3.5 py-1.5 bg-emerald-50/80 border-b border-emerald-100 flex items-center justify-between text-[11px] font-bold text-emerald-800 tracking-wide">
+                  <div className="flex items-center space-x-1.5">
+                    <History className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Seu Histórico Pessoal</span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded-md">
+                    {query.trim() ? 'Correspondência' : 'Mais Comprados'}
+                  </span>
+                </div>
+
+                <div className="divide-y divide-zinc-100">
+                  {personalSuggestions.map((item, idx) => {
+                    const isSelected = selectedIndex === idx;
+                    return (
+                      <button
+                        key={`search-personal-${item.name}-${idx}`}
+                        type="button"
+                        onClick={() => handleSelectSuggestion(item)}
+                        className={`w-full text-left px-3.5 py-2.5 transition-colors flex items-center justify-between group cursor-pointer ${
+                          isSelected ? 'bg-emerald-100/70' : 'hover:bg-emerald-50/50 active:bg-emerald-100/70'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 pr-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm font-bold text-zinc-900 group-hover:text-emerald-950 truncate">
+                              {item.name}
+                            </span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200/60 shrink-0">
+                              {item.category}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2 shrink-0">
+                          {item.count && item.count > 1 && (
+                            <span className="text-[11px] font-medium text-zinc-400">
+                              {item.count}x
+                            </span>
+                          )}
+                          <Plus className="w-4 h-4 text-emerald-600 opacity-60 group-hover:opacity-100" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Seção 2: Sugestões Compartilhadas / Populares */}
+            {genericSuggestions.length > 0 && (
+              <div>
+                <div className="px-3.5 py-1.5 bg-zinc-50 border-y border-zinc-100 flex items-center space-x-1.5 text-[11px] font-bold text-zinc-600 tracking-wide">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span>{query.trim() ? 'Sugestões Compartilhadas' : 'Sugestões Populares'}</span>
+                </div>
+
+                <div className="divide-y divide-zinc-100">
+                  {genericSuggestions.map((item, idx) => {
+                    const globalIdx = personalSuggestions.length + idx;
+                    const isSelected = selectedIndex === globalIdx;
+                    return (
+                      <button
+                        key={`search-generic-${item.name}-${idx}`}
+                        type="button"
+                        onClick={() => handleSelectSuggestion(item)}
+                        className={`w-full text-left px-3.5 py-2.5 transition-colors flex items-center justify-between group cursor-pointer ${
+                          isSelected ? 'bg-zinc-100' : 'hover:bg-zinc-50 active:bg-zinc-100'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 pr-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm font-semibold text-zinc-800 group-hover:text-zinc-950 truncate">
+                              {item.name}
+                            </span>
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-zinc-100 text-zinc-600 border border-zinc-200/70 shrink-0">
+                              {item.category}
+                            </span>
+                          </div>
+                        </div>
+
+                        <Plus className="w-4 h-4 text-zinc-400 group-hover:text-emerald-600 shrink-0" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Aviso de erro de microfone / voz */}
+      <AnimatePresence>
+        {speechError && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="mt-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center justify-between"
+          >
+            <span>{speechError}</span>
+            <button
+              type="button"
+              onClick={() => setSpeechError(null)}
+              className="text-amber-600 hover:text-amber-900 font-bold ml-2 text-[11px] cursor-pointer"
+            >
+              Fechar
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

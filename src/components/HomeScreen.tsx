@@ -26,6 +26,7 @@ interface HomeScreenProps {
   onNavigateToHistory?: () => void;
   onNavigateToProfile?: () => void;
   onRepeatPurchase?: () => void;
+  onSelectFinishedPurchase?: (purchase: Purchase) => void;
   initialToastMessage?: string;
 }
 
@@ -35,6 +36,7 @@ export function HomeScreen({
   onNavigateToHistory,
   onNavigateToProfile,
   onRepeatPurchase,
+  onSelectFinishedPurchase,
   initialToastMessage,
 }: HomeScreenProps) {
   const localHook = usePurchases();
@@ -233,7 +235,10 @@ export function HomeScreen({
                 {(() => {
                   const singlePending = pendingPurchases[0];
                   return (
-                    <div className="w-full rounded-2xl bg-white border border-zinc-200 p-4 sm:p-5 shadow-2xs relative overflow-hidden">
+                    <div
+                      onClick={() => handleContinuePending(singlePending)}
+                      className="w-full rounded-2xl bg-white border border-zinc-200 hover:border-emerald-300 active:border-emerald-400 p-4 sm:p-5 shadow-2xs relative overflow-hidden cursor-pointer transition-all hover:shadow-xs group"
+                    >
                       {/* Top Row: Badge Neutro c/ Toque Âmbar Sutil + Items Count */}
                       <div className="flex items-center justify-between mb-2">
                         <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-zinc-100 text-amber-700 border border-zinc-200 text-[11px] font-bold uppercase tracking-wider">
@@ -248,7 +253,7 @@ export function HomeScreen({
 
                       {/* Purchase Details */}
                       <div className="mb-3.5">
-                        <h3 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight leading-tight">
+                        <h3 className="text-base sm:text-lg font-bold text-zinc-900 group-hover:text-emerald-800 tracking-tight leading-tight transition-colors">
                           {singlePending.name || 'Compra sem nome'}
                         </h3>
                         <p className="text-xs text-zinc-500 mt-1 flex items-center justify-between font-medium">
@@ -264,7 +269,10 @@ export function HomeScreen({
                         {/* Continuar esta compra - Verde Esmeralda Primário */}
                         <button
                           type="button"
-                          onClick={() => handleContinuePending(singlePending)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleContinuePending(singlePending);
+                          }}
                           className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-2xs shadow-emerald-700/15 transition-all min-h-[44px] cursor-pointer active:scale-95"
                         >
                           <Play className="w-4 h-4 fill-current" />
@@ -329,7 +337,8 @@ export function HomeScreen({
                     return (
                       <div
                         key={purchase.id}
-                        className="w-full rounded-xl bg-white border border-zinc-200 p-3 sm:p-3.5 shadow-2xs flex items-center justify-between gap-2.5 transition-all hover:border-zinc-300"
+                        onClick={() => handleContinuePending(purchase)}
+                        className="w-full rounded-xl bg-white border border-zinc-200 hover:border-emerald-300 active:border-emerald-400 p-3 sm:p-3.5 shadow-2xs flex items-center justify-between gap-2.5 transition-all hover:shadow-xs cursor-pointer group"
                       >
                         {/* Lado Esquerdo: Detalhes Enxutos */}
                         <div className="min-w-0 flex-1">
@@ -339,7 +348,7 @@ export function HomeScreen({
                             </span>
                           </div>
 
-                          <h4 className="text-sm sm:text-base font-bold text-zinc-900 truncate leading-snug">
+                          <h4 className="text-sm sm:text-base font-bold text-zinc-900 group-hover:text-emerald-800 truncate leading-snug transition-colors">
                             {purchase.name || 'Compra sem nome'}
                           </h4>
 
@@ -353,7 +362,10 @@ export function HomeScreen({
                           {/* Continuar (Play Verde Esmeralda) */}
                           <button
                             type="button"
-                            onClick={() => handleContinuePending(purchase)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleContinuePending(purchase);
+                            }}
                             title="Continuar esta compra"
                             aria-label={`Continuar compra ${purchase.name || ''}`}
                             className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white flex items-center justify-center shadow-2xs shadow-emerald-700/15 transition-all min-h-[44px] min-w-[44px] cursor-pointer active:scale-95"
@@ -444,14 +456,21 @@ export function HomeScreen({
 
             {/* Atalho Rápido para a Última Compra Finalizada com Botão "Repetir" */}
             {latestFinishedPurchase && (
-              <div className="w-full bg-white rounded-xl border border-zinc-200 p-3 shadow-2xs flex items-center justify-between gap-3">
+              <div
+                onClick={() => {
+                  if (onSelectFinishedPurchase) {
+                    onSelectFinishedPurchase(latestFinishedPurchase);
+                  }
+                }}
+                className="w-full bg-white rounded-xl border border-zinc-200 hover:border-emerald-300 active:border-emerald-400 p-3 shadow-2xs flex items-center justify-between gap-3 cursor-pointer transition-all hover:shadow-xs group"
+              >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center space-x-1.5 mb-0.5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
                       Última compra ({formatDateBRL(latestFinishedPurchase.finishedAt || latestFinishedPurchase.createdAt)})
                     </span>
                   </div>
-                  <h4 className="text-xs sm:text-sm font-bold text-zinc-800 truncate">
+                  <h4 className="text-xs sm:text-sm font-bold text-zinc-800 group-hover:text-emerald-800 truncate transition-colors">
                     {latestFinishedPurchase.name || 'Compra sem nome'}
                   </h4>
                   <p className="text-[11px] text-zinc-500">
@@ -461,9 +480,12 @@ export function HomeScreen({
 
                 <button
                   type="button"
-                  onClick={() => handleRepeatLatestPurchase(latestFinishedPurchase)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRepeatLatestPurchase(latestFinishedPurchase);
+                  }}
                   title="Criar nova lista com estes itens"
-                  className="shrink-0 flex items-center space-x-1.5 py-2 px-3 rounded-xl bg-zinc-100 hover:bg-emerald-50 active:bg-emerald-100 text-zinc-700 hover:text-emerald-700 border border-zinc-200 hover:border-emerald-200 text-xs font-bold transition-all min-h-[38px] cursor-pointer active:scale-95"
+                  className="shrink-0 flex items-center space-x-1.5 py-2 px-3 rounded-xl bg-zinc-100 group-hover:bg-emerald-50 active:bg-emerald-100 text-zinc-700 group-hover:text-emerald-700 border border-zinc-200 group-hover:border-emerald-200 text-xs font-bold transition-all min-h-[38px] cursor-pointer active:scale-95"
                 >
                   <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Repetir</span>
