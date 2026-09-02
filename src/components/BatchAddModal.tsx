@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, ListPlus, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import { parseBatchItemsInput } from '../utils/purchaseHelpers';
+import { MOTION_TOKENS } from '../styles/motionSystem';
 
 interface BatchAddModalProps {
   isOpen: boolean;
@@ -25,12 +26,22 @@ export function BatchAddModal({ isOpen, onClose, onSubmit }: BatchAddModalProps)
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-zinc-900/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+      {/* Backdrop */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="absolute inset-0 bg-zinc-900/60 backdrop-blur-xs"
+      />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden flex flex-col my-auto"
+        exit={{ opacity: 0, scale: 0.95, y: 12 }}
+        transition={MOTION_TOKENS.spring.modal}
+        className="relative z-10 w-full max-w-md bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col my-auto"
       >
         {/* Header */}
         <div className="px-4 sm:px-5 py-3.5 border-b border-zinc-200/80 flex items-center justify-between shrink-0 bg-white">
@@ -46,13 +57,14 @@ export function BatchAddModal({ isOpen, onClose, onSubmit }: BatchAddModalProps)
             </div>
           </div>
 
-          <button
+          <motion.button
+            whileTap={{ scale: 0.88 }}
             type="button"
             onClick={onClose}
             className="w-9 h-9 rounded-xl text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <X className="w-5 h-5" />
-          </button>
+          </motion.button>
         </div>
 
         {/* Body */}
@@ -88,22 +100,25 @@ export function BatchAddModal({ isOpen, onClose, onSubmit }: BatchAddModalProps)
 
           {/* Footer */}
           <div className="p-4 sm:px-5 border-t border-zinc-200/80 bg-zinc-50/50 flex items-center space-x-2 shrink-0">
-            <button
+            <motion.button
+              whileTap={{ scale: 0.96 }}
               type="button"
               onClick={onClose}
               className="flex-1 py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-100 active:bg-zinc-200 border border-zinc-200/90 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
             >
               Cancelar
-            </button>
-            <button
+            </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 600, damping: 25 }}
               type="submit"
               disabled={!batchText.trim()}
-              className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+              className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-colors min-h-[44px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {parsedItems.length > 1
                 ? `Adicionar ${parsedItems.length} Itens`
                 : 'Adicionar Itens'}
-            </button>
+            </motion.button>
           </div>
         </form>
       </motion.div>

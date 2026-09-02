@@ -39,6 +39,8 @@ import { ItemSearchBar } from './ItemSearchBar';
 import { PurchaseItemCard } from './PurchaseItemCard';
 import { BatchAddModal } from './BatchAddModal';
 import { EditItemModal } from './EditItemModal';
+import { AnimatedCurrency } from './AnimatedCurrency';
+import { MOTION_TOKENS } from '../styles/motionSystem';
 import {
   calculateItemSubtotal,
   calculatePurchaseTotal,
@@ -90,7 +92,7 @@ interface PurchaseScreenProps {
   onEditItem: (purchaseId: string, itemId: string, updatedData: Partial<Omit<Item, 'id'>>) => void;
   onRemoveItem: (purchaseId: string, itemId: string) => void;
   onToggleBought: (purchaseId: string, itemId: string) => void;
-  onFinishPurchase?: (purchaseId: string) => void;
+  onFinishPurchase?: (purchaseId: string, customName?: string) => void;
 }
 
 export function PurchaseScreen({
@@ -130,7 +132,6 @@ export function PurchaseScreen({
   // Finish purchase modal states
   const [isConfirmFinishOpen, setIsConfirmFinishOpen] = useState(false);
   const [finishNameInput, setFinishNameInput] = useState('');
-  const [isFinishedSummaryOpen, setIsFinishedSummaryOpen] = useState(false);
 
   // Modais de Adicionar em Lote e Edição Completa
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
@@ -571,11 +572,10 @@ export function PurchaseScreen({
     if (trimmed) {
       onUpdateName(purchase.id, trimmed);
     }
-    if (onFinishPurchase) {
-      onFinishPurchase(purchase.id);
-    }
     setIsConfirmFinishOpen(false);
-    setIsFinishedSummaryOpen(true);
+    if (onFinishPurchase) {
+      onFinishPurchase(purchase.id, trimmed || undefined);
+    }
   };
 
   const totalValue = calculatePurchaseTotal(purchase);
@@ -585,129 +585,148 @@ export function PurchaseScreen({
 
   return (
     <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 flex flex-col justify-between selection:bg-emerald-500 selection:text-white font-sans">
-      {/* Header (Compacto & Sticky) */}
-      <header className="w-full bg-white border-b border-zinc-200/80 sticky top-0 z-40 shadow-2xs">
-        <div className="w-full max-w-md md:max-w-xl mx-auto px-3 py-2.5 sm:px-6 flex items-center justify-between gap-2">
-          {/* Lado Esquerdo: Botão Voltar + Nome Editável */}
-          <div className="flex items-center space-x-2 min-w-0 flex-1">
-            <button
-              onClick={handleBackClick}
-              aria-label="Voltar"
-              className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl bg-zinc-100 hover:bg-zinc-200/80 active:bg-zinc-300 flex items-center justify-center text-zinc-700 transition-colors shrink-0 cursor-pointer active:scale-95"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-
-            <div className="min-w-0 flex-1">
-              <div className="relative w-full group">
-                <input
-                  id="purchase-title-input"
-                  type="text"
-                  value={titleValue}
-                  onChange={(e) => setTitleValue(e.target.value)}
-                  onBlur={handleSaveTitle}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      (e.target as HTMLInputElement).blur();
-                    }
-                  }}
-                  placeholder="Digite aqui o nome da lista"
-                  className="w-full text-sm sm:text-base font-bold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal bg-zinc-50/80 hover:bg-zinc-100/80 focus:bg-white border border-dashed border-zinc-300 hover:border-emerald-400 focus:border-solid focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-1.5 pr-8 transition-all outline-none leading-tight truncate"
-                />
-                <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-emerald-600 transition-colors">
-                  <Pencil className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
-                </div>
-              </div>
-              {purchase.status === 'finished' && (
-                <div className="flex items-center space-x-1.5 mt-0.5 px-0.5">
-                  <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200">
-                    <CheckCircle2 className="w-2.5 h-2.5" />
-                    <span>Finalizada</span>
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Lado Direito: Menu de 3 Pontinhos (⋮) para Ações Secundárias */}
-          <div className="flex items-center shrink-0 relative">
-            <div className="relative">
+      {/* Topo Fixo Unificado: Header + Barra de Pesquisa Fixa ao Rolar */}
+      <div className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-2xs">
+        <header className="w-full">
+          <div className="w-full max-w-md md:max-w-xl mx-auto px-3 py-2 sm:px-6 flex items-center justify-between gap-2">
+            {/* Lado Esquerdo: Botão Voltar + Nome Editável */}
+            <div className="flex items-center space-x-2 min-w-0 flex-1">
               <button
-                type="button"
-                onClick={() => setIsMenuOpen((prev) => !prev)}
-                aria-label="Mais opções"
-                title="Mais opções"
-                className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl flex items-center justify-center transition-colors shrink-0 cursor-pointer active:scale-95 ${
-                  isMenuOpen
-                    ? 'bg-zinc-200 text-zinc-900'
-                    : 'bg-zinc-100 hover:bg-zinc-200/80 active:bg-zinc-300 text-zinc-700'
-                }`}
+                onClick={handleBackClick}
+                aria-label="Voltar"
+                className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl bg-zinc-100 hover:bg-zinc-200/80 active:bg-zinc-300 flex items-center justify-center text-zinc-700 transition-colors shrink-0 cursor-pointer active:scale-95"
               >
-                <MoreVertical className="w-5 h-5 text-zinc-700" />
+                <ArrowLeft className="w-5 h-5" />
               </button>
 
-              <AnimatePresence>
-                {isMenuOpen && (
-                  <>
-                    {/* Backdrop para fechar ao tocar fora */}
-                    <div
-                      className="fixed inset-0 z-40 bg-transparent"
-                      onClick={() => setIsMenuOpen(false)}
-                    />
-                    {/* Menu Popover */}
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95, y: -4 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                      transition={{ duration: 0.12 }}
-                      className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-xl border border-zinc-200/90 py-1.5 z-50 overflow-hidden"
-                    >
-                      {/* Compartilhar */}
-                      <button
-                        type="button"
-                        onClick={handleSharePurchase}
-                        className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
-                      >
-                        <Share2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span>Compartilhar</span>
-                      </button>
-
-                      {/* Exportar lista */}
-                      <button
-                        type="button"
-                        onClick={handleExportPurchase}
-                        className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
-                      >
-                        <Download className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span>Exportar lista (.txt)</span>
-                      </button>
-
-                      {/* Divisor */}
-                      <div className="h-px bg-zinc-100 my-1" />
-
-                      {/* Descartar lista / Descartar registro */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsMenuOpen(false);
-                          setIsDiscardModalOpen(true);
-                        }}
-                        className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
-                        <span>{purchase.origin === 'manual' ? 'Descartar registro' : 'Descartar lista'}</span>
-                      </button>
-                    </motion.div>
-                  </>
+              <div className="min-w-0 flex-1">
+                <div className="relative w-full group">
+                  <input
+                    id="purchase-title-input"
+                    type="text"
+                    value={titleValue}
+                    onChange={(e) => setTitleValue(e.target.value)}
+                    onBlur={handleSaveTitle}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    placeholder="Digite aqui o nome da lista"
+                    className="w-full text-sm sm:text-base font-bold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal bg-zinc-50/80 hover:bg-zinc-100/80 focus:bg-white border border-dashed border-zinc-300 hover:border-emerald-400 focus:border-solid focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-1.5 pr-8 transition-all outline-none leading-tight truncate"
+                  />
+                  <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-emerald-600 transition-colors">
+                    <Pencil className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                  </div>
+                </div>
+                {purchase.status === 'finished' && (
+                  <div className="flex items-center space-x-1.5 mt-0.5 px-0.5">
+                    <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200">
+                      <CheckCircle2 className="w-2.5 h-2.5" />
+                      <span>Finalizada</span>
+                    </span>
+                  </div>
                 )}
-              </AnimatePresence>
+              </div>
+            </div>
+
+            {/* Lado Direito: Menu de 3 Pontinhos (⋮) para Ações Secundárias */}
+            <div className="flex items-center shrink-0 relative">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsMenuOpen((prev) => !prev)}
+                  aria-label="Mais opções"
+                  title="Mais opções"
+                  className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl flex items-center justify-center transition-colors shrink-0 cursor-pointer active:scale-95 ${
+                    isMenuOpen
+                      ? 'bg-zinc-200 text-zinc-900'
+                      : 'bg-zinc-100 hover:bg-zinc-200/80 active:bg-zinc-300 text-zinc-700'
+                  }`}
+                >
+                  <MoreVertical className="w-5 h-5 text-zinc-700" />
+                </button>
+
+                <AnimatePresence>
+                  {isMenuOpen && (
+                    <>
+                      {/* Backdrop para fechar ao tocar fora */}
+                      <div
+                        className="fixed inset-0 z-40 bg-transparent"
+                        onClick={() => setIsMenuOpen(false)}
+                      />
+                      {/* Menu Popover */}
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                        transition={{ duration: 0.12 }}
+                        className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-xl border border-zinc-200/90 py-1.5 z-50 overflow-hidden"
+                      >
+                        {/* Compartilhar */}
+                        <button
+                          type="button"
+                          onClick={handleSharePurchase}
+                          className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
+                        >
+                          <Share2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Compartilhar</span>
+                        </button>
+
+                        {/* Exportar lista */}
+                        <button
+                          type="button"
+                          onClick={handleExportPurchase}
+                          className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
+                        >
+                          <Download className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Exportar lista (.txt)</span>
+                        </button>
+
+                        {/* Divisor */}
+                        <div className="h-px bg-zinc-100 my-1" />
+
+                        {/* Descartar lista / Descartar registro */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMenuOpen(false);
+                            setIsDiscardModalOpen(true);
+                          }}
+                          className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
+                          <span>{purchase.origin === 'manual' ? 'Descartar registro' : 'Descartar lista'}</span>
+                        </button>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Main Content (Rolagem Livre) */}
-      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-4 sm:py-5 flex flex-col pb-8">
+        {/* Barra de Pesquisa Fixa integrada ao Header (visível durante planejamento ou digitação manual) */}
+        {purchase.status !== 'finished' &&
+          (purchase.origin !== 'manual' || registrationMode === 'manual') && (
+            <div className="w-full max-w-md md:max-w-xl mx-auto px-3 sm:px-6 pb-2.5 pt-0.5">
+              <ItemSearchBar
+                onAddItem={handleAddItemFromSearch}
+                onOpenBatchModal={() => setIsBatchModalOpen(true)}
+                getSuggestions={suggestionsHook.getCombinedSuggestions}
+                recordManualItem={suggestionsHook.recordManualItem}
+              />
+            </div>
+          )}
+      </div>
+
+      {/* Main Content (Rolagem Livre com padding inferior dinâmico para não sobrepor o rodapé fixo) */}
+      <main
+        className={`flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-3 sm:py-4 flex flex-col ${
+          totalItemsCount > 0 ? 'pb-32 sm:pb-36' : 'pb-4 sm:pb-6'
+        }`}
+      >
         {/* Hidden Camera / File Input for Receipt Photo */}
         <input
           ref={fileInputRef}
@@ -1012,6 +1031,15 @@ export function PurchaseScreen({
                     alt="Prévia da Nota Fiscal"
                     className="max-h-[360px] w-auto max-w-full object-contain rounded-lg shadow-md"
                   />
+                  {/* Linha de Varredura Laser durante processamento OCR */}
+                  {isAnalyzingReceipt && (
+                    <motion.div
+                      initial={{ top: '0%' }}
+                      animate={{ top: ['0%', '94%', '0%'] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                      className="absolute left-0 right-0 h-1 bg-gradient-to-r from-emerald-500/10 via-emerald-400 to-emerald-500/10 shadow-[0_0_18px_3px_rgba(16,185,129,0.85)] z-10 pointer-events-none"
+                    />
+                  )}
                 </div>
 
                 {/* Loading State during AI parsing */}
@@ -1134,50 +1162,47 @@ export function PurchaseScreen({
 
         {/* Items List or Empty State (Hidden when choosing registration mode or taking photo) */}
         {purchase.origin === 'manual' && (registrationMode === 'choose' || registrationMode === 'photo') ? null : (
-          <div className="space-y-3 pb-28 sm:pb-32">
-            {/* Barra de Busca Fixa no Topo da Lista durante o Scroll */}
-            {purchase.status !== 'finished' && (
-              <div className="sticky top-[61px] sm:top-[65px] z-30 bg-zinc-50/95 backdrop-blur-md pt-1 pb-2">
-                <ItemSearchBar
-                  onAddItem={handleAddItemFromSearch}
-                  onOpenBatchModal={() => setIsBatchModalOpen(true)}
-                  getSuggestions={suggestionsHook.getCombinedSuggestions}
-                  recordManualItem={suggestionsHook.recordManualItem}
-                />
+          <div className="space-y-3">
+            {/* Lista de Cards de Itens ou Estado Vazio com Animação Fluida desde o 1º item */}
+            <div className="space-y-2.5">
+              <div className="space-y-2">
+                <AnimatePresence mode="popLayout">
+                  {totalItemsCount === 0 ? (
+                    <motion.div
+                      key="empty-state-banner"
+                      initial={{ opacity: 0, scale: 0.96 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.15 } }}
+                      transition={{ duration: 0.2 }}
+                      className="w-full flex flex-col items-center justify-center py-6 sm:py-7 px-4 sm:px-6 text-center bg-white rounded-3xl border border-zinc-200/80 my-1 shadow-2xs"
+                    >
+                      <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-2.5 shadow-2xs">
+                        <ShoppingBag className="w-7 h-7" />
+                      </div>
+                      <h3 className="text-base sm:text-lg font-bold text-zinc-900 mb-1">Sua lista está vazia</h3>
+                      <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">
+                        Use a barra de busca acima para pesquisar ou adicionar itens à sua lista.
+                      </p>
+                    </motion.div>
+                  ) : (
+                    purchase.items.map((item) => (
+                      <PurchaseItemCard
+                        key={item.id}
+                        item={item}
+                        purchaseId={purchase.id}
+                        onToggleBought={onToggleBought}
+                        onEditItem={onEditItem}
+                        onRemoveItem={(pId, iId) => {
+                          onRemoveItem(pId, iId);
+                          showToast(`"${item.name}" removido da lista`);
+                        }}
+                        getCategoryBadgeStyle={getCategoryBadgeStyle}
+                      />
+                    ))
+                  )}
+                </AnimatePresence>
               </div>
-            )}
-
-            {totalItemsCount === 0 ? (
-              <div className="flex-1 min-h-[260px] sm:min-h-[300px] flex flex-col items-center justify-center py-8 px-4 sm:px-6 text-center bg-white rounded-3xl border border-zinc-200/80 my-2 shadow-2xs">
-                <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3 shadow-2xs">
-                  <ShoppingBag className="w-8 h-8" />
-                </div>
-                <h3 className="text-lg font-bold text-zinc-900 mb-1">Sua lista está vazia</h3>
-                <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">
-                  Use a barra de busca acima para pesquisar ou adicionar itens à sua lista.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {/* Lista de Cards de Itens com Edição Inline */}
-                <div className="space-y-2">
-                  {purchase.items.map((item) => (
-                    <PurchaseItemCard
-                      key={item.id}
-                      item={item}
-                      purchaseId={purchase.id}
-                      onToggleBought={onToggleBought}
-                      onEditItem={onEditItem}
-                      onRemoveItem={(pId, iId) => {
-                        onRemoveItem(pId, iId);
-                        showToast(`"${item.name}" removido da lista`);
-                      }}
-                      getCategoryBadgeStyle={getCategoryBadgeStyle}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+            </div>
 
             {/* Seção de Sugestões Rápidas: Abaixo do bloco central, exibida apenas de 0 a 2 itens */}
             {purchase.status !== 'finished' && totalItemsCount <= 2 && availableSuggestions.length > 0 && (
@@ -1231,71 +1256,87 @@ export function PurchaseScreen({
       {/* Modal de Confirmação de Finalização */}
       <AnimatePresence>
         {isConfirmFinishOpen && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setIsConfirmFinishOpen(false);
-            }}
-          >
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+            {/* Backdrop */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsConfirmFinishOpen(false)}
+              className="absolute inset-0 bg-zinc-950/60 backdrop-blur-xs"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden relative"
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              transition={MOTION_TOKENS.spring.modal}
+              className="relative z-10 w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden my-auto"
             >
-              {/* Botão Fechar (X) no canto superior direito: apenas fecha o modal */}
-              <button
+              {/* Botão Fechar (X) */}
+              <motion.button
+                whileTap={{ scale: 0.88 }}
                 type="button"
                 onClick={() => setIsConfirmFinishOpen(false)}
                 aria-label="Fechar modal"
                 className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
               >
                 <X className="w-4 h-4" />
-              </button>
+              </motion.button>
 
-              <div className="p-5 pt-6">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 mb-3 mx-auto">
+              <div className="p-4 sm:p-5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100/90 border border-emerald-200 flex items-center justify-center text-emerald-700 mb-2.5 mx-auto shadow-2xs">
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
 
-                <h3 className="text-lg font-bold text-zinc-900 text-center tracking-tight">
-                  {purchase.origin === 'manual' ? 'Confirmar registro desta compra?' : 'Finalizar Compra?'}
+                <h3 className="text-base sm:text-lg font-extrabold text-zinc-900 text-center tracking-tight">
+                  {purchase.origin === 'manual' ? 'Confirmar Registro?' : 'Finalizar Compra?'}
                 </h3>
-                <p className="text-xs text-zinc-500 text-center mt-1">
+                <p className="text-[11px] sm:text-xs text-zinc-500 text-center mt-0.5">
                   {purchase.origin === 'manual'
-                    ? 'Confira o resumo antes de concluir este registro:'
-                    : 'Confira o resumo antes de concluir esta compra:'}
+                    ? 'Confira os dados antes de salvar o registro no histórico:'
+                    : 'Confira os dados antes de concluir e arquivar esta compra:'}
                 </p>
 
                 {/* Resumo financeiro e contagem */}
-                <div className="mt-4 bg-zinc-50 border border-zinc-200/80 rounded-xl p-3.5 space-y-2">
+                <div className="mt-3 bg-zinc-50 border border-zinc-200/80 rounded-xl p-3 space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-500 font-medium">Valor Total Estimado:</span>
-                    <span className="font-extrabold text-zinc-900 text-sm">{formatCurrencyBRL(totalValue)}</span>
+                    <span className="text-zinc-500 font-medium">Valor Total:</span>
+                    <span className="font-extrabold text-emerald-700 text-sm sm:text-base">{formatCurrencyBRL(totalValue)}</span>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-500 font-medium">Itens Comprados:</span>
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-zinc-200/60">
+                    <span className="text-zinc-500 font-medium">Itens no Carrinho:</span>
                     <span className="font-bold text-zinc-800">
-                      {boughtItemsCount} de {totalItemsCount}
+                      {boughtItemsCount} de {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'itens'}
                     </span>
                   </div>
+
+                  {/* Barra de progresso visual */}
+                  {totalItemsCount > 0 && (
+                    <div className="w-full h-1.5 bg-zinc-200/70 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all"
+                        style={{ width: `${Math.round((boughtItemsCount / totalItemsCount) * 100)}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Aviso se houver itens não comprados (Apenas para compras normais/não manuais) */}
                 {purchase.origin !== 'manual' && totalItemsCount - boughtItemsCount > 0 && (
-                  <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-900 text-xs leading-relaxed flex items-start space-x-2">
+                  <div className="mt-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-900 text-xs leading-relaxed flex items-start space-x-2">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-bold text-amber-900">
+                      <p className="font-bold text-amber-900 text-[11px]">
                         {totalItemsCount - boughtItemsCount}{' '}
                         {totalItemsCount - boughtItemsCount === 1
                           ? 'item ainda não foi marcado'
                           : 'itens ainda não foram marcados'}{' '}
                         como comprado.
                       </p>
-                      <p className="text-[11px] text-amber-700 mt-0.5">
-                        Deseja finalizar a compra mesmo assim?
+                      <p className="text-[10px] text-amber-700 mt-0.5">
+                        Os itens não marcados serão salvos como pendentes no histórico.
                       </p>
                     </div>
                   </div>
@@ -1303,7 +1344,7 @@ export function PurchaseScreen({
 
                 {/* Campo de nome opcional se a purchase ainda tiver o nome padrão automático */}
                 {isDefaultPurchaseName(purchase.name) && (
-                  <div className="mt-3.5">
+                  <div className="mt-2.5">
                     <label htmlFor="finish-purchase-name-input" className="sr-only">
                       Nome da lista
                     </label>
@@ -1313,143 +1354,30 @@ export function PurchaseScreen({
                       value={finishNameInput}
                       onChange={(e) => setFinishNameInput(e.target.value)}
                       placeholder="Dê um nome a esta lista (opcional)"
-                      className="w-full px-3.5 py-2.5 text-sm bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-zinc-900 placeholder:text-zinc-400 font-medium transition-all outline-none"
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-zinc-900 placeholder:text-zinc-400 font-medium transition-all outline-none"
                     />
                   </div>
                 )}
 
                 {/* Botões de Ação */}
-                <div className="mt-5 flex items-center space-x-2">
-                  <button
+                <div className="mt-4 flex items-center space-x-2">
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
                     type="button"
                     onClick={() => setIsConfirmFinishOpen(false)}
                     className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
                   >
-                    Cancelar
-                  </button>
-                  <button
+                    Continuar
+                  </motion.button>
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
+                    transition={{ type: 'spring', stiffness: 600, damping: 25 }}
                     type="button"
                     onClick={handleConfirmFinish}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md shadow-emerald-700/20 transition-colors min-h-[44px] cursor-pointer"
                   >
-                    {purchase.origin === 'manual' ? 'Confirmar e Registrar' : 'Confirmar e Finalizar'}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Modal de Resumo Pós-Compra */}
-      <AnimatePresence>
-        {isFinishedSummaryOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-zinc-200/90 overflow-hidden text-center"
-            >
-              <div className="p-6">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-4 mx-auto shadow-2xs">
-                  <CheckCircle2 className="w-8 h-8" />
-                </div>
-
-                <span className="inline-block px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 rounded-full border border-emerald-200 mb-2">
-                  Compra Concluída!
-                </span>
-
-                <h2 className="text-xl font-extrabold text-zinc-900 tracking-tight">
-                  {purchase.name || 'Nova compra'}
-                </h2>
-                <p className="text-xs text-zinc-500 mt-1">
-                  Resumo final da sua compra registrada:
-                </p>
-
-                <div className="mt-5 bg-zinc-50 border border-zinc-200/80 rounded-xl p-4 space-y-3 text-left">
-                  <div className="flex items-center justify-between border-b border-zinc-200/60 pb-2">
-                    <span className="text-xs text-zinc-500 font-medium">Valor Total Final:</span>
-                    <span className="text-lg font-black text-emerald-700 tracking-tight">
-                      {formatCurrencyBRL(totalValue)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-500 font-medium">Itens Comprados:</span>
-                    <span className="font-bold text-zinc-800">
-                      {boughtItemsCount} de {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'itens'}
-                    </span>
-                  </div>
-
-                  {/* Insight de Comparação com Média Histórica (exibido apenas se houver histórico) */}
-                  {comparisonInsight.hasHistory && (
-                    <div className="pt-2 border-t border-zinc-200/60">
-                      {comparisonInsight.status === 'higher' && (
-                        <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200/80 flex items-center space-x-2 text-xs">
-                          <TrendingUp className="w-4 h-4 text-amber-600 shrink-0" />
-                          <div>
-                            <span className="font-bold text-amber-900 block">
-                              {comparisonInsight.formattedDiffText}
-                            </span>
-                            <span className="text-[10px] text-amber-700 font-normal block mt-0.5">
-                              Média recente: {formatCurrencyBRL(comparisonInsight.averageValue)}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {comparisonInsight.status === 'lower' && (
-                        <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200/80 flex items-center space-x-2 text-xs">
-                          <TrendingDown className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <div>
-                            <span className="font-bold text-emerald-900 block">
-                              {comparisonInsight.formattedDiffText}
-                            </span>
-                            <span className="text-[10px] text-emerald-700 font-normal block mt-0.5">
-                              Média recente: {formatCurrencyBRL(comparisonInsight.averageValue)}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {comparisonInsight.status === 'consistent' && (
-                        <div className="p-2.5 rounded-lg bg-zinc-100 border border-zinc-200 flex items-center space-x-2 text-xs">
-                          <Minus className="w-4 h-4 text-zinc-500 shrink-0" />
-                          <div>
-                            <span className="font-semibold text-zinc-800 block">
-                              {comparisonInsight.formattedDiffText}
-                            </span>
-                            <span className="text-[10px] text-zinc-500 font-normal block mt-0.5">
-                              Média recente: {formatCurrencyBRL(comparisonInsight.averageValue)}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-6 space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      exportPurchaseAsTxt(purchase);
-                      showFeedbackToast('Lista exportada com sucesso (.txt)');
-                    }}
-                    className="w-full py-3 px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 font-bold text-xs border border-zinc-200/90 shadow-2xs transition-all min-h-[44px] cursor-pointer active:scale-95 flex items-center justify-center space-x-2"
-                  >
-                    <Download className="w-4 h-4 text-zinc-600" />
-                    <span>Exportar Lista de Compras (.txt)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onBack()}
-                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-2xs transition-all min-h-[48px] cursor-pointer active:scale-95"
-                  >
-                    Voltar para a Tela Inicial
-                  </button>
+                    {purchase.origin === 'manual' ? 'Confirmar Registro' : 'Confirmar e Finalizar'}
+                  </motion.button>
                 </div>
               </div>
             </motion.div>
@@ -1802,82 +1730,105 @@ export function PurchaseScreen({
         )}
       </AnimatePresence>
 
-      {/* Rodapé Fixo / Sticky Bottom Footer (visível apenas quando há itens na lista) */}
-      {totalItemsCount > 0 && (
-        <div className="sticky bottom-0 z-20 w-full bg-white/95 backdrop-blur-md border-t border-zinc-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] py-3 px-3.5 sm:px-6">
-          <div className="w-full max-w-md md:max-w-xl mx-auto space-y-2">
-            {/* Resumo compacto em uma linha: valor total e contagem de itens */}
-            <div className="flex items-center justify-between text-xs px-0.5">
-              <div className="flex items-center space-x-1.5">
-                <span className="text-zinc-500 font-medium">Total:</span>
-                <span className="text-base sm:text-lg font-black text-zinc-900 tracking-tight">
-                  {formatCurrencyBRL(totalValue)}
-                </span>
+      {/* Rodapé Fixo Inferior - Sempre à mostra na viewport quando há itens na lista */}
+      <AnimatePresence>
+        {totalItemsCount > 0 && (
+          <motion.footer
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-0 left-0 right-0 z-30 w-full bg-white/95 backdrop-blur-md border-t border-zinc-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] py-3 px-3.5 sm:px-6"
+          >
+            <div className="w-full max-w-md md:max-w-xl mx-auto space-y-2">
+              {/* Resumo compacto em uma linha: valor total com odômetro animado e contagem tátil */}
+              <div className="flex items-center justify-between text-xs px-0.5">
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-zinc-500 font-medium">Total:</span>
+                  <span className="text-base sm:text-lg font-black text-zinc-900 tracking-tight">
+                    <AnimatedCurrency value={totalValue} />
+                  </span>
+                </div>
+                <div className="text-zinc-600 font-semibold text-xs flex items-center space-x-1">
+                  <motion.span
+                    key={boughtItemsCount}
+                    initial={{ scale: 1.28, color: '#059669' }}
+                    animate={{ scale: 1, color: '#047857' }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                    className="inline-block font-bold"
+                  >
+                    {boughtItemsCount}
+                  </motion.span>
+                  <span>
+                    /{totalItemsCount}{' '}
+                    {totalItemsCount === 1 ? 'item' : 'itens'}{' '}
+                    {boughtItemsCount === totalItemsCount ? '✓' : 'comprados'}
+                  </span>
+                </div>
               </div>
-              <div className="text-zinc-600 font-semibold text-xs">
-                <span className="text-emerald-700 font-bold">{boughtItemsCount}</span>/{totalItemsCount}{' '}
-                {totalItemsCount === 1 ? 'item' : 'itens'}{' '}
-                {boughtItemsCount === totalItemsCount ? '✓' : 'comprados'}
-              </div>
-            </div>
 
-            {/* Botões de Ação do Rodapé */}
-            {purchase.status === 'finished' ? (
-              <motion.button
-                whileTap={{ scale: 0.98 }}
-                onClick={() => onBack()}
-                type="button"
-                className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-all min-h-[48px] cursor-pointer"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Voltar para o Início</span>
-              </motion.button>
-            ) : purchase.origin === 'manual' ? (
-              /* Sessão de Registrar Compra Já Feita: apenas o botão principal de Registrar Compra (sem Guardar Lista) */
-              <motion.button
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  setFinishNameInput('');
-                  setIsConfirmFinishOpen(true);
-                }}
-                type="button"
-                className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-all min-h-[48px] cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>Registrar Compra</span>
-              </motion.button>
-            ) : (
-              /* Sessão de Planejamento de Compra: exibe Guardar Lista e Finalizar Compra */
-              <div className="grid grid-cols-2 gap-2">
-                {/* Botão Guardar Lista */}
+              {/* Botões de Ação do Rodapé */}
+              {purchase.status === 'finished' ? (
                 <motion.button
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleSaveListForLater}
+                  whileTap={{ scale: 0.96 }}
+                  transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                  onClick={() => onBack()}
                   type="button"
-                  className="w-full flex items-center justify-center space-x-2 py-3 px-3 sm:px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 border border-zinc-200/80 font-bold text-xs sm:text-sm transition-all min-h-[48px] cursor-pointer"
+                  className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-colors min-h-[48px] cursor-pointer"
                 >
-                  <Bookmark className="w-4 h-4 text-zinc-600" />
-                  <span>Guardar Lista</span>
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Voltar para o Início</span>
                 </motion.button>
-
-                {/* Botão Finalizar Compra */}
+              ) : purchase.origin === 'manual' ? (
+                /* Sessão de Registrar Compra Já Feita: apenas o botão principal de Registrar Compra (sem Guardar Lista) */
                 <motion.button
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={{ scale: 0.96 }}
+                  transition={{ type: 'spring', stiffness: 600, damping: 25 }}
                   onClick={() => {
                     setFinishNameInput('');
                     setIsConfirmFinishOpen(true);
                   }}
                   type="button"
-                  className="w-full flex items-center justify-center space-x-2 py-3 px-3 sm:px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-all min-h-[48px] cursor-pointer"
+                  className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-colors min-h-[48px] cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>Finalizar Compra</span>
+                  <span>Registrar Compra</span>
                 </motion.button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+              ) : (
+                /* Sessão de Planejamento de Compra: exibe Guardar Lista e Finalizar Compra */
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Botão Guardar Lista */}
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
+                    transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                    onClick={handleSaveListForLater}
+                    type="button"
+                    className="w-full flex items-center justify-center space-x-2 py-3 px-3 sm:px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 border border-zinc-200/80 font-bold text-xs sm:text-sm transition-colors min-h-[48px] cursor-pointer"
+                  >
+                    <Bookmark className="w-4 h-4 text-zinc-600" />
+                    <span>Guardar Lista</span>
+                  </motion.button>
+
+                  {/* Botão Finalizar Compra */}
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
+                    transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                    onClick={() => {
+                      setFinishNameInput('');
+                      setIsConfirmFinishOpen(true);
+                    }}
+                    type="button"
+                    className="w-full flex items-center justify-center space-x-2 py-3 px-3 sm:px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-colors min-h-[48px] cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Finalizar Compra</span>
+                  </motion.button>
+                </div>
+              )}
+            </div>
+          </motion.footer>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

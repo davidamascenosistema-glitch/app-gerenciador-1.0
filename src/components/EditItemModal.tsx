@@ -3,6 +3,7 @@ import { X, Pencil, Scale, Tag } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Item } from '../types';
 import { ALL_CATEGORIES } from '../utils/purchaseHelpers';
+import { MOTION_TOKENS } from '../styles/motionSystem';
 
 interface EditItemModalProps {
   isOpen: boolean;
@@ -66,12 +67,22 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-zinc-900/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+      {/* Backdrop */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="absolute inset-0 bg-zinc-900/60 backdrop-blur-xs"
+      />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        className="w-full max-w-md max-h-[90vh] bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden flex flex-col my-auto"
+        exit={{ opacity: 0, scale: 0.95, y: 12 }}
+        transition={MOTION_TOKENS.spring.modal}
+        className="relative z-10 w-full max-w-md max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col my-auto"
       >
         {/* Header */}
         <div className="px-4 sm:px-5 py-3.5 border-b border-zinc-200/80 flex items-center justify-between shrink-0 bg-white">
@@ -85,13 +96,14 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
             </div>
           </div>
 
-          <button
+          <motion.button
+            whileTap={{ scale: 0.88 }}
             type="button"
             onClick={onClose}
             className="w-9 h-9 rounded-xl text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <X className="w-5 h-5" />
-          </button>
+          </motion.button>
         </div>
 
         {/* Body */}
@@ -119,27 +131,41 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                   <Scale className="w-3.5 h-3.5 text-zinc-600" />
                   <span>Modo de Precificação</span>
                 </span>
-                <div className="inline-flex p-0.5 rounded-lg bg-zinc-200/80">
+                <div className="relative inline-flex p-0.5 rounded-lg bg-zinc-200/80">
                   <button
                     type="button"
                     onClick={() => handleToggleWeighted(false)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                    className={`relative z-10 px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
                       !isWeighted
-                        ? 'bg-white text-emerald-800 shadow-2xs'
+                        ? 'text-emerald-800'
                         : 'text-zinc-600 hover:text-zinc-900'
                     }`}
                   >
+                    {!isWeighted && (
+                      <motion.div
+                        layoutId="edit-modal-pricing-pill"
+                        transition={MOTION_TOKENS.spring.gentle}
+                        className="absolute inset-0 bg-white rounded-md shadow-2xs -z-10"
+                      />
+                    )}
                     Por Unidade
                   </button>
                   <button
                     type="button"
                     onClick={() => handleToggleWeighted(true)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                    className={`relative z-10 px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
                       isWeighted
-                        ? 'bg-white text-emerald-800 shadow-2xs'
+                        ? 'text-emerald-800'
                         : 'text-zinc-600 hover:text-zinc-900'
                     }`}
                   >
+                    {isWeighted && (
+                      <motion.div
+                        layoutId="edit-modal-pricing-pill"
+                        transition={MOTION_TOKENS.spring.gentle}
+                        className="absolute inset-0 bg-white rounded-md shadow-2xs -z-10"
+                      />
+                    )}
                     Por Peso (kg)
                   </button>
                 </div>
@@ -170,18 +196,19 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
               </label>
               <div className="flex flex-wrap gap-1.5">
                 {ALL_CATEGORIES.map((cat) => (
-                  <button
+                  <motion.button
+                    whileTap={{ scale: 0.94 }}
                     type="button"
                     key={cat}
                     onClick={() => setCategory(cat)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
                       category === cat
                         ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200/80 border border-zinc-200/80'
                     }`}
                   >
                     {cat}
-                  </button>
+                  </motion.button>
                 ))}
               </div>
             </div>
@@ -194,13 +221,14 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                     Quantidade
                   </label>
                   <div className="flex items-center space-x-1">
-                    <button
+                    <motion.button
+                      whileTap={{ scale: 0.92 }}
                       type="button"
                       onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                       className="w-10 h-10 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 font-bold text-zinc-700 flex items-center justify-center shrink-0 cursor-pointer text-base"
                     >
                       -
-                    </button>
+                    </motion.button>
                     <input
                       type="number"
                       inputMode="numeric"
@@ -209,13 +237,14 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                       onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
                       className="w-full text-center py-2 rounded-xl border border-zinc-300 text-sm font-bold text-zinc-900 focus:border-emerald-500 h-10 outline-none"
                     />
-                    <button
+                    <motion.button
+                      whileTap={{ scale: 0.92 }}
                       type="button"
                       onClick={() => setQuantity((q) => q + 1)}
                       className="w-10 h-10 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 font-bold text-zinc-700 flex items-center justify-center shrink-0 cursor-pointer text-base"
                     >
                       +
-                    </button>
+                    </motion.button>
                   </div>
                 </div>
               )}
@@ -243,19 +272,22 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
 
           {/* Footer */}
           <div className="p-4 sm:px-5 border-t border-zinc-200/80 bg-zinc-50/50 flex items-center space-x-2 shrink-0">
-            <button
+            <motion.button
+              whileTap={{ scale: 0.96 }}
               type="button"
               onClick={onClose}
               className="flex-1 py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-100 active:bg-zinc-200 border border-zinc-200/90 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
             >
               Cancelar
-            </button>
-            <button
+            </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 600, damping: 25 }}
               type="submit"
-              className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer active:scale-95"
+              className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-colors min-h-[44px] cursor-pointer"
             >
               Salvar Alterações
-            </button>
+            </motion.button>
           </div>
         </form>
       </motion.div>

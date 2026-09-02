@@ -42,22 +42,22 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {/* Container Fixo / Flutuante na parte INFERIOR da tela, posicionado com margem de segurança acima da BottomNavBar e barras de ação */}
       <div
         aria-live="polite"
-        className="fixed bottom-24 sm:bottom-26 left-1/2 -translate-x-1/2 z-[100] pointer-events-none flex flex-col items-center justify-center w-full max-w-md px-4"
+        className="fixed bottom-28 sm:bottom-32 left-1/2 -translate-x-1/2 z-[100] pointer-events-none flex flex-col items-center justify-center w-full max-w-md px-4"
       >
         <AnimatePresence mode="wait">
           {toast && (
             <motion.div
               key={toast.id}
-              initial={{ opacity: 0, y: 12, scale: 0.95 }}
+              initial={{ opacity: 0, y: 14, scale: 0.94 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.95 }}
+              exit={{ opacity: 0, y: 8, scale: 0.94, transition: { duration: 0.12 } }}
               transition={{
                 type: 'spring',
-                damping: 25,
-                stiffness: 350,
-                mass: 0.5,
+                damping: 26,
+                stiffness: 420,
+                mass: 0.6,
               }}
-              className="pointer-events-none flex items-center space-x-2.5 px-4 py-2.5 rounded-full bg-zinc-900/95 backdrop-blur-md text-white shadow-xl shadow-black/25 border border-zinc-700/60 max-w-full"
+              className="pointer-events-none flex items-center space-x-2.5 px-4 py-2.5 rounded-full bg-zinc-900/95 backdrop-blur-md text-white shadow-xl shadow-black/30 border border-zinc-700/70 max-w-full"
             >
               <div className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />

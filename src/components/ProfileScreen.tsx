@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { ArrowLeft, User as UserIcon, Sparkles, Shield, LogOut, CheckCircle2, Loader2, Mail, Calendar } from 'lucide-react';
 import { motion } from 'motion/react';
 import { User } from '@supabase/supabase-js';
-import { BottomNavBar } from './BottomNavBar';
 
 interface ProfileScreenProps {
   user: User | null;
@@ -162,16 +161,6 @@ export function ProfileScreen({
           </div>
         </motion.div>
       </main>
-
-      {/* Barra de Navegação Fixa Inferior */}
-      <BottomNavBar
-        currentScreen="profile"
-        onNavigateToHome={onNavigateToHome || onBack}
-        onNavigateToHistory={onNavigateToHistory || (() => {})}
-        onCreateNewList={onCreateNewList || (() => {})}
-        onRegisterManual={onRegisterManual || (() => {})}
-        onRepeatPurchase={onRepeatPurchase}
-      />
     </div>
   );
 }

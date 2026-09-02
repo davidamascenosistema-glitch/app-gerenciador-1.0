@@ -81,55 +81,72 @@ export function BottomNavBar({
 
         <div className="w-full max-w-md md:max-w-xl mx-auto px-6 h-16 flex items-center justify-between relative z-10 pointer-events-auto">
           {/* 1. Item Home (Esquerda) */}
-          <button
+          <motion.button
+            whileTap={{ scale: 0.92 }}
             type="button"
             onClick={onNavigateToHome}
             aria-current={isHomeActive ? 'page' : undefined}
-            className={`flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 group focus:outline-none ${
+            className={`relative flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 px-3 rounded-xl transition-colors cursor-pointer group focus:outline-none ${
               isHomeActive
-                ? 'bg-emerald-50 text-emerald-700 font-bold'
+                ? 'text-emerald-700 font-bold'
                 : 'text-zinc-500 hover:text-zinc-900 active:text-emerald-600'
             }`}
             aria-label="Ir para a Tela Inicial"
           >
+            {isHomeActive && (
+              <motion.div
+                layoutId="active-nav-pill"
+                transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                className="absolute inset-0 bg-emerald-50 rounded-xl -z-10 border border-emerald-200/50"
+              />
+            )}
             <Home className={`w-5 h-5 transition-colors ${isHomeActive ? 'text-emerald-600 stroke-[2.5]' : 'group-hover:text-emerald-600'}`} />
             <span className={`text-[11px] mt-1 leading-none transition-colors ${isHomeActive ? 'text-emerald-700 font-bold' : 'text-zinc-600 group-hover:text-emerald-700 font-medium'}`}>
               Início
             </span>
-          </button>
+          </motion.button>
 
           {/* 2. Botão Central Flutuante Elevado com Espaçamento Totalmente Transparente */}
           <div className="absolute left-1/2 -translate-x-1/2 -top-7 flex flex-col items-center pointer-events-auto">
             {/* Botão flutuando livremente no recorte transparente */}
             <motion.button
-              whileTap={{ scale: 0.92 }}
+              whileTap={{ scale: 0.90 }}
               whileHover={{ scale: 1.04 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
               type="button"
               onClick={() => setIsSheetOpen(true)}
               aria-label="Abrir menu de novas ações de compra"
-              className="w-14 h-14 rounded-full bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 hover:from-emerald-600 hover:to-emerald-800 active:from-emerald-700 active:to-emerald-900 text-white shadow-lg shadow-emerald-700/30 flex items-center justify-center transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+              className="w-14 h-14 rounded-full bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 hover:from-emerald-600 hover:to-emerald-800 active:from-emerald-700 active:to-emerald-900 text-white shadow-lg shadow-emerald-700/30 flex items-center justify-center transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
             >
               <Plus className="w-7 h-7 stroke-[2.5]" />
             </motion.button>
           </div>
 
           {/* 3. Item Histórico (Direita) */}
-          <button
+          <motion.button
+            whileTap={{ scale: 0.92 }}
             type="button"
             onClick={onNavigateToHistory}
             aria-current={isHistoryActive ? 'page' : undefined}
-            className={`flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 px-2.5 rounded-xl transition-all cursor-pointer active:scale-95 group focus:outline-none ${
+            className={`relative flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 px-3 rounded-xl transition-colors cursor-pointer group focus:outline-none ${
               isHistoryActive
-                ? 'bg-emerald-50 text-emerald-700 font-bold'
+                ? 'text-emerald-700 font-bold'
                 : 'text-zinc-500 hover:text-zinc-900 active:text-emerald-600'
             }`}
             aria-label="Ver Histórico de Compras"
           >
+            {isHistoryActive && (
+              <motion.div
+                layoutId="active-nav-pill"
+                transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                className="absolute inset-0 bg-emerald-50 rounded-xl -z-10 border border-emerald-200/50"
+              />
+            )}
             <History className={`w-5 h-5 transition-colors ${isHistoryActive ? 'text-emerald-600 stroke-[2.5]' : 'group-hover:text-emerald-600'}`} />
             <span className={`text-[11px] mt-1 leading-none transition-colors ${isHistoryActive ? 'text-emerald-700 font-bold' : 'text-zinc-600 group-hover:text-emerald-700 font-medium'}`}>
               Histórico
             </span>
-          </button>
+          </motion.button>
         </div>
       </nav>
 
@@ -181,10 +198,11 @@ export function BottomNavBar({
               {/* Lista de 3 Opções */}
               <div className="space-y-2.5">
                 {/* Opção 1: Criar Nova Lista */}
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.98 }}
                   type="button"
                   onClick={handleCreateList}
-                  className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-emerald-50/80 active:bg-emerald-100/70 border border-zinc-200/90 hover:border-emerald-300 transition-all text-left min-h-[56px] cursor-pointer"
+                  className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-emerald-50/80 active:bg-emerald-100/70 border border-zinc-200/90 hover:border-emerald-300 transition-colors text-left min-h-[56px] cursor-pointer"
                 >
                   <div className="flex items-center space-x-3.5 min-w-0 flex-1">
                     <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
@@ -199,14 +217,15 @@ export function BottomNavBar({
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
-                </button>
+                  <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-transform shrink-0 ml-2" />
+                </motion.button>
 
                 {/* Opção 2: Repetir Compra Anterior */}
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.98 }}
                   type="button"
                   onClick={handleRepeatPurchase}
-                  className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-blue-50/80 active:bg-blue-100/70 border border-zinc-200/90 hover:border-blue-300 transition-all text-left min-h-[56px] cursor-pointer"
+                  className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-blue-50/80 active:bg-blue-100/70 border border-zinc-200/90 hover:border-blue-300 transition-colors text-left min-h-[56px] cursor-pointer"
                 >
                   <div className="flex items-center space-x-3.5 min-w-0 flex-1">
                     <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
@@ -221,14 +240,15 @@ export function BottomNavBar({
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
-                </button>
+                  <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-transform shrink-0 ml-2" />
+                </motion.button>
 
                 {/* Opção 3: Registrar Compra Já Feita */}
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.98 }}
                   type="button"
                   onClick={handleManualRegister}
-                  className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-amber-50/80 active:bg-amber-100/70 border border-zinc-200/90 hover:border-amber-300 transition-all text-left min-h-[56px] cursor-pointer"
+                  className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-amber-50/80 active:bg-amber-100/70 border border-zinc-200/90 hover:border-amber-300 transition-colors text-left min-h-[56px] cursor-pointer"
                 >
                   <div className="flex items-center space-x-3.5 min-w-0 flex-1">
                     <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
@@ -243,8 +263,8 @@ export function BottomNavBar({
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
-                </button>
+                  <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-transform shrink-0 ml-2" />
+                </motion.button>
               </div>
             </motion.div>
           </div>

@@ -13,7 +13,6 @@ import {
 import { motion } from 'motion/react';
 import { Purchase } from '../types';
 import { calculatePurchaseTotal, formatCurrencyBRL, formatDateBRL } from '../utils/purchaseHelpers';
-import { BottomNavBar } from './BottomNavBar';
 
 interface HistoryScreenProps {
   finishedPurchases: Purchase[];
@@ -253,18 +252,6 @@ export function HistoryScreen({
           </div>
         )}
       </main>
-
-      {/* Barra de Navegação Fixa Inferior apenas no modo padrão de navegação (oculta no selectionMode) */}
-      {!selectionMode && (
-        <BottomNavBar
-          currentScreen="history"
-          onNavigateToHome={onNavigateToHome || onBack}
-          onNavigateToHistory={() => {}}
-          onCreateNewList={onCreateNewList || (() => {})}
-          onRegisterManual={onRegisterManual || (() => {})}
-          onRepeatPurchase={onRepeatPurchase}
-        />
-      )}
     </div>
   );
 }

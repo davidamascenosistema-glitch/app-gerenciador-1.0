@@ -18,7 +18,6 @@ import { usePurchases } from '../hooks/usePurchases';
 import { calculatePurchaseTotal, formatCurrencyBRL, formatDateBRL } from '../utils/purchaseHelpers';
 import { Purchase } from '../types';
 import { useToast } from './Toast';
-import { BottomNavBar } from './BottomNavBar';
 
 interface HomeScreenProps {
   purchasesHook?: ReturnType<typeof usePurchases>;
@@ -574,16 +573,6 @@ export function HomeScreen({
           )}
         </AnimatePresence>
       </main>
-
-      {/* Barra de Navegação Fixa Inferior */}
-      <BottomNavBar
-        currentScreen="home"
-        onNavigateToHome={() => {}}
-        onNavigateToHistory={onNavigateToHistory || (() => {})}
-        onCreateNewList={handleCreateNewList}
-        onRegisterManual={handleRegisterManual}
-        onRepeatPurchase={onRepeatPurchase}
-      />
     </div>
   );
 }

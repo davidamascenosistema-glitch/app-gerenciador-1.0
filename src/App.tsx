@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import React, { useState, type ReactNode } from 'react';
 import { ShoppingCart, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { HomeScreen } from './components/HomeScreen';
 import { PurchaseScreen } from './components/PurchaseScreen';
 import { PurchaseDetailScreen } from './components/PurchaseDetailScreen';
@@ -9,6 +10,8 @@ import { AuthScreen } from './components/AuthScreen';
 import { usePurchases } from './hooks/usePurchases';
 import { useAuth } from './hooks/useAuth';
 import { ToastProvider, useToast } from './components/Toast';
+import { PurchaseCelebrationModal } from './components/PurchaseCelebrationModal';
+import { BottomNavBar } from './components/BottomNavBar';
 import { Purchase } from './types';
 
 /**
@@ -21,6 +24,7 @@ function MainApp() {
   const [activeScreen, setActiveScreen] = useState<'home' | 'history' | 'profile' | 'history_select'>('home');
   const [activePurchaseId, setActivePurchaseId] = useState<string | null>(null);
   const [selectedDetailPurchaseId, setSelectedDetailPurchaseId] = useState<string | null>(null);
+  const [celebratingPurchase, setCelebratingPurchase] = useState<Purchase | null>(null);
 
   // 1. Enquanto carrega a sessão do Supabase, exibe splash screen discreto
   if (auth.loading) {
@@ -90,6 +94,20 @@ function MainApp() {
     setActivePurchaseId(newPurchase.id);
   };
 
+  const handleFinishPurchase = (purchaseId: string, customName?: string) => {
+    const current = purchasesHook.getPurchaseById(purchaseId);
+    purchasesHook.finishPurchase(purchaseId);
+    if (current) {
+      setCelebratingPurchase({
+        ...current,
+        name: customName || current.name,
+        status: 'finished',
+        finishedAt: new Date().toISOString(),
+      });
+    }
+    setActivePurchaseId(null);
+  };
+
   const handleSignOut = async () => {
     await auth.signOut();
     setActiveScreen('home');
@@ -98,20 +116,24 @@ function MainApp() {
     showToast('Sessão encerrada com sucesso.');
   };
 
+  // Determinar a tela ativa e chave de transição
+  let screenKey = 'home';
+  let content: React.ReactNode = null;
+
   // Se uma compra finalizada foi selecionada no histórico, exibe a tela de detalhes somente leitura
   if (selectedDetailPurchase && selectedDetailPurchase.status === 'finished') {
-    return (
+    screenKey = `detail-${selectedDetailPurchase.id}`;
+    content = (
       <PurchaseDetailScreen
         purchase={selectedDetailPurchase}
         onBack={() => setSelectedDetailPurchaseId(null)}
         onRepeatPurchase={handleSelectPurchaseToRepeat}
       />
     );
-  }
-
-  // A PurchaseScreen normal (edição) é usada EXCLUSIVAMENTE para compras com status 'pending'
-  if (activePurchase && activePurchase.status === 'pending') {
-    return (
+  } else if (activePurchase && activePurchase.status === 'pending') {
+    // A PurchaseScreen normal (edição) é usada EXCLUSIVAMENTE para compras com status 'pending'
+    screenKey = `purchase-${activePurchase.id}`;
+    content = (
       <PurchaseScreen
         userId={auth.user?.id}
         purchase={activePurchase}
@@ -126,13 +148,12 @@ function MainApp() {
         onEditItem={purchasesHook.editItemInPurchase}
         onRemoveItem={purchasesHook.removeItemFromPurchase}
         onToggleBought={purchasesHook.toggleItemBought}
-        onFinishPurchase={purchasesHook.finishPurchase}
+        onFinishPurchase={handleFinishPurchase}
       />
     );
-  }
-
-  if (activeScreen === 'history_select') {
-    return (
+  } else if (activeScreen === 'history_select') {
+    screenKey = 'history_select';
+    content = (
       <HistoryScreen
         selectionMode={true}
         finishedPurchases={purchasesHook.getFinishedPurchases()}
@@ -140,10 +161,9 @@ function MainApp() {
         onSelectPurchase={handleSelectPurchaseToRepeat}
       />
     );
-  }
-
-  if (activeScreen === 'history') {
-    return (
+  } else if (activeScreen === 'history') {
+    screenKey = 'history';
+    content = (
       <HistoryScreen
         finishedPurchases={purchasesHook.getFinishedPurchases()}
         onBack={() => setActiveScreen('home')}
@@ -155,10 +175,9 @@ function MainApp() {
         onRepeatPurchase={handleStartRepeatPurchase}
       />
     );
-  }
-
-  if (activeScreen === 'profile') {
-    return (
+  } else if (activeScreen === 'profile') {
+    screenKey = 'profile';
+    content = (
       <ProfileScreen
         user={auth.user}
         onSignOut={handleSignOut}
@@ -170,25 +189,88 @@ function MainApp() {
         onRepeatPurchase={handleStartRepeatPurchase}
       />
     );
+  } else {
+    screenKey = 'home';
+    content = (
+      <HomeScreen
+        purchasesHook={purchasesHook}
+        onNavigateToPurchase={(id) => {
+          setActivePurchaseId(id);
+        }}
+        onNavigateToHistory={() => {
+          setActiveScreen('history');
+        }}
+        onNavigateToProfile={() => {
+          setActiveScreen('profile');
+        }}
+        onRepeatPurchase={handleStartRepeatPurchase}
+        onSelectFinishedPurchase={(purchase) => {
+          setSelectedDetailPurchaseId(purchase.id);
+        }}
+      />
+    );
   }
 
+  // Definir se a barra de navegação inferior deve estar visível
+  const isEditingPurchase = Boolean(activePurchase && activePurchase.status === 'pending');
+  const isViewingDetail = Boolean(selectedDetailPurchase && selectedDetailPurchase.status === 'finished');
+  const isSelectingHistory = activeScreen === 'history_select';
+  const showBottomNav = !isEditingPurchase && !isViewingDetail && !isSelectingHistory;
+
   return (
-    <HomeScreen
-      purchasesHook={purchasesHook}
-      onNavigateToPurchase={(id) => {
-        setActivePurchaseId(id);
-      }}
-      onNavigateToHistory={() => {
-        setActiveScreen('history');
-      }}
-      onNavigateToProfile={() => {
-        setActiveScreen('profile');
-      }}
-      onRepeatPurchase={handleStartRepeatPurchase}
-      onSelectFinishedPurchase={(purchase) => {
-        setSelectedDetailPurchaseId(purchase.id);
-      }}
-    />
+    <div className="w-full min-h-screen bg-zinc-50 text-zinc-900 flex flex-col relative overflow-x-clip">
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={screenKey}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.12, ease: 'easeOut' }}
+          className="w-full flex-1 flex flex-col"
+        >
+          {content}
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Barra de Navegação Fixa Inferior Persistente - Não desmonta entre Início, Histórico e Perfil */}
+      <AnimatePresence>
+        {showBottomNav && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <BottomNavBar
+              currentScreen={activeScreen === 'history' ? 'history' : activeScreen === 'profile' ? 'profile' : 'home'}
+              onNavigateToHome={() => setActiveScreen('home')}
+              onNavigateToHistory={() => setActiveScreen('history')}
+              onNavigateToProfile={() => setActiveScreen('profile')}
+              onCreateNewList={handleCreateNewList}
+              onRegisterManual={handleRegisterManual}
+              onRepeatPurchase={handleStartRepeatPurchase}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Celebração Especial de Compra Finalizada */}
+      <AnimatePresence>
+        {celebratingPurchase && (
+          <PurchaseCelebrationModal
+            isOpen={!!celebratingPurchase}
+            purchase={celebratingPurchase}
+            allPurchases={purchasesHook.purchases}
+            onClose={() => setCelebratingPurchase(null)}
+            onViewDetails={(p) => {
+              setCelebratingPurchase(null);
+              setSelectedDetailPurchaseId(p.id);
+            }}
+            showToast={showToast}
+          />
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
