@@ -5,8 +5,7 @@ import { Item } from '../types';
 import {
   calculateItemSubtotal,
   formatCurrencyBRL,
-  STANDARD_CATEGORIES,
-  WEIGHT_CATEGORIES,
+  ALL_CATEGORIES,
 } from '../utils/purchaseHelpers';
 
 interface PurchaseItemCardProps {
@@ -29,6 +28,11 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   const subtotal = calculateItemSubtotal(item);
   const badgeStyle = getCategoryBadgeStyle(item.category);
   const cleanItemName = item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, '').trim();
+
+  // Configuração de exibição do toggle de precificação baseada no pricingModeSource
+  const showToggle = item.pricingModeSource === 'both' || item.pricingModeSource == null;
+  const unitLabel = item.pricingModeSource === 'both' ? 'Pré-embalado' : 'Por Unidade';
+  const weightLabel = item.pricingModeSource === 'both' ? 'Pesado' : 'Por Peso';
 
   // 1. Estados locais para edição inline de NOME
   const [isEditingName, setIsEditingName] = useState(false);
@@ -193,6 +197,28 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
     }
   };
 
+  // 5. Alternar Modo de Precificação (Unidade vs Peso)
+  const handleSetPricingMode = (weighted: boolean) => {
+    if (weighted === Boolean(item.isWeighted)) return;
+
+    if (weighted) {
+      const newWeight = item.weight || item.quantity || 1;
+      onEditItem(purchaseId, item.id, {
+        isWeighted: true,
+        weight: newWeight,
+        quantity: 1,
+      });
+    } else {
+      const newQty = item.weight ? Math.max(1, Math.round(item.weight)) : item.quantity || 1;
+      onEditItem(purchaseId, item.id, {
+        isWeighted: false,
+        quantity: newQty,
+      });
+    }
+  };
+
+  const hasValidPrice = item.price !== undefined && item.price !== null && item.price > 0;
+
   return (
     <motion.div
       layout
@@ -200,14 +226,14 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.18 }}
-      className={`w-full rounded-2xl border transition-all p-3 sm:p-3.5 flex flex-col gap-2.5 ${
+      className={`w-full rounded-2xl border transition-all p-3.5 sm:p-4 flex flex-col gap-3 ${
         item.bought
           ? 'bg-zinc-100/70 border-zinc-200/70 text-zinc-500'
           : 'bg-white border-zinc-200/90 shadow-2xs text-zinc-900'
       }`}
     >
-      {/* LINHA 1: Checkbox + Nome (Inline) + Categoria (Dropdown Popover) + Subtotal em Destaque + Excluir */}
-      <div className="flex items-center justify-between gap-2">
+      {/* LINHA 1: Checkbox + Nome (Inline) + Categoria (Dropdown Popover) + Excluir */}
+      <div className="flex items-start justify-between gap-2">
         <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0 flex-1">
           {/* Checkbox de Comprado */}
           <button
@@ -262,7 +288,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                 </button>
               )}
 
-              {/* CATEGORIA EDITÁVEL INLINE (POPOVER DROPDOWN) */}
+              {/* CATEGORIA EDITÁVEL INLINE (POPOVER DROPDOWN - TODAS AS CATEGORIAS) */}
               <div className="relative inline-block" ref={categoryMenuRef}>
                 <button
                   type="button"
@@ -284,31 +310,16 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                       transition={{ duration: 0.15 }}
                       className="absolute left-0 top-full mt-1.5 z-40 w-52 bg-white rounded-2xl shadow-xl border border-zinc-200/90 p-2 text-zinc-900"
                     >
-                      {/* Cabeçalho do Popover com Alternador de Peso / Unidade */}
-                      <div className="px-2 py-1 mb-1.5 flex items-center justify-between border-b border-zinc-100">
+                      {/* Cabeçalho do Popover */}
+                      <div className="px-2 py-1 mb-1.5 border-b border-zinc-100">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                          Categoria
+                          Selecione a Categoria
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newWeighted = !item.isWeighted;
-                            const defaultCat = newWeighted ? WEIGHT_CATEGORIES[0] : STANDARD_CATEGORIES[0];
-                            onEditItem(purchaseId, item.id, {
-                              isWeighted: newWeighted,
-                              category: defaultCat,
-                              weight: newWeighted ? (item.weight || item.quantity || 1) : undefined,
-                            });
-                          }}
-                          className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
-                        >
-                          {item.isWeighted ? 'Mudar p/ Un' : 'Mudar p/ Kg'}
-                        </button>
                       </div>
 
-                      {/* Lista de Categorias aplicáveis */}
-                      <div className="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto pr-0.5">
-                        {(item.isWeighted ? WEIGHT_CATEGORIES : STANDARD_CATEGORIES).map((cat) => {
+                      {/* Lista de Todas as Categorias Disponíveis */}
+                      <div className="grid grid-cols-1 gap-1 max-h-52 overflow-y-auto pr-0.5">
+                        {ALL_CATEGORIES.map((cat) => {
                           const isSelected = item.category === cat;
                           return (
                             <button
@@ -338,140 +349,170 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
           </div>
         </div>
 
-        {/* Subtotal e Botão de Excluir (Sem ícone de lápis) */}
-        <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
-          <div className="text-right flex flex-col items-end justify-center">
-            <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider leading-none mb-1">
-              Subtotal
-            </span>
-            <span
-              className={`text-base sm:text-lg font-black tracking-tight leading-none ${
-                item.bought ? 'text-zinc-400' : 'text-emerald-700'
+        {/* Botão de Excluir */}
+        <button
+          type="button"
+          onClick={() => onRemoveItem(purchaseId, item.id)}
+          title="Remover item"
+          aria-label="Remover item"
+          className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center cursor-pointer active:scale-95 shrink-0"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* LINHA 2: TOGGLE EXPLÍCITO DE MODO DE PREÇO (Apenas quando aplicável) */}
+      {showToggle && (
+        <div className="flex items-center justify-between pl-11 sm:pl-12">
+          <div className="inline-flex p-0.5 rounded-xl bg-zinc-100/90 border border-zinc-200/80">
+            <button
+              type="button"
+              onClick={() => handleSetPricingMode(false)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                !item.isWeighted
+                  ? 'bg-white text-emerald-800 shadow-2xs'
+                  : 'text-zinc-500 hover:text-zinc-800'
               }`}
             >
-              {formatCurrencyBRL(subtotal)}
-            </span>
+              {unitLabel}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetPricingMode(true)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                item.isWeighted
+                  ? 'bg-white text-emerald-800 shadow-2xs'
+                  : 'text-zinc-500 hover:text-zinc-800'
+              }`}
+            >
+              {weightLabel}
+            </button>
           </div>
+        </div>
+      )}
 
-          {/* Botão de Excluir */}
-          <button
-            type="button"
-            onClick={() => onRemoveItem(purchaseId, item.id)}
-            title="Remover item"
-            aria-label="Remover item"
-            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center cursor-pointer active:scale-95 shrink-0"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+      {/* LINHA 3: QUANTIDADE/PESO E PREÇO LADO A LADO COM MESMO PESO VISUAL */}
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 pl-11 sm:pl-12">
+        {/* Coluna Esquerda: Quantidade / Peso */}
+        <div className="flex flex-col">
+          <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+            {item.isWeighted ? 'Peso (kg)' : 'Quantidade'}
+          </label>
+          <div className="h-10 sm:h-11 flex items-center bg-zinc-50 hover:bg-zinc-100/70 rounded-xl border border-zinc-200/90 p-0.5 transition-colors">
+            <button
+              type="button"
+              onClick={() => handleStepQty(-1)}
+              title={item.isWeighted ? 'Diminuir peso (-0.1kg)' : 'Diminuir quantidade (-1)'}
+              className="w-8 h-full rounded-lg bg-white text-zinc-700 hover:text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 font-bold text-sm flex items-center justify-center cursor-pointer shadow-2xs transition-all active:scale-95 shrink-0"
+            >
+              -
+            </button>
+
+            {isEditingQty ? (
+              <input
+                ref={qtyInputRef}
+                type="text"
+                inputMode="decimal"
+                value={qtyInput}
+                onChange={(e) => setQtyInput(e.target.value)}
+                onBlur={handleSaveQty}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveQty();
+                  if (e.key === 'Escape') setIsEditingQty(false);
+                }}
+                className="flex-1 min-w-0 text-center text-xs sm:text-sm font-bold bg-white text-zinc-900 border border-emerald-500 rounded-md py-1 outline-none shadow-2xs h-full"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsEditingQty(true)}
+                title="Toque para digitar quantidade ou peso"
+                className="flex-1 min-w-0 text-center text-xs sm:text-sm font-bold text-zinc-800 hover:text-emerald-800 cursor-pointer py-1 truncate px-1"
+              >
+                {item.isWeighted ? (
+                  <span>
+                    {item.weight !== undefined && item.weight !== null
+                      ? item.weight.toString().replace('.', ',')
+                      : item.quantity.toString().replace('.', ',')}{' '}
+                    <span className="text-[11px] font-semibold text-zinc-500">kg</span>
+                  </span>
+                ) : (
+                  <span>
+                    {item.quantity}{' '}
+                    <span className="text-[11px] font-semibold text-zinc-500">un</span>
+                  </span>
+                )}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => handleStepQty(1)}
+              title={item.isWeighted ? 'Aumentar peso (+0.1kg)' : 'Aumentar quantidade (+1)'}
+              className="w-8 h-full rounded-lg bg-white text-zinc-700 hover:text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 font-bold text-sm flex items-center justify-center cursor-pointer shadow-2xs transition-all active:scale-95 shrink-0"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        {/* Coluna Direita: Preço Unitário / Preço por Kg */}
+        <div className="flex flex-col">
+          <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+            {item.isWeighted ? 'Preço por Kg' : 'Preço Unitário'}
+          </label>
+          <div className="h-10 sm:h-11 flex items-center bg-zinc-50 hover:bg-zinc-100/70 rounded-xl border border-zinc-200/90 px-2.5 transition-colors focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:bg-white">
+            <span className="text-xs font-bold text-zinc-400 mr-1.5 shrink-0">R$</span>
+            <input
+              ref={priceInputRef}
+              type="text"
+              inputMode="decimal"
+              value={priceInput}
+              onFocus={() => setIsEditingPrice(true)}
+              onChange={(e) => setPriceInput(e.target.value)}
+              onBlur={handleSavePrice}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSavePrice();
+                  priceInputRef.current?.blur();
+                }
+                if (e.key === 'Escape') {
+                  setPriceInput(
+                    item.price !== undefined && item.price !== null && item.price > 0
+                      ? item.price.toString().replace('.', ',')
+                      : ''
+                  );
+                  setIsEditingPrice(false);
+                  priceInputRef.current?.blur();
+                }
+              }}
+              placeholder="0,00"
+              className="w-full bg-transparent text-xs sm:text-sm font-bold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal outline-none"
+            />
+          </div>
         </div>
       </div>
 
-      {/* LINHA 2: EDIÇÃO INLINE DE QUANTIDADE/PESO E PREÇO UNITÁRIO (DISCRETO E APOIO) */}
-      <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-zinc-100/90 pl-11 sm:pl-12">
-        {/* Controle Stepper de Quantidade / Peso */}
-        <div className="flex items-center space-x-1 bg-zinc-100/90 hover:bg-zinc-200/60 p-0.5 rounded-xl border border-zinc-200/80 transition-colors">
-          <button
-            type="button"
-            onClick={() => handleStepQty(-1)}
-            title={item.isWeighted ? 'Diminuir peso (-0.1kg)' : 'Diminuir quantidade (-1)'}
-            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white text-zinc-700 hover:text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 font-bold text-xs sm:text-sm flex items-center justify-center cursor-pointer shadow-2xs transition-all active:scale-95"
+      {/* LINHA 4: SUBTOTAL ABAIXO DOS INPUTS (ORDEM LÓGICA: INPUTS -> DERIVADO) */}
+      <div className="flex items-center justify-between pt-2 border-t border-zinc-100/90 pl-11 sm:pl-12">
+        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+          Subtotal
+        </span>
+        {hasValidPrice ? (
+          <span
+            className={`text-base sm:text-lg font-black tracking-tight ${
+              item.bought ? 'text-zinc-400' : 'text-emerald-700'
+            }`}
           >
-            -
-          </button>
-
-          {isEditingQty ? (
-            <input
-              ref={qtyInputRef}
-              type="text"
-              inputMode="decimal"
-              value={qtyInput}
-              onChange={(e) => setQtyInput(e.target.value)}
-              onBlur={handleSaveQty}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveQty();
-                if (e.key === 'Escape') setIsEditingQty(false);
-              }}
-              className="w-16 sm:w-18 text-center text-xs sm:text-sm font-bold bg-white text-zinc-900 border border-emerald-500 rounded-md py-0.5 outline-none shadow-2xs"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsEditingQty(true)}
-              title="Toque para digitar quantidade ou peso"
-              className="px-2 py-0.5 rounded-lg bg-white hover:bg-emerald-50/70 border border-dashed border-zinc-300 hover:border-emerald-400 text-xs sm:text-sm font-bold text-zinc-800 hover:text-emerald-800 cursor-pointer min-w-[50px] text-center shadow-2xs transition-all"
-            >
-              {item.isWeighted ? (
-                <span>
-                  {item.weight !== undefined && item.weight !== null
-                    ? item.weight.toString().replace('.', ',')
-                    : item.quantity.toString().replace('.', ',')}{' '}
-                  <span className="text-[11px] font-semibold text-zinc-500">kg</span>
-                </span>
-              ) : (
-                <span>
-                  {item.quantity}{' '}
-                  <span className="text-[11px] font-semibold text-zinc-500">un</span>
-                </span>
-              )}
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => handleStepQty(1)}
-            title={item.isWeighted ? 'Aumentar peso (+0.1kg)' : 'Aumentar quantidade (+1)'}
-            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white text-zinc-700 hover:text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 font-bold text-xs sm:text-sm flex items-center justify-center cursor-pointer shadow-2xs transition-all active:scale-95"
-          >
-            +
-          </button>
-        </div>
-
-        {/* Preço Unitário / por kg Discreto (Apoio Visual Secundário) */}
-        <div className="flex items-center space-x-1.5 text-xs text-zinc-500">
-          <span className="text-[11px] text-zinc-400 font-medium">
-            {item.isWeighted ? 'por kg:' : 'unit.:'}
+            {formatCurrencyBRL(subtotal)}
           </span>
-
-          {isEditingPrice ? (
-            <div className="flex items-center bg-white border border-emerald-500 ring-2 ring-emerald-500/20 rounded-xl px-2 py-0.5 shadow-2xs">
-              <span className="text-xs font-bold text-emerald-700 mr-1">R$</span>
-              <input
-                ref={priceInputRef}
-                type="text"
-                inputMode="decimal"
-                value={priceInput}
-                onChange={(e) => setPriceInput(e.target.value)}
-                onBlur={handleSavePrice}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSavePrice();
-                  if (e.key === 'Escape') setIsEditingPrice(false);
-                }}
-                placeholder="0,00"
-                className="w-16 sm:w-20 text-xs sm:text-sm font-bold text-zinc-900 outline-none bg-transparent"
-              />
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsEditingPrice(true)}
-              title="Toque para editar o preço unitário"
-              className={`px-2 py-0.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border border-dashed shadow-2xs ${
-                item.price !== undefined && item.price !== null && item.price > 0
-                  ? 'bg-zinc-50 hover:bg-emerald-50/80 text-zinc-700 hover:text-emerald-800 border-zinc-300 hover:border-emerald-400'
-                  : 'bg-amber-50/80 hover:bg-amber-100/90 text-amber-800 border-amber-300 hover:border-amber-400'
-              }`}
-            >
-              {item.price !== undefined && item.price !== null && item.price > 0 ? (
-                formatCurrencyBRL(item.price)
-              ) : (
-                <span className="text-[11px] font-medium text-amber-700">
-                  + Preço
-                </span>
-              )}
-            </button>
-          )}
-        </div>
+        ) : (
+          <span className="text-xs font-normal text-zinc-400">
+            Subtotal: — aguardando preço
+          </span>
+        )}
       </div>
     </motion.div>
   );
 };
+

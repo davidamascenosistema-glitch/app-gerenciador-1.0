@@ -1,3 +1,5 @@
+export type PricingModeDefault = 'unit' | 'weight' | 'both';
+
 export interface Item {
   id: string;
   name: string;
@@ -7,6 +9,7 @@ export interface Item {
   isWeighted: boolean;   // indica se é produto por peso (kg) ou por unidade
   price?: number;
   bought: boolean;
+  pricingModeSource?: PricingModeDefault | null; // NOVO — null = item não cadastrado na base genérica
 }
 
 export interface ItemSuggestion {
@@ -15,6 +18,7 @@ export interface ItemSuggestion {
   category: string;
   count?: number;
   source: 'personal' | 'generic';
+  defaultPricingMode?: PricingModeDefault; // NOVO — só populado quando source === 'generic'
 }
 
 export interface Purchase {

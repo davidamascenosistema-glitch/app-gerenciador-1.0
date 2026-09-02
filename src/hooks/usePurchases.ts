@@ -21,6 +21,7 @@ export function usePurchases(userId?: string | null) {
       isWeighted: Boolean(dbItem.is_weighted ?? dbItem.isWeighted ?? false),
       price: dbItem.price != null ? Number(dbItem.price) : undefined,
       bought: Boolean(dbItem.bought ?? false),
+      pricingModeSource: dbItem.pricing_mode_source ?? dbItem.pricingModeSource ?? null,
     };
   };
 
@@ -215,6 +216,7 @@ export function usePurchases(userId?: string | null) {
       isWeighted: item.isWeighted || false,
       price: item.price,
       bought: false,
+      pricingModeSource: item.pricingModeSource ?? null,
     }));
 
     const newPurchase: Purchase = {
@@ -387,6 +389,7 @@ export function usePurchases(userId?: string | null) {
       isWeighted: itemData.isWeighted || false,
       price: itemData.price,
       bought: defaultBought,
+      pricingModeSource: itemData.pricingModeSource ?? null,
     };
 
     setPurchases((prev) =>
@@ -413,6 +416,7 @@ export function usePurchases(userId?: string | null) {
           is_weighted: Boolean(itemData.isWeighted),
           price: itemData.price != null ? itemData.price : null,
           bought: defaultBought,
+          pricing_mode_source: itemData.pricingModeSource ?? null,
           created_at: new Date().toISOString(),
         })
         .then(({ error }) => {
@@ -450,6 +454,7 @@ export function usePurchases(userId?: string | null) {
       if (updatedData.isWeighted !== undefined) dbUpdate.is_weighted = Boolean(updatedData.isWeighted);
       if (updatedData.price !== undefined) dbUpdate.price = updatedData.price != null ? updatedData.price : null;
       if (updatedData.bought !== undefined) dbUpdate.bought = Boolean(updatedData.bought);
+      if (updatedData.pricingModeSource !== undefined) dbUpdate.pricing_mode_source = updatedData.pricingModeSource;
 
       supabase.from('purchase_items').update(dbUpdate).eq('id', itemId).then(({ error }) => {
         if (error) console.error('Erro ao atualizar item:', error);

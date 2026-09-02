@@ -5,6 +5,7 @@ import {
   fetchPersonalSuggestionsFromDb,
   recordGenericItemUsage,
   normalizeText,
+  getSearchRelevanceScore,
 } from '../services/suggestionsService';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 
@@ -13,6 +14,7 @@ export interface UseItemSuggestionsReturn {
   genericSuggestions: ItemSuggestion[];
   loading: boolean;
   getCombinedSuggestions: (query: string) => ItemSuggestion[];
+  getQuickSuggestions: (alreadyAddedNames: string[], maxTotal?: number) => ItemSuggestion[];
   recordManualItem: (name: string, category: string) => Promise<void>;
   refreshSuggestions: () => Promise<void>;
 }
@@ -120,21 +122,89 @@ export function useItemSuggestions(
         return [...personalTop, ...genericTop];
       }
 
-      // 1. Filtra do histórico pessoal
-      const personalMatches = personalSuggestions.filter((item) =>
-        normalizeText(item.name).includes(cleanQuery)
-      );
+      // 1. Filtra do histórico pessoal com pontuação por prefixo de palavras
+      const personalMatches = personalSuggestions
+        .map((item) => ({
+          item,
+          score: getSearchRelevanceScore(item.name, cleanQuery),
+        }))
+        .filter(({ score }) => score >= 0)
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return (b.item.count || 1) - (a.item.count || 1);
+        })
+        .map(({ item }) => item);
 
       const personalNamesSet = new Set(personalMatches.map((i) => normalizeText(i.name)));
 
       // 2. Filtra da base genérica ignorando os que já estão no histórico pessoal
-      const genericMatches = genericSuggestions.filter(
-        (item) =>
-          normalizeText(item.name).includes(cleanQuery) &&
-          !personalNamesSet.has(normalizeText(item.name))
-      );
+      const genericMatches = genericSuggestions
+        .filter((item) => !personalNamesSet.has(normalizeText(item.name)))
+        .map((item) => ({
+          item,
+          score: getSearchRelevanceScore(item.name, cleanQuery),
+        }))
+        .filter(({ score }) => score >= 0)
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return (b.item.count || 1) - (a.item.count || 1);
+        })
+        .map(({ item }) => item);
 
       return [...personalMatches, ...genericMatches].slice(0, 10);
+    },
+    [personalSuggestions, genericSuggestions]
+  );
+
+  /**
+   * Retorna a lista combinada de sugestões rápidas para exibição em botões:
+   * - Busca sugestões pessoais com limite igual a maxTotal (6)
+   * - Filtra qualquer nome que já esteja em alreadyAddedNames (case-insensitive)
+   * - Calcula remainingSlots = maxTotal - personalSuggestions.length
+   * - Se remainingSlots > 0, busca sugestões genéricas complementares (ordenadas por uso),
+   *   filtrando já adicionados e já vindos das pessoais (sem duplicata)
+   * - Retorna array único concatenando primeiro pessoais depois genéricas, nunca excedendo maxTotal
+   */
+  const getQuickSuggestions = useCallback(
+    (alreadyAddedNames: string[] = [], maxTotal: number = 6): ItemSuggestion[] => {
+      const addedSet = new Set(
+        alreadyAddedNames.map((n) => (n || '').trim().toLowerCase()).filter(Boolean)
+      );
+
+      // 1. Sugestões pessoais filtradas
+      const filteredPersonal: ItemSuggestion[] = [];
+      const personalSeen = new Set<string>();
+
+      for (const item of personalSuggestions) {
+        const lower = (item.name || '').trim().toLowerCase();
+        if (!lower || addedSet.has(lower) || personalSeen.has(lower)) continue;
+        personalSeen.add(lower);
+        filteredPersonal.push(item);
+        if (filteredPersonal.length >= maxTotal) break;
+      }
+
+      // 2. Calcula slots restantes
+      const remainingSlots = maxTotal - filteredPersonal.length;
+      if (remainingSlots <= 0) {
+        return filteredPersonal;
+      }
+
+      // 3. Sugestões genéricas complementares
+      const filteredGeneric: ItemSuggestion[] = [];
+      const genericSeen = new Set<string>();
+
+      for (const item of genericSuggestions) {
+        const lower = (item.name || '').trim().toLowerCase();
+        if (!lower || addedSet.has(lower) || personalSeen.has(lower) || genericSeen.has(lower)) {
+          continue;
+        }
+        genericSeen.add(lower);
+        filteredGeneric.push(item);
+        if (filteredGeneric.length >= remainingSlots) break;
+      }
+
+      // 4. Concatena mantendo a ordem: pessoais primeiro, depois genéricas
+      return [...filteredPersonal, ...filteredGeneric].slice(0, maxTotal);
     },
     [personalSuggestions, genericSuggestions]
   );
@@ -157,6 +227,7 @@ export function useItemSuggestions(
     genericSuggestions,
     loading,
     getCombinedSuggestions,
+    getQuickSuggestions,
     recordManualItem,
     refreshSuggestions,
   };

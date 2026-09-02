@@ -1,4 +1,4 @@
-import { Item, Purchase } from '../types';
+import { Item, Purchase, PricingModeDefault } from '../types';
 
 /**
  * Formata uma string ISO de data para o padrão por extenso em português (ex: "10 de agosto de 2026")
@@ -44,8 +44,33 @@ export const calculatePurchaseTotal = (purchase: Purchase): number => {
   return purchase.items.reduce((total, item) => total + calculateItemSubtotal(item), 0);
 };
 
-export const STANDARD_CATEGORIES = ['Geral', 'Alimentos', 'Bebidas', 'Limpeza', 'Higiene'];
-export const WEIGHT_CATEGORIES = ['Açougue', 'Frutas/Legumes', 'Frios', 'Padaria', 'Hortifruti'];
+export const ITEM_CATEGORIES = [
+  'Geral',
+  'Alimentos',
+  'Bebidas',
+  'Limpeza',
+  'Higiene',
+  'Açougue',
+  'Frutas/Legumes',
+  'Frios',
+  'Padaria',
+  'Hortifruti',
+];
+
+export const ALL_CATEGORIES = ITEM_CATEGORIES;
+
+/**
+ * Resolve o isWeighted inicial e o pricingModeSource a partir do
+ * default_pricing_mode vindo da sugestão genérica (ou ausência dele).
+ */
+export const resolvePricingMode = (
+  defaultMode: PricingModeDefault | undefined
+): { isWeighted: boolean; pricingModeSource: PricingModeDefault | null } => {
+  if (defaultMode === 'unit') return { isWeighted: false, pricingModeSource: 'unit' };
+  if (defaultMode === 'weight') return { isWeighted: true, pricingModeSource: 'weight' };
+  if (defaultMode === 'both') return { isWeighted: false, pricingModeSource: 'both' }; // default inicial: Pré-embalado
+  return { isWeighted: false, pricingModeSource: null }; // item não cadastrado na base genérica
+};
 
 export interface ParsedBatchItem {
   name: string;

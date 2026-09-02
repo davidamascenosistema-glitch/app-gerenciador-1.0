@@ -31,8 +31,9 @@ import {
   Bookmark,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Item, Purchase, ItemSuggestion } from '../types';
+import { Item, Purchase, ItemSuggestion, PricingModeDefault } from '../types';
 import { parseReceiptImage, ExtractedReceiptItem } from '../services/geminiService';
+import { normalizeText } from '../services/suggestionsService';
 import { useItemSuggestions } from '../hooks/useItemSuggestions';
 import { ItemSearchBar } from './ItemSearchBar';
 import { PurchaseItemCard } from './PurchaseItemCard';
@@ -47,8 +48,8 @@ import {
   exportPurchaseAsTxt,
   generatePurchaseExportText,
   isDefaultPurchaseName,
-  STANDARD_CATEGORIES,
-  WEIGHT_CATEGORIES,
+  ITEM_CATEGORIES,
+  resolvePricingMode,
 } from '../utils/purchaseHelpers';
 import { useToast } from './Toast';
 
@@ -120,6 +121,7 @@ export function PurchaseScreen({
   const [isBackModalOpen, setIsBackModalOpen] = useState(false);
   const [backNameInput, setBackNameInput] = useState('');
   const [isDiscardManualModalOpen, setIsDiscardManualModalOpen] = useState(false);
+  const [isDiscardModalOpen, setIsDiscardModalOpen] = useState(false);
 
   // Naming modal state (for 3+ items with default name on back click or Guardar Lista)
   const [isNamingModalOpen, setIsNamingModalOpen] = useState(false);
@@ -391,11 +393,36 @@ export function PurchaseScreen({
   };
 
   // Adição direta vinda da ItemSearchBar
-  const handleAddItemFromSearch = (name: string, category: string = 'Geral', isWeighted: boolean = false) => {
+  const handleAddItemFromSearch = (
+    name: string,
+    category: string = 'Geral',
+    isWeighted: boolean = false,
+    pricingModeSource?: PricingModeDefault | null
+  ) => {
+    const cleanName = normalizeText(name);
+    const existingItem = (purchase.items || []).find(
+      (item) => normalizeText(item.name) === cleanName
+    );
+
+    if (existingItem) {
+      if (existingItem.isWeighted) {
+        const currentWeight = existingItem.weight ?? existingItem.quantity ?? 1;
+        const newWeight = Math.round((currentWeight + 1) * 1000) / 1000;
+        onEditItem(purchase.id, existingItem.id, { weight: newWeight });
+        showFeedbackToast(`"${existingItem.name}" +1kg (Total: ${newWeight.toString().replace('.', ',')} kg)`);
+      } else {
+        const currentQty = (existingItem.quantity || 1) + 1;
+        onEditItem(purchase.id, existingItem.id, { quantity: currentQty });
+        showFeedbackToast(`"${existingItem.name}" +1 un (Total: ${currentQty})`);
+      }
+      return;
+    }
+
     onAddItem(purchase.id, {
       name,
       category,
       isWeighted,
+      pricingModeSource,
       quantity: 1,
       price: undefined,
       bought: purchase.origin === 'manual' ? true : false,
@@ -430,6 +457,44 @@ export function PurchaseScreen({
     showToast(`${parsed.length} ${parsed.length === 1 ? 'item adicionado' : 'itens adicionados'} à lista`);
   };
 
+  const alreadyAddedNames = (purchase.items || []).map((i) => i.name);
+  const availableSuggestions = suggestionsHook.getQuickSuggestions(alreadyAddedNames, 6);
+
+  const handleAddQuickSuggestion = (suggestion: ItemSuggestion) => {
+    const cleanName = normalizeText(suggestion.name);
+    const existingItem = (purchase.items || []).find(
+      (item) => normalizeText(item.name) === cleanName
+    );
+
+    if (existingItem) {
+      if (existingItem.isWeighted) {
+        const currentWeight = existingItem.weight ?? existingItem.quantity ?? 1;
+        const newWeight = Math.round((currentWeight + 1) * 1000) / 1000;
+        onEditItem(purchase.id, existingItem.id, { weight: newWeight });
+        showFeedbackToast(`"${existingItem.name}" +1kg (Total: ${newWeight.toString().replace('.', ',')} kg)`);
+      } else {
+        const currentQty = (existingItem.quantity || 1) + 1;
+        onEditItem(purchase.id, existingItem.id, { quantity: currentQty });
+        showFeedbackToast(`"${existingItem.name}" +1 un (Total: ${currentQty})`);
+      }
+      return;
+    }
+
+    const { isWeighted, pricingModeSource } = resolvePricingMode(
+      suggestion.source === 'generic' ? suggestion.defaultPricingMode : undefined
+    );
+
+    onAddItem(purchase.id, {
+      name: suggestion.name,
+      category: suggestion.category,
+      quantity: 1,
+      isWeighted,
+      pricingModeSource,
+      bought: purchase.origin === 'manual' ? true : false,
+    });
+    showFeedbackToast(`"${suggestion.name}" adicionado à lista`);
+  };
+
   const handleBackClick = () => {
     const itemsCount = purchase.items ? purchase.items.length : 0;
     if (purchase.status === 'finished' || itemsCount === 0) {
@@ -449,22 +514,9 @@ export function PurchaseScreen({
     }
 
     // Sessão de "Planejamento de compras" (origin === 'list'):
-    if (itemsCount === 1 || itemsCount === 2) {
-      setBackNameInput('');
-      setIsBackModalOpen(true);
-      return;
-    }
-
-    // 3 ou mais itens no planejamento:
-    // SE a Purchase tiver o nome padrão automático (nunca foi renomeada manualmente):
-    if (isDefaultPurchaseName(purchase.name)) {
-      setNamingInput('');
-      setIsNamingModalOpen(true);
-      return;
-    }
-
-    // SE já tiver um nome personalizado: salva direto e mostra toast
-    onBack('Lista salva automaticamente');
+    // Abre a janela de confirmação para salvar ou descartar a lista
+    setBackNameInput(isDefaultPurchaseName(purchase.name) ? '' : purchase.name);
+    setIsBackModalOpen(true);
   };
 
   const handleSaveNameAndExit = (e?: React.FormEvent) => {
@@ -474,7 +526,7 @@ export function PurchaseScreen({
       onUpdateName(purchase.id, trimmed);
     }
     setIsNamingModalOpen(false);
-    onBack('Lista salva automaticamente');
+    onBack('Lista salva com sucesso');
   };
 
   const handleSaveAndExit = () => {
@@ -501,8 +553,14 @@ export function PurchaseScreen({
 
   const handleDiscardAndExit = () => {
     setIsBackModalOpen(false);
+    setIsNamingModalOpen(false);
     if (onDiscardPurchase) {
       onDiscardPurchase(purchase.id);
+      showFeedbackToast(
+        purchase.origin === 'manual'
+          ? 'Registro de compra descartado'
+          : 'Lista de compras descartada'
+      );
     } else {
       onBack();
     }
@@ -622,6 +680,22 @@ export function PurchaseScreen({
                       >
                         <Download className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span>Exportar lista (.txt)</span>
+                      </button>
+
+                      {/* Divisor */}
+                      <div className="h-px bg-zinc-100 my-1" />
+
+                      {/* Descartar lista / Descartar registro */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          setIsDiscardModalOpen(true);
+                        }}
+                        className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
+                        <span>{purchase.origin === 'manual' ? 'Descartar registro' : 'Descartar lista'}</span>
                       </button>
                     </motion.div>
                   </>
@@ -1074,7 +1148,7 @@ export function PurchaseScreen({
             )}
 
             {totalItemsCount === 0 ? (
-              <div className="flex-1 min-h-[380px] sm:min-h-[440px] flex flex-col items-center justify-center py-8 px-4 sm:px-6 text-center bg-white rounded-3xl border border-zinc-200/80 my-2 shadow-2xs">
+              <div className="flex-1 min-h-[260px] sm:min-h-[300px] flex flex-col items-center justify-center py-8 px-4 sm:px-6 text-center bg-white rounded-3xl border border-zinc-200/80 my-2 shadow-2xs">
                 <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3 shadow-2xs">
                   <ShoppingBag className="w-8 h-8" />
                 </div>
@@ -1100,6 +1174,34 @@ export function PurchaseScreen({
                       }}
                       getCategoryBadgeStyle={getCategoryBadgeStyle}
                     />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Seção de Sugestões Rápidas: Abaixo do bloco central, exibida apenas de 0 a 2 itens */}
+            {purchase.status !== 'finished' && totalItemsCount <= 2 && availableSuggestions.length > 0 && (
+              <div className="bg-white rounded-2xl border border-zinc-200/80 p-3 sm:p-4 shadow-2xs mt-2">
+                <div className="flex items-center justify-between mb-2.5 px-0.5">
+                  <div className="flex items-center space-x-1.5 text-xs font-bold text-zinc-700">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span>Sugestões rápidas</span>
+                  </div>
+                  <span className="text-[11px] text-zinc-400 font-medium">Toque para adicionar</span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {availableSuggestions.map((suggestion, idx) => (
+                    <motion.button
+                      whileTap={{ scale: 0.94 }}
+                      key={`quick-sug-${suggestion.name}-${idx}`}
+                      type="button"
+                      onClick={() => handleAddQuickSuggestion(suggestion)}
+                      className="px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200/80 text-emerald-800 text-xs font-bold shrink-0 cursor-pointer transition-all flex items-center space-x-1 min-h-[32px] shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{suggestion.name}</span>
+                    </motion.button>
                   ))}
                 </div>
               </div>
@@ -1438,6 +1540,100 @@ export function PurchaseScreen({
         )}
       </AnimatePresence>
 
+      {/* Modal de Confirmação para Descartar Lista / Registro do Menu */}
+      <AnimatePresence>
+        {isDiscardModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsDiscardModalOpen(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden relative"
+            >
+              {/* Botão Fechar (X) */}
+              <button
+                type="button"
+                onClick={() => setIsDiscardModalOpen(false)}
+                aria-label="Fechar modal"
+                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="p-5 pt-6">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3 mx-auto bg-red-100 border border-red-200 text-red-600">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+
+                <h3 className="text-lg font-bold text-zinc-900 text-center tracking-tight">
+                  {purchase.origin === 'manual' ? 'Descartar registro?' : 'Descartar lista?'}
+                </h3>
+                <p className="text-xs text-zinc-500 text-center mt-1.5 leading-relaxed">
+                  {totalItemsCount > 0
+                    ? `Esta ação apagará permanentemente esta lista e todos os ${totalItemsCount} ${
+                        totalItemsCount === 1 ? 'item adicionado' : 'itens adicionados'
+                      }.`
+                    : 'Esta ação apagará permanentemente esta lista.'}
+                </p>
+
+                {totalItemsCount > 0 && (
+                  <div className="mt-4 bg-zinc-50 border border-zinc-200/80 rounded-xl p-3 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between text-zinc-600">
+                      <span>Itens na lista:</span>
+                      <span className="font-bold text-zinc-800">{totalItemsCount}</span>
+                    </div>
+                    {totalValue > 0 && (
+                      <div className="flex items-center justify-between text-zinc-600">
+                        <span>Valor total estimado:</span>
+                        <span className="font-bold text-zinc-800">{formatCurrencyBRL(totalValue)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-5 space-y-2">
+                  {/* Ação Destrutiva em Destaque Vermelho */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDiscardModalOpen(false);
+                      if (onDiscardPurchase) {
+                        onDiscardPurchase(purchase.id);
+                        showFeedbackToast(
+                          purchase.origin === 'manual'
+                            ? 'Registro de compra descartado'
+                            : 'Lista de compras descartada'
+                        );
+                      } else {
+                        onBack();
+                      }
+                    }}
+                    className="w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
+                  >
+                    <Trash2 className="w-4 h-4 stroke-[2.5]" />
+                    <span>{purchase.origin === 'manual' ? 'Descartar Registro' : 'Descartar Lista'}</span>
+                  </button>
+
+                  {/* Ação Segura de Cancelar */}
+                  <button
+                    type="button"
+                    onClick={() => setIsDiscardModalOpen(false)}
+                    className="w-full py-2.5 px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer flex items-center justify-center active:scale-95"
+                  >
+                    <span>Continuar com a lista</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Modal Customizado de Confirmação ao Voltar */}
       <AnimatePresence>
         {isBackModalOpen && (
@@ -1521,7 +1717,7 @@ export function PurchaseScreen({
                     className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-red-50 active:bg-red-100 text-red-600 border border-red-200 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Descartar Tudo</span>
+                    <span>Descartar Lista</span>
                   </button>
                 </div>
               </div>
@@ -1564,10 +1760,10 @@ export function PurchaseScreen({
                   Salvar Lista
                 </h3>
                 <p className="text-xs text-zinc-500 text-center mt-1.5 leading-relaxed">
-                  Sua lista possui {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'itens'} e será salva automaticamente.
+                  Sua lista possui {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'itens'}. Deseja salvar para mais tarde ou descartar?
                 </p>
 
-                <form onSubmit={handleSaveNameAndExit} className="mt-4 space-y-4">
+                <form onSubmit={handleSaveNameAndExit} className="mt-4 space-y-3">
                   <div>
                     <label htmlFor="purchase-name-input" className="sr-only">
                       Nome da lista
@@ -1588,7 +1784,16 @@ export function PurchaseScreen({
                     className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
                   >
                     <Check className="w-4 h-4 stroke-[2.5]" />
-                    <span>Salvar</span>
+                    <span>Salvar Lista</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDiscardAndExit}
+                    className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-red-50 active:bg-red-100 text-red-600 border border-red-200 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Descartar Lista</span>
                   </button>
                 </form>
               </div>

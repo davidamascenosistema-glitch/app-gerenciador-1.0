@@ -1,11 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Plus, ListPlus, History, Sparkles, X, CornerDownLeft, Mic, MicOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ItemSuggestion } from '../types';
-import { WEIGHT_CATEGORIES } from '../utils/purchaseHelpers';
+import { ItemSuggestion, PricingModeDefault } from '../types';
+import { resolvePricingMode } from '../utils/purchaseHelpers';
 
 interface ItemSearchBarProps {
-  onAddItem: (name: string, category?: string, isWeighted?: boolean) => void;
+  onAddItem: (
+    name: string,
+    category?: string,
+    isWeighted?: boolean,
+    pricingModeSource?: PricingModeDefault | null
+  ) => void;
   onOpenBatchModal: () => void;
   getSuggestions: (query: string) => ItemSuggestion[];
   recordManualItem: (name: string, category?: string) => void;
@@ -131,8 +136,10 @@ export function ItemSearchBar({
   };
 
   const handleSelectSuggestion = (suggestion: ItemSuggestion) => {
-    const isWeight = WEIGHT_CATEGORIES.includes(suggestion.category);
-    onAddItem(suggestion.name, suggestion.category, isWeight);
+    const { isWeighted, pricingModeSource } = resolvePricingMode(
+      suggestion.source === 'generic' ? suggestion.defaultPricingMode : undefined
+    );
+    onAddItem(suggestion.name, suggestion.category, isWeighted, pricingModeSource);
     setQuery('');
     setIsOpen(false);
     setSelectedIndex(-1);
@@ -153,14 +160,12 @@ export function ItemSearchBar({
       return;
     }
 
-    // Item novo/livre
-    const isWeight = WEIGHT_CATEGORIES.some((cat) =>
-      trimmed.toLowerCase().includes(cat.toLowerCase())
-    );
+    // Item novo/livre digitado manualmente
     const defaultCategory = 'Geral';
+    const { isWeighted, pricingModeSource } = resolvePricingMode(undefined);
 
     recordManualItem(trimmed, defaultCategory);
-    onAddItem(trimmed, defaultCategory, isWeight);
+    onAddItem(trimmed, defaultCategory, isWeighted, pricingModeSource);
     setQuery('');
     setIsOpen(false);
     setSelectedIndex(-1);
@@ -266,7 +271,7 @@ export function ItemSearchBar({
               <button
                 type="button"
                 onClick={() => handleAddFreeText(query)}
-                className="h-8 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs flex items-center space-x-1 cursor-pointer transition-all shadow-2xs active:scale-95"
+                className="h-8 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-2xs active:scale-95"
                 title="Adicionar item"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -282,9 +287,9 @@ export function ItemSearchBar({
           onClick={onOpenBatchModal}
           title="Adicionar vários itens em lote (colar lista)"
           aria-label="Adicionar vários itens"
-          className="h-11 px-3 sm:px-3.5 rounded-2xl bg-white hover:bg-emerald-50 active:bg-emerald-100 border border-zinc-200/90 hover:border-emerald-200 text-zinc-700 hover:text-emerald-800 flex items-center space-x-1.5 shrink-0 shadow-2xs transition-all cursor-pointer active:scale-95 font-semibold text-xs min-h-[44px]"
+          className="w-11 h-11 md:w-auto md:px-3.5 rounded-2xl bg-white hover:bg-emerald-50 active:bg-emerald-100 border border-zinc-200/90 hover:border-emerald-200 text-zinc-700 hover:text-emerald-800 flex items-center justify-center md:gap-1.5 shrink-0 shadow-2xs transition-all cursor-pointer active:scale-95 font-semibold text-xs min-h-[44px]"
         >
-          <ListPlus className="w-4 h-4 text-emerald-600 shrink-0" />
+          <ListPlus className="w-4 h-4 text-emerald-600 shrink-0 m-0 p-0" />
           <span className="hidden md:inline">Adicionar Vários</span>
         </button>
       </div>
