@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Pencil, Scale, Tag } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Item } from '../types';
-import { ALL_CATEGORIES, sanitizePriceInput } from '../utils/purchaseHelpers';
+import { ALL_CATEGORIES, sanitizePriceInput, sanitizeWeightInput } from '../utils/purchaseHelpers';
 import { MOTION_TOKENS, useMotionConfig } from '../styles/motionSystem';
 
 interface EditItemModalProps {
@@ -28,7 +28,9 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
       setIsWeighted(Boolean(item.isWeighted));
       setQuantity(item.quantity || 1);
       setWeightStr(
-        item.weight !== undefined && item.weight !== null ? item.weight.toString().replace('.', ',') : ''
+        item.weight !== undefined && item.weight !== null
+          ? sanitizeWeightInput(item.weight.toString())
+          : ''
       );
       setPriceStr(
         item.price !== undefined && item.price !== null && item.price > 0
@@ -57,7 +59,9 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
     const roundedPrice = parsedPrice !== undefined && !isNaN(parsedPrice) && parsedPrice >= 0
       ? Math.round(parsedPrice * 100) / 100
       : undefined;
-    const parsedWeight = isWeighted && weightStr ? parseFloat(weightStr.replace(',', '.')) : undefined;
+    const parsedWeight = isWeighted && weightStr
+      ? Math.round(parseFloat(sanitizeWeightInput(weightStr).replace(',', '.')) * 1000) / 1000
+      : undefined;
 
     onSave(item.id, {
       name: trimmedName,
@@ -137,44 +141,61 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                   <Scale className="w-3.5 h-3.5 text-zinc-600" />
                   <span>Modo de Precificação</span>
                 </span>
-                <div className="relative inline-flex p-0.5 rounded-lg bg-zinc-200/80">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleWeighted(false)}
-                    className={`relative z-10 px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
-                      !isWeighted
-                        ? 'text-emerald-800'
-                        : 'text-zinc-600 hover:text-zinc-900'
+                {item?.pricingModeSource === 'unit' || item?.pricingModeSource === 'weight' ? (
+                  <span
+                    className={`px-3 py-1 rounded-lg text-xs font-bold select-none inline-flex items-center gap-1.5 border ${
+                      item.pricingModeSource === 'unit'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
+                        : 'bg-amber-50 text-amber-800 border-amber-200/80'
                     }`}
                   >
-                    {!isWeighted && (
-                      <motion.div
-                        layoutId="edit-modal-pricing-pill"
-                        transition={motionConfig.layoutSpring}
-                        className="absolute inset-0 bg-white rounded-md shadow-2xs -z-10"
-                      />
-                    )}
-                    Por Unidade
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleWeighted(true)}
-                    className={`relative z-10 px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
-                      isWeighted
-                        ? 'text-emerald-800'
-                        : 'text-zinc-600 hover:text-zinc-900'
-                    }`}
-                  >
-                    {isWeighted && (
-                      <motion.div
-                        layoutId="edit-modal-pricing-pill"
-                        transition={motionConfig.layoutSpring}
-                        className="absolute inset-0 bg-white rounded-md shadow-2xs -z-10"
-                      />
-                    )}
-                    Por Peso (kg)
-                  </button>
-                </div>
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        item.pricingModeSource === 'unit' ? 'bg-emerald-500' : 'bg-amber-500'
+                      }`}
+                    />
+                    {item.pricingModeSource === 'unit' ? 'Unidade' : 'Pesado'}
+                  </span>
+                ) : (
+                  <div className="relative inline-flex p-0.5 rounded-lg bg-zinc-200/80">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleWeighted(false)}
+                      className={`relative z-10 px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
+                        !isWeighted
+                          ? 'text-emerald-800'
+                          : 'text-zinc-600 hover:text-zinc-900'
+                      }`}
+                    >
+                      {!isWeighted && (
+                        <motion.div
+                          layoutId="edit-modal-pricing-pill"
+                          transition={motionConfig.layoutSpring}
+                          className="absolute inset-0 bg-white rounded-md shadow-2xs -z-10"
+                        />
+                      )}
+                      Por Unidade
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleWeighted(true)}
+                      className={`relative z-10 px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
+                        isWeighted
+                          ? 'text-amber-800'
+                          : 'text-zinc-600 hover:text-zinc-900'
+                      }`}
+                    >
+                      {isWeighted && (
+                        <motion.div
+                          layoutId="edit-modal-pricing-pill"
+                          transition={motionConfig.layoutSpring}
+                          className="absolute inset-0 bg-white rounded-md shadow-2xs -z-10"
+                        />
+                      )}
+                      Por Peso (kg)
+                    </button>
+                  </div>
+                )}
               </div>
 
               {isWeighted && (
@@ -187,7 +208,7 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                     inputMode="decimal"
                     placeholder="0,00"
                     value={weightStr}
-                    onChange={(e) => setWeightStr(e.target.value)}
+                    onChange={(e) => setWeightStr(sanitizeWeightInput(e.target.value))}
                     className="w-full px-3 py-2 rounded-lg border border-zinc-300 focus:border-emerald-500 text-sm font-medium text-zinc-900 bg-white outline-none"
                   />
                 </div>

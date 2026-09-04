@@ -60,6 +60,32 @@ export const ITEM_CATEGORIES = [
 export const ALL_CATEGORIES = ITEM_CATEGORIES;
 
 /**
+ * Sanitiza a entrada de peso:
+ * - Aceita apenas números e uma única vírgula/ponto decimal
+ * - Converte ponto em vírgula
+ * - Limita estritamente a no máximo 3 dígitos após a vírgula (ex: 1,456)
+ */
+export const sanitizeWeightInput = (value: string): string => {
+  if (!value) return '';
+
+  // Substitui pontos por vírgula para manter padrão brasileiro
+  let normalized = value.replace(/\./g, ',');
+
+  // Remove qualquer caractere que não seja dígito ou vírgula
+  normalized = normalized.replace(/[^\d,]/g, '');
+
+  // Se houver vírgula, mantém apenas a primeira e limita a 3 casas decimais
+  const commaIndex = normalized.indexOf(',');
+  if (commaIndex !== -1) {
+    const integerPart = normalized.slice(0, commaIndex);
+    const decimalPart = normalized.slice(commaIndex + 1).replace(/,/g, '');
+    return `${integerPart},${decimalPart.slice(0, 3)}`;
+  }
+
+  return normalized;
+};
+
+/**
  * Sanitiza a entrada de preço para formato de moeda:
  * - Aceita apenas números e uma única vírgula/ponto decimal
  * - Converte ponto em vírgula

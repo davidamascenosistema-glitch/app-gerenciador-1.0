@@ -7,6 +7,7 @@ import {
   formatCurrencyBRL,
   ALL_CATEGORIES,
   sanitizePriceInput,
+  sanitizeWeightInput,
 } from '../utils/purchaseHelpers';
 import { MOTION_TOKENS, useMotionConfig } from '../styles/motionSystem';
 
@@ -32,10 +33,10 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   const badgeStyle = getCategoryBadgeStyle(item.category);
   const cleanItemName = item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, '').trim();
 
-  // Configuração de exibição do toggle de precificação baseada no pricingModeSource
-  const showToggle = item.pricingModeSource === 'both' || item.pricingModeSource == null;
-  const unitLabel = item.pricingModeSource === 'both' ? 'Pré-embalado' : 'Por Unidade';
-  const weightLabel = item.pricingModeSource === 'both' ? 'Pesado' : 'Por Peso';
+  // Configuração de exibição do identificador de precificação baseada no pricingModeSource
+  const isFixedUnit = item.pricingModeSource === 'unit';
+  const isFixedWeight = item.pricingModeSource === 'weight';
+  const isFixedMode = isFixedUnit || isFixedWeight;
 
   // 1. Estados locais para edição inline de NOME
   const [isEditingName, setIsEditingName] = useState(false);
@@ -60,8 +61,8 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   const [qtyInput, setQtyInput] = useState(() =>
     item.isWeighted
       ? (item.weight !== undefined && item.weight !== null
-          ? item.weight.toString().replace('.', ',')
-          : item.quantity.toString().replace('.', ','))
+          ? sanitizeWeightInput(item.weight.toString())
+          : sanitizeWeightInput(item.quantity.toString()))
       : item.quantity.toString()
   );
   const qtyInputRef = useRef<HTMLInputElement>(null);
@@ -88,8 +89,8 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
       setQtyInput(
         item.isWeighted
           ? (item.weight !== undefined && item.weight !== null
-              ? item.weight.toString().replace('.', ',')
-              : item.quantity.toString().replace('.', ','))
+              ? sanitizeWeightInput(item.weight.toString())
+              : sanitizeWeightInput(item.quantity.toString()))
           : item.quantity.toString()
       );
     }
@@ -159,7 +160,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   const handleStepQty = (delta: number) => {
     if (item.isWeighted) {
       const currentVal = item.weight || item.quantity || 1;
-      const nextVal = Math.max(0.05, Math.round((currentVal + delta * 0.1) * 100) / 100);
+      const nextVal = Math.max(0.001, Math.round((currentVal + delta * 0.1) * 1000) / 1000);
       onEditItem(purchaseId, item.id, {
         weight: nextVal,
         quantity: 1,
@@ -176,12 +177,13 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   // 3. Salvar Quantidade / Peso Inline
   const handleSaveQty = () => {
     setIsEditingQty(false);
-    const cleaned = qtyInput.trim().replace(',', '.');
+    const cleaned = sanitizeWeightInput(qtyInput).trim().replace(',', '.');
     const parsed = parseFloat(cleaned);
 
     if (!isNaN(parsed) && parsed > 0) {
       if (item.isWeighted) {
-        onEditItem(purchaseId, item.id, { weight: parsed, quantity: 1 });
+        const roundedWeight = Math.round(parsed * 1000) / 1000;
+        onEditItem(purchaseId, item.id, { weight: roundedWeight, quantity: 1 });
       } else {
         onEditItem(purchaseId, item.id, { quantity: Math.max(1, Math.round(parsed)) });
       }
@@ -209,7 +211,8 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
     if (weighted === Boolean(item.isWeighted)) return;
 
     if (weighted) {
-      const newWeight = item.weight || item.quantity || 1;
+      const rawWeight = item.weight || item.quantity || 1;
+      const newWeight = Math.round(rawWeight * 1000) / 1000;
       onEditItem(purchaseId, item.id, {
         isWeighted: true,
         weight: newWeight,
@@ -225,6 +228,13 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   };
 
   const hasValidPrice = item.price !== undefined && item.price !== null && item.price > 0;
+
+  // Ativa formatação compacta (width 38.5625px e fonte 11px) automaticamente quando preço for >= 100 ou com 6+ dígitos (ex: 100,00)
+  const isLargePrice = (() => {
+    if (priceInput.length >= 6) return true;
+    const num = parseFloat(priceInput.replace(',', '.'));
+    return !isNaN(num) && num >= 100;
+  })();
 
   return (
     <motion.div
@@ -384,51 +394,75 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
 
       {/* LINHA 2: MARCADOR (UNID. / PESO) + QUANTIDADE/PESO + PREÇO + SUBTOTAL COM PROPORÇÕES EQUILIBRADAS */}
       <div className="grid grid-cols-[auto_1.2fr_1fr_auto] items-end gap-1.5 sm:gap-2 pt-0.5">
-        {/* 1. Marcador de Modalidade: Unid. / Peso */}
+        {/* 1. Marcador de Modalidade: Unid. / Peso ou Identificador Fixo */}
         <div className="flex flex-col shrink-0">
           <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate">
             Tipo
           </label>
-          <div className="h-8 sm:h-8.5 w-[83.75px] relative inline-flex p-0.5 rounded-lg bg-zinc-100/90 border border-zinc-200/80 shadow-2xs items-center">
-            <button
-              type="button"
-              onClick={() => handleSetPricingMode(false)}
-              title="Cobrança por unidade"
-              className={`w-[38.66px] relative px-2 py-1 h-full rounded-[6px] text-[10px] sm:text-[10.5px] font-bold tracking-tight transition-colors cursor-pointer z-10 flex items-center justify-center leading-none ${
-                !item.isWeighted
-                  ? 'text-emerald-800 font-extrabold'
-                  : 'text-zinc-400 hover:text-zinc-700'
+          {isFixedMode ? (
+            <div
+              className={`h-8 sm:h-8.5 w-[83.75px] inline-flex items-center justify-center p-0.5 rounded-lg border shadow-2xs select-none ${
+                isFixedUnit
+                  ? 'bg-emerald-50/50 border-emerald-200/70'
+                  : 'bg-amber-50/50 border-amber-200/70'
               }`}
+              title={`Modalidade fixa: ${isFixedUnit ? 'Unidade' : 'Pesado'}`}
             >
-              {!item.isWeighted && (
-                <motion.div
-                  layoutId={`pricing-pill-${item.id}`}
-                  className="absolute inset-0 bg-white rounded-[6px] shadow-2xs -z-10"
-                  transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+              <div
+                className={`w-full h-full bg-white rounded-[6px] shadow-2xs flex items-center justify-center gap-1.5 text-[10px] sm:text-[10.5px] font-bold tracking-tight ${
+                  isFixedUnit ? 'text-emerald-800' : 'text-amber-800'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    isFixedUnit ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
                 />
-              )}
-              <span>Unid.</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSetPricingMode(true)}
-              title="Cobrança por peso (kg)"
-              className={`relative px-2 py-1 h-full rounded-[6px] text-[10px] sm:text-[10.5px] font-bold tracking-tight transition-colors cursor-pointer z-10 flex items-center justify-center leading-none ${
-                item.isWeighted
-                  ? 'text-emerald-800 font-extrabold'
-                  : 'text-zinc-400 hover:text-zinc-700'
-              }`}
-            >
-              {item.isWeighted && (
-                <motion.div
-                  layoutId={`pricing-pill-${item.id}`}
-                  className="absolute inset-0 w-[36.09px] bg-white rounded-[6px] shadow-2xs -z-10"
-                  transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-                />
-              )}
-              <span className="pl-0 -ml-[1px]">Peso</span>
-            </button>
-          </div>
+                <span>{isFixedUnit ? 'Unidade' : 'Pesado'}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="h-8 sm:h-8.5 w-[83.75px] relative inline-flex p-0.5 rounded-lg bg-zinc-100/90 border border-zinc-200/80 shadow-2xs items-center">
+              <button
+                type="button"
+                onClick={() => handleSetPricingMode(false)}
+                title="Cobrança por unidade"
+                className={`w-[38.66px] relative px-2 py-1 h-full rounded-[6px] text-[10px] sm:text-[10.5px] font-bold tracking-tight transition-colors cursor-pointer z-10 flex items-center justify-center leading-none ${
+                  !item.isWeighted
+                    ? 'text-emerald-800 font-extrabold'
+                    : 'text-zinc-400 hover:text-zinc-700'
+                }`}
+              >
+                {!item.isWeighted && (
+                  <motion.div
+                    layoutId={`pricing-pill-${item.id}`}
+                    className="absolute inset-0 bg-white rounded-[6px] shadow-2xs -z-10"
+                    transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                  />
+                )}
+                <span>Unid.</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetPricingMode(true)}
+                title="Cobrança por peso (kg)"
+                className={`relative px-2 py-1 h-full rounded-[6px] text-[10px] sm:text-[10.5px] font-bold tracking-tight transition-colors cursor-pointer z-10 flex items-center justify-center leading-none ${
+                  item.isWeighted
+                    ? 'text-amber-800 font-extrabold'
+                    : 'text-zinc-400 hover:text-zinc-700'
+                }`}
+              >
+                {item.isWeighted && (
+                  <motion.div
+                    layoutId={`pricing-pill-${item.id}`}
+                    className="absolute inset-0 w-[36.09px] bg-white rounded-[6px] shadow-2xs -z-10"
+                    transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                  />
+                )}
+                <span className="pl-0 -ml-[1px]">Peso</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 2. Coluna: Quantidade / Peso */}
@@ -454,7 +488,13 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                 type="text"
                 inputMode="decimal"
                 value={qtyInput}
-                onChange={(e) => setQtyInput(e.target.value)}
+                onChange={(e) => {
+                  if (item.isWeighted) {
+                    setQtyInput(sanitizeWeightInput(e.target.value));
+                  } else {
+                    setQtyInput(e.target.value.replace(/\D/g, ''));
+                  }
+                }}
                 onBlur={handleSaveQty}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleSaveQty();
@@ -471,9 +511,14 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
               >
                 {item.isWeighted ? (
                   <span>
-                    {item.weight !== undefined && item.weight !== null
-                      ? item.weight.toString().replace('.', ',')
-                      : item.quantity.toString().replace('.', ',')}
+                    {(() => {
+                      const val =
+                        item.weight !== undefined && item.weight !== null
+                          ? item.weight
+                          : item.quantity;
+                      const rounded = Math.round(Number(val) * 1000) / 1000;
+                      return rounded.toString().replace('.', ',');
+                    })()}
                   </span>
                 ) : (
                   <span>{item.quantity}</span>
@@ -525,7 +570,9 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                 }
               }}
               placeholder="0,00"
-              className="w-full bg-transparent text-xs font-bold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal outline-none"
+              className={`bg-transparent font-bold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal outline-none transition-all ${
+                isLargePrice ? 'w-[38.5625px] text-[11px]' : 'w-full text-xs'
+              }`}
             />
           </div>
         </div>
@@ -538,7 +585,9 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
           <div className="h-8 sm:h-8.5 flex items-center justify-end">
             {hasValidPrice ? (
               <span
-                className={`text-[13px] font-black tracking-tight ${
+                className={`font-black tracking-tight ${
+                  subtotal >= 100 ? 'text-[12px]' : 'text-[13px]'
+                } ${
                   item.bought ? 'text-zinc-400 line-through' : 'text-emerald-700'
                 }`}
               >

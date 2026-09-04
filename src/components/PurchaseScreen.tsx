@@ -511,7 +511,7 @@ export function PurchaseScreen({
     }
 
     const { isWeighted, pricingModeSource } = resolvePricingMode(
-      suggestion.source === 'generic' ? suggestion.defaultPricingMode : undefined
+      suggestion.defaultPricingMode
     );
 
     onAddItem(purchase.id, {

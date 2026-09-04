@@ -9,6 +9,20 @@ import {
 } from '../services/suggestionsService';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 
+const enrichWithPricingMode = (
+  suggestions: ItemSuggestion[],
+  genericCatalog: ItemSuggestion[]
+): ItemSuggestion[] => {
+  if (genericCatalog.length === 0) return suggestions;
+  const catalogByName = new Map(
+    genericCatalog.map((g) => [normalizeText(g.name), g.defaultPricingMode])
+  );
+  return suggestions.map((s) => {
+    const match = catalogByName.get(normalizeText(s.name));
+    return match ? { ...s, defaultPricingMode: match } : s;
+  });
+};
+
 export interface UseItemSuggestionsReturn {
   personalSuggestions: ItemSuggestion[];
   genericSuggestions: ItemSuggestion[];
@@ -56,7 +70,7 @@ export function useItemSuggestions(
       });
     });
 
-    return Array.from(map.values())
+    const built = Array.from(map.values())
       .sort((a, b) => b.count - a.count)
       .map((item) => ({
         name: item.name,
@@ -64,7 +78,8 @@ export function useItemSuggestions(
         count: item.count,
         source: 'personal' as const,
       }));
-  }, [localPurchases]);
+    return enrichWithPricingMode(built, genericSuggestions);
+  }, [localPurchases, genericSuggestions]);
 
   /**
    * Lista unificada e priorizada de itens pessoais (DB ou local)
@@ -89,7 +104,7 @@ export function useItemSuggestions(
       // 2. Busca histórico pessoal do usuário se logado
       if (userId && isSupabaseConfigured()) {
         const personal = await fetchPersonalSuggestionsFromDb(userId);
-        setPersonalDbSuggestions(personal);
+        setPersonalDbSuggestions(enrichWithPricingMode(personal, generic));
       }
     } catch {
       // Ignora erro de rede temporário

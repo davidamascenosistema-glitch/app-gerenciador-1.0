@@ -138,9 +138,7 @@ export function ItemSearchBar({
   };
 
   const handleSelectSuggestion = (suggestion: ItemSuggestion) => {
-    const { isWeighted, pricingModeSource } = resolvePricingMode(
-      suggestion.source === 'generic' ? suggestion.defaultPricingMode : undefined
-    );
+    const { isWeighted, pricingModeSource } = resolvePricingMode(suggestion.defaultPricingMode);
     onAddItem(suggestion.name, suggestion.category, isWeighted, pricingModeSource);
     setQuery('');
     setIsOpen(false);
