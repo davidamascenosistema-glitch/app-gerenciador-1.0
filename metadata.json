@@ -1,5 +1,5 @@
 {
-  "name": "Gerenciador de Compras",
+  "name": "Lista & Compra",
   "description": "Um aplicativo de gerenciamento de compras simples, prático e elegante para organizar seus itens e gastos.",
   "requestFramePermissions": [
     "microphone"

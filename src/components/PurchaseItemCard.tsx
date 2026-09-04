@@ -6,8 +6,9 @@ import {
   calculateItemSubtotal,
   formatCurrencyBRL,
   ALL_CATEGORIES,
+  sanitizePriceInput,
 } from '../utils/purchaseHelpers';
-import { MOTION_TOKENS } from '../styles/motionSystem';
+import { MOTION_TOKENS, useMotionConfig } from '../styles/motionSystem';
 
 interface PurchaseItemCardProps {
   item: Item;
@@ -26,6 +27,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   onRemoveItem,
   getCategoryBadgeStyle,
 }) => {
+  const motionConfig = useMotionConfig();
   const subtotal = calculateItemSubtotal(item);
   const badgeStyle = getCategoryBadgeStyle(item.category);
   const cleanItemName = item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, '').trim();
@@ -75,7 +77,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
     if (!isEditingPrice) {
       setPriceInput(
         item.price !== undefined && item.price !== null && item.price > 0
-          ? item.price.toString().replace('.', ',')
+          ? sanitizePriceInput(item.price.toString())
           : ''
       );
     }
@@ -189,12 +191,16 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   // 4. Salvar Preço Inline
   const handleSavePrice = () => {
     setIsEditingPrice(false);
-    const cleaned = priceInput.trim().replace(',', '.');
+    const sanitized = sanitizePriceInput(priceInput);
+    const cleaned = sanitized.trim().replace(',', '.');
     const parsed = cleaned ? parseFloat(cleaned) : undefined;
     if (parsed !== undefined && !isNaN(parsed) && parsed >= 0) {
-      onEditItem(purchaseId, item.id, { price: parsed });
+      const rounded = Math.round(parsed * 100) / 100;
+      onEditItem(purchaseId, item.id, { price: rounded });
+      setPriceInput(sanitized);
     } else if (cleaned === '') {
       onEditItem(purchaseId, item.id, { price: undefined });
+      setPriceInput('');
     }
   };
 
@@ -223,11 +229,11 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: -8, scale: 0.98 }}
+      initial={{ opacity: 0, y: -8, scale: 0.97 }}
       animate={{ opacity: item.bought ? 0.65 : 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.92, x: -16, transition: { duration: 0.14 } }}
       transition={{
-        layout: MOTION_TOKENS.spring.layout,
+        layout: motionConfig.layoutSpring,
         opacity: { duration: 0.14 },
       }}
       className={`w-full rounded-2xl border transition-colors p-2.5 sm:p-3 flex flex-col gap-2 ${
@@ -241,8 +247,8 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
         <div className="flex items-center space-x-2 min-w-0 flex-1">
           {/* Checkbox de Comprado com feedback tátil e animação vetorial */}
           <motion.button
-            whileTap={{ scale: 0.88 }}
-            transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+            whileTap={motionConfig.tap.iconButton}
+            transition={motionConfig.pressSpring}
             type="button"
             onClick={() => onToggleBought(purchaseId, item.id)}
             aria-label={item.bought ? 'Marcar como não comprado' : 'Marcar como comprado'}
@@ -362,80 +368,82 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
           </div>
         </div>
 
-        {/* Lado Direito: Modo de Precificação (se houver toggle) + Botão Excluir */}
-        <div className="flex items-center space-x-1 shrink-0">
-          {showToggle && (
-            <div className="relative inline-flex p-0.5 rounded-lg bg-zinc-100/90 border border-zinc-200/80">
-              <button
-                type="button"
-                onClick={() => handleSetPricingMode(false)}
-                title="Cobrança por unidade"
-                className={`relative px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer z-10 ${
-                  !item.isWeighted
-                    ? 'text-emerald-800'
-                    : 'text-zinc-500 hover:text-zinc-800'
-                }`}
-              >
-                {!item.isWeighted && (
-                  <motion.div
-                    layoutId={`pricing-pill-${item.id}`}
-                    className="absolute inset-0 bg-white rounded-md shadow-2xs -z-10"
-                    transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-                  />
-                )}
-                <span>{unitLabel}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSetPricingMode(true)}
-                title="Cobrança por peso (kg)"
-                className={`relative px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer z-10 ${
-                  item.isWeighted
-                    ? 'text-emerald-800'
-                    : 'text-zinc-500 hover:text-zinc-800'
-                }`}
-              >
-                {item.isWeighted && (
-                  <motion.div
-                    layoutId={`pricing-pill-${item.id}`}
-                    className="absolute inset-0 bg-white rounded-md shadow-2xs -z-10"
-                    transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-                  />
-                )}
-                <span>{weightLabel}</span>
-              </button>
-            </div>
-          )}
-
-          {/* Botão de Excluir */}
-          <motion.button
-            whileTap={{ scale: 0.88 }}
-            type="button"
-            onClick={() => onRemoveItem(purchaseId, item.id)}
-            title="Remover item"
-            aria-label="Remover item"
-            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </motion.button>
-        </div>
+        {/* Lado Direito: Botão Excluir */}
+        <motion.button
+          whileTap={motionConfig.tap.iconButton}
+          transition={motionConfig.pressSpring}
+          type="button"
+          onClick={() => onRemoveItem(purchaseId, item.id)}
+          title="Remover item"
+          aria-label="Remover item"
+          className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+        >
+          <Trash2 className="w-4 h-4" />
+        </motion.button>
       </div>
 
-      {/* LINHA 2: CONTROLES DE QUANTIDADE/PESO + PREÇO + SUBTOTAL (TUDO COMPACTO E ERGONÔMICO) */}
-      <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2 pt-0.5">
-        {/* Coluna 1: Quantidade / Peso */}
+      {/* LINHA 2: MARCADOR (UNID. / PESO) + QUANTIDADE/PESO + PREÇO + SUBTOTAL COM PROPORÇÕES EQUILIBRADAS */}
+      <div className="grid grid-cols-[auto_1.2fr_1fr_auto] items-end gap-1.5 sm:gap-2 pt-0.5">
+        {/* 1. Marcador de Modalidade: Unid. / Peso */}
+        <div className="flex flex-col shrink-0">
+          <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate">
+            Tipo
+          </label>
+          <div className="h-8 sm:h-8.5 w-[83.75px] relative inline-flex p-0.5 rounded-lg bg-zinc-100/90 border border-zinc-200/80 shadow-2xs items-center">
+            <button
+              type="button"
+              onClick={() => handleSetPricingMode(false)}
+              title="Cobrança por unidade"
+              className={`w-[38.66px] relative px-2 py-1 h-full rounded-[6px] text-[10px] sm:text-[10.5px] font-bold tracking-tight transition-colors cursor-pointer z-10 flex items-center justify-center leading-none ${
+                !item.isWeighted
+                  ? 'text-emerald-800 font-extrabold'
+                  : 'text-zinc-400 hover:text-zinc-700'
+              }`}
+            >
+              {!item.isWeighted && (
+                <motion.div
+                  layoutId={`pricing-pill-${item.id}`}
+                  className="absolute inset-0 bg-white rounded-[6px] shadow-2xs -z-10"
+                  transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                />
+              )}
+              <span>Unid.</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetPricingMode(true)}
+              title="Cobrança por peso (kg)"
+              className={`relative px-2 py-1 h-full rounded-[6px] text-[10px] sm:text-[10.5px] font-bold tracking-tight transition-colors cursor-pointer z-10 flex items-center justify-center leading-none ${
+                item.isWeighted
+                  ? 'text-emerald-800 font-extrabold'
+                  : 'text-zinc-400 hover:text-zinc-700'
+              }`}
+            >
+              {item.isWeighted && (
+                <motion.div
+                  layoutId={`pricing-pill-${item.id}`}
+                  className="absolute inset-0 w-[36.09px] bg-white rounded-[6px] shadow-2xs -z-10"
+                  transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                />
+              )}
+              <span className="pl-0 -ml-[1px]">Peso</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 2. Coluna: Quantidade / Peso */}
         <div className="flex flex-col min-w-0">
           <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate">
             {item.isWeighted ? 'Peso (kg)' : 'Quantidade'}
           </label>
-          <div className="h-8 sm:h-8.5 flex items-center bg-zinc-50 hover:bg-zinc-100/70 rounded-lg border border-zinc-200/90 p-0.5 transition-colors">
+          <div className="h-8 sm:h-8.5 w-full min-w-[86px] sm:min-w-[88px] flex items-center bg-zinc-50 hover:bg-zinc-100/70 rounded-lg border border-zinc-200/90 p-0.5 transition-colors">
             <motion.button
-              whileTap={{ scale: 0.86 }}
-              transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+              whileTap={motionConfig.tap.iconButton}
+              transition={motionConfig.pressSpring}
               type="button"
               onClick={() => handleStepQty(-1)}
               title={item.isWeighted ? 'Diminuir peso (-0.1kg)' : 'Diminuir quantidade (-1)'}
-              className="w-6 sm:w-7 h-full rounded bg-white text-zinc-700 hover:text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 font-bold text-xs flex items-center justify-center cursor-pointer shadow-2xs transition-colors shrink-0 select-none"
+              className="w-[19px] h-full rounded bg-white text-zinc-700 hover:text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 font-bold text-xs flex items-center justify-center cursor-pointer shadow-2xs transition-colors shrink-0 select-none"
             >
               -
             </motion.button>
@@ -452,50 +460,46 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                   if (e.key === 'Enter') handleSaveQty();
                   if (e.key === 'Escape') setIsEditingQty(false);
                 }}
-                className="flex-1 min-w-0 text-center text-xs font-bold bg-white text-zinc-900 border border-emerald-500 rounded py-0.5 outline-none shadow-2xs h-full"
+                className="flex-1 min-w-0 text-center text-[11px] font-bold bg-white text-zinc-900 border border-emerald-500 rounded py-0.5 outline-none shadow-2xs h-full"
               />
             ) : (
               <button
                 type="button"
                 onClick={() => setIsEditingQty(true)}
                 title="Toque para digitar quantidade ou peso"
-                className="flex-1 min-w-0 text-center text-xs font-bold text-zinc-800 hover:text-emerald-800 cursor-pointer py-0.5 truncate px-0.5"
+                className="flex-1 min-w-0 text-center text-xs font-bold text-zinc-800 hover:text-emerald-800 cursor-pointer py-0.5 whitespace-nowrap px-0.5"
               >
                 {item.isWeighted ? (
                   <span>
                     {item.weight !== undefined && item.weight !== null
                       ? item.weight.toString().replace('.', ',')
-                      : item.quantity.toString().replace('.', ',')}{' '}
-                    <span className="text-[10px] font-semibold text-zinc-500">kg</span>
+                      : item.quantity.toString().replace('.', ',')}
                   </span>
                 ) : (
-                  <span>
-                    {item.quantity}{' '}
-                    <span className="text-[10px] font-semibold text-zinc-500">un</span>
-                  </span>
+                  <span>{item.quantity}</span>
                 )}
               </button>
             )}
 
             <motion.button
-              whileTap={{ scale: 0.86 }}
-              transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+              whileTap={motionConfig.tap.iconButton}
+              transition={motionConfig.pressSpring}
               type="button"
               onClick={() => handleStepQty(1)}
               title={item.isWeighted ? 'Aumentar peso (+0.1kg)' : 'Aumentar quantidade (+1)'}
-              className="w-6 sm:w-7 h-full rounded bg-white text-zinc-700 hover:text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 font-bold text-xs flex items-center justify-center cursor-pointer shadow-2xs transition-colors shrink-0 select-none"
+              className="w-[18px] h-full rounded bg-white text-zinc-700 hover:text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 font-bold text-xs flex items-center justify-center cursor-pointer shadow-2xs transition-colors shrink-0 select-none"
             >
               +
             </motion.button>
           </div>
         </div>
 
-        {/* Coluna 2: Preço Unitário / Preço por Kg */}
-        <div className="flex flex-col min-w-0">
-          <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate">
-            {item.isWeighted ? 'Preço (kg)' : 'Preço (un)'}
+        {/* 3. Coluna: Preço Unitário / Preço por Kg */}
+        <div className="flex flex-col min-w-0 ml-2">
+          <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate ml-1 w-[55.94px]">
+            {item.isWeighted ? 'Preço/kg' : 'Preço/un'}
           </label>
-          <div className="h-8 sm:h-8.5 flex items-center bg-zinc-50 hover:bg-zinc-100/70 rounded-lg border border-zinc-200/90 px-2 transition-colors focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white">
+          <div className="h-8 sm:h-8.5 w-full min-w-[70px] flex items-center bg-zinc-50 hover:bg-zinc-100/70 rounded-lg border border-zinc-200/90 pl-2 pr-2 ml-[3px] mr-0 transition-colors focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white">
             <span className="text-[11px] font-bold text-zinc-400 mr-1 shrink-0">R$</span>
             <input
               ref={priceInputRef}
@@ -503,7 +507,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
               inputMode="decimal"
               value={priceInput}
               onFocus={() => setIsEditingPrice(true)}
-              onChange={(e) => setPriceInput(e.target.value)}
+              onChange={(e) => setPriceInput(sanitizePriceInput(e.target.value))}
               onBlur={handleSavePrice}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -513,7 +517,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                 if (e.key === 'Escape') {
                   setPriceInput(
                     item.price !== undefined && item.price !== null && item.price > 0
-                      ? item.price.toString().replace('.', ',')
+                      ? sanitizePriceInput(item.price.toString())
                       : ''
                   );
                   setIsEditingPrice(false);
@@ -526,15 +530,15 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
           </div>
         </div>
 
-        {/* Coluna 3: Subtotal integrado em linha */}
-        <div className="flex flex-col items-end justify-center min-w-[72px] sm:min-w-[85px] pl-1">
+        {/* 4. Coluna: Subtotal integrado em linha */}
+        <div className="flex flex-col items-end justify-center min-w-[72px] sm:min-w-[85px] pl-2">
           <span className="text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5">
             Subtotal
           </span>
           <div className="h-8 sm:h-8.5 flex items-center justify-end">
             {hasValidPrice ? (
               <span
-                className={`text-sm sm:text-base font-black tracking-tight ${
+                className={`text-[13px] font-black tracking-tight ${
                   item.bought ? 'text-zinc-400 line-through' : 'text-emerald-700'
                 }`}
               >

@@ -13,6 +13,7 @@ import {
   Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useMotionConfig } from '../styles/motionSystem';
 import { useAuth } from '../hooks/useAuth';
 
 interface AuthScreenProps {
@@ -20,6 +21,7 @@ interface AuthScreenProps {
 }
 
 export function AuthScreen({ authHook }: AuthScreenProps) {
+  const motionConfig = useMotionConfig();
   const { signInWithPassword, signUp, isConfigured } = authHook;
 
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -116,7 +118,7 @@ export function AuthScreen({ authHook }: AuthScreenProps) {
             <ShoppingCart className="w-8 h-8 stroke-[2.2]" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 tracking-tight">
-            Gerenciador de Compras
+            Lista &amp; Compra
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 font-medium mt-1">
             Planeje, compre e controle seus gastos em tempo real
@@ -301,7 +303,8 @@ export function AuthScreen({ authHook }: AuthScreenProps) {
 
             {/* Botão de Ação Principal */}
             <motion.button
-              whileTap={{ scale: 0.98 }}
+              whileTap={motionConfig.tap.button}
+              transition={motionConfig.pressSpring}
               type="submit"
               disabled={isLoading}
               className="w-full mt-2 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-60 text-white font-bold text-sm shadow-md shadow-emerald-700/20 transition-all min-h-[48px] cursor-pointer"

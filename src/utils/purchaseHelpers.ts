@@ -60,6 +60,32 @@ export const ITEM_CATEGORIES = [
 export const ALL_CATEGORIES = ITEM_CATEGORIES;
 
 /**
+ * Sanitiza a entrada de preço para formato de moeda:
+ * - Aceita apenas números e uma única vírgula/ponto decimal
+ * - Converte ponto em vírgula
+ * - Limita estritamente a no máximo 2 dígitos após a vírgula (ex: 44,45)
+ */
+export const sanitizePriceInput = (value: string): string => {
+  if (!value) return '';
+
+  // Substitui pontos por vírgula para manter padrão brasileiro
+  let normalized = value.replace(/\./g, ',');
+
+  // Remove qualquer caractere que não seja dígito ou vírgula
+  normalized = normalized.replace(/[^\d,]/g, '');
+
+  // Se houver vírgula, mantém apenas a primeira e limita a 2 casas decimais
+  const commaIndex = normalized.indexOf(',');
+  if (commaIndex !== -1) {
+    const integerPart = normalized.slice(0, commaIndex);
+    const decimalPart = normalized.slice(commaIndex + 1).replace(/,/g, '');
+    return `${integerPart},${decimalPart.slice(0, 2)}`;
+  }
+
+  return normalized;
+};
+
+/**
  * Resolve o isWeighted inicial e o pricingModeSource a partir do
  * default_pricing_mode vindo da sugestão genérica (ou ausência dele).
  */
@@ -80,16 +106,34 @@ export interface ParsedBatchItem {
 }
 
 /**
- * Processa um texto com múltiplos itens (um por linha) no formato "2 Leite" ou "Leite"
+ * Processa um texto com múltiplos itens separados por linha e/ou vírgula (ex: "leite, carne" ou "2 Leite\nArroz").
+ * Preserva vírgulas que façam parte de números decimais (ex: "1,5 kg carne" ou "2,5").
  */
 export const parseBatchItemsInput = (text: string): ParsedBatchItem[] => {
   if (!text || !text.trim()) return [];
 
-  const lines = text.split('\n');
-  const results: ParsedBatchItem[] = [];
+  // Primeiro divide por quebras de linha
+  const lines = text.split(/\r?\n/);
+  const rawSegments: string[] = [];
 
   for (const line of lines) {
-    const trimmed = line.trim();
+    if (!line.trim()) continue;
+
+    // Divide a linha por vírgula, exceto quando a vírgula estiver entre dígitos (ex: 1,5 kg de carne)
+    // Usamos regex com lookaround negativo para não quebrar em números decimais como 1,5 ou 0,5
+    const parts = line.split(/(?<!\d),(?!\d)/);
+    for (const part of parts) {
+      const trimmedPart = part.trim();
+      if (trimmedPart) {
+        rawSegments.push(trimmedPart);
+      }
+    }
+  }
+
+  const results: ParsedBatchItem[] = [];
+
+  for (const raw of rawSegments) {
+    const trimmed = raw.trim();
     if (!trimmed) continue;
 
     // Regex para identificar quantidade no início ex: "2 Leite", "3 Sabão em pó"
@@ -229,7 +273,7 @@ export const generatePurchaseExportText = (purchase: Purchase): string => {
 
   const lines: string[] = [];
   lines.push('========================================');
-  lines.push('GERENCIADOR DE COMPRAS - LISTA DE COMPRAS');
+  lines.push('LISTA & COMPRA - LISTA DE COMPRAS');
   lines.push('========================================');
   lines.push(`Nome: ${purchase.name || 'Compra'}`);
   lines.push(`Data: ${formattedDate}`);
@@ -380,6 +424,28 @@ export const isDefaultPurchaseName = (name?: string | null): boolean => {
   if (!name || !name.trim()) return true;
   const trimmed = name.trim().toLowerCase();
   return DEFAULT_PURCHASE_NAMES.some((def) => def.toLowerCase() === trimmed);
+};
+
+export interface CategorySection {
+  category: string;
+  items: Item[];
+}
+
+/**
+ * Agrupa os itens da compra por categoria, em ordem alfabética (pt-BR,
+ * considerando acentuação corretamente — "Açougue" antes de "Alimentos").
+ * Categoria sem nenhum item não gera seção.
+ */
+export const groupItemsByCategory = (items: Item[]): CategorySection[] => {
+  const map = new Map<string, Item[]>();
+  for (const item of items) {
+    const cat = item.category || 'Geral';
+    if (!map.has(cat)) map.set(cat, []);
+    map.get(cat)!.push(item);
+  }
+  return Array.from(map.entries())
+    .map(([category, items]) => ({ category, items }))
+    .sort((a, b) => a.category.localeCompare(b.category, 'pt-BR'));
 };
 
 

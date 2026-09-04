@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { CheckCircle2 } from 'lucide-react';
+import { useMotionConfig } from '../styles/motionSystem';
 
 interface ToastContextType {
   showToast: (message: string, duration?: number) => void;
@@ -9,6 +10,7 @@ interface ToastContextType {
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const motionConfig = useMotionConfig();
   const [toast, setToast] = useState<{ id: number; message: string } | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const counterRef = useRef(0);
@@ -48,15 +50,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           {toast && (
             <motion.div
               key={toast.id}
-              initial={{ opacity: 0, y: 14, scale: 0.94 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.94, transition: { duration: 0.12 } }}
-              transition={{
-                type: 'spring',
-                damping: 26,
-                stiffness: 420,
-                mass: 0.6,
-              }}
+              initial={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.94 }}
+              animate={motionConfig.shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+              exit={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.94 }}
+              transition={motionConfig.pressSpring}
               className="pointer-events-none flex items-center space-x-2.5 px-4 py-2.5 rounded-full bg-zinc-900/95 backdrop-blur-md text-white shadow-xl shadow-black/30 border border-zinc-700/70 max-w-full"
             >
               <div className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">

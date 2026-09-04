@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Pencil, Scale, Tag } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Item } from '../types';
-import { ALL_CATEGORIES } from '../utils/purchaseHelpers';
-import { MOTION_TOKENS } from '../styles/motionSystem';
+import { ALL_CATEGORIES, sanitizePriceInput } from '../utils/purchaseHelpers';
+import { MOTION_TOKENS, useMotionConfig } from '../styles/motionSystem';
 
 interface EditItemModalProps {
   isOpen: boolean;
@@ -13,6 +13,7 @@ interface EditItemModalProps {
 }
 
 export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalProps) {
+  const motionConfig = useMotionConfig();
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Geral');
   const [isWeighted, setIsWeighted] = useState(false);
@@ -31,7 +32,7 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
       );
       setPriceStr(
         item.price !== undefined && item.price !== null && item.price > 0
-          ? item.price.toString().replace('.', ',')
+          ? sanitizePriceInput(item.price.toString())
           : ''
       );
     }
@@ -51,7 +52,11 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
     const trimmedName = name.trim();
     if (!trimmedName) return;
 
-    const parsedPrice = priceStr ? parseFloat(priceStr.replace(',', '.')) : undefined;
+    const sanitizedPrice = sanitizePriceInput(priceStr);
+    const parsedPrice = sanitizedPrice ? parseFloat(sanitizedPrice.replace(',', '.')) : undefined;
+    const roundedPrice = parsedPrice !== undefined && !isNaN(parsedPrice) && parsedPrice >= 0
+      ? Math.round(parsedPrice * 100) / 100
+      : undefined;
     const parsedWeight = isWeighted && weightStr ? parseFloat(weightStr.replace(',', '.')) : undefined;
 
     onSave(item.id, {
@@ -60,7 +65,7 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
       isWeighted,
       quantity: isWeighted ? 1 : Math.max(1, quantity),
       weight: parsedWeight,
-      price: parsedPrice && !isNaN(parsedPrice) && parsedPrice >= 0 ? parsedPrice : undefined,
+      price: roundedPrice,
     });
 
     onClose();
@@ -81,7 +86,7 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
         initial={{ opacity: 0, scale: 0.94, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 12 }}
-        transition={MOTION_TOKENS.spring.modal}
+        transition={motionConfig.modalSpring}
         className="relative z-10 w-full max-w-md max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col my-auto"
       >
         {/* Header */}
@@ -97,7 +102,8 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
           </div>
 
           <motion.button
-            whileTap={{ scale: 0.88 }}
+            whileTap={motionConfig.tap.iconButton}
+            transition={motionConfig.pressSpring}
             type="button"
             onClick={onClose}
             className="w-9 h-9 rounded-xl text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer flex items-center justify-center shrink-0"
@@ -144,7 +150,7 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                     {!isWeighted && (
                       <motion.div
                         layoutId="edit-modal-pricing-pill"
-                        transition={MOTION_TOKENS.spring.gentle}
+                        transition={motionConfig.layoutSpring}
                         className="absolute inset-0 bg-white rounded-md shadow-2xs -z-10"
                       />
                     )}
@@ -162,7 +168,7 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                     {isWeighted && (
                       <motion.div
                         layoutId="edit-modal-pricing-pill"
-                        transition={MOTION_TOKENS.spring.gentle}
+                        transition={motionConfig.layoutSpring}
                         className="absolute inset-0 bg-white rounded-md shadow-2xs -z-10"
                       />
                     )}
@@ -197,7 +203,8 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
               <div className="flex flex-wrap gap-1.5">
                 {ALL_CATEGORIES.map((cat) => (
                   <motion.button
-                    whileTap={{ scale: 0.94 }}
+                    whileTap={motionConfig.tap.button}
+                    transition={motionConfig.pressSpring}
                     type="button"
                     key={cat}
                     onClick={() => setCategory(cat)}
@@ -222,7 +229,8 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                   </label>
                   <div className="flex items-center space-x-1">
                     <motion.button
-                      whileTap={{ scale: 0.92 }}
+                      whileTap={motionConfig.tap.iconButton}
+                      transition={motionConfig.pressSpring}
                       type="button"
                       onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                       className="w-10 h-10 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 font-bold text-zinc-700 flex items-center justify-center shrink-0 cursor-pointer text-base"
@@ -238,7 +246,8 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                       className="w-full text-center py-2 rounded-xl border border-zinc-300 text-sm font-bold text-zinc-900 focus:border-emerald-500 h-10 outline-none"
                     />
                     <motion.button
-                      whileTap={{ scale: 0.92 }}
+                      whileTap={motionConfig.tap.iconButton}
+                      transition={motionConfig.pressSpring}
                       type="button"
                       onClick={() => setQuantity((q) => q + 1)}
                       className="w-10 h-10 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 font-bold text-zinc-700 flex items-center justify-center shrink-0 cursor-pointer text-base"
@@ -262,7 +271,7 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                     inputMode="decimal"
                     placeholder="0,00"
                     value={priceStr}
-                    onChange={(e) => setPriceStr(e.target.value)}
+                    onChange={(e) => setPriceStr(sanitizePriceInput(e.target.value))}
                     className="w-full pl-9 pr-3 py-2 rounded-xl border border-zinc-300 focus:border-emerald-500 text-sm font-bold text-zinc-900 placeholder-zinc-400 bg-white outline-none h-10"
                   />
                 </div>
@@ -273,7 +282,8 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
           {/* Footer */}
           <div className="p-4 sm:px-5 border-t border-zinc-200/80 bg-zinc-50/50 flex items-center space-x-2 shrink-0">
             <motion.button
-              whileTap={{ scale: 0.96 }}
+              whileTap={motionConfig.tap.button}
+              transition={motionConfig.pressSpring}
               type="button"
               onClick={onClose}
               className="flex-1 py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-100 active:bg-zinc-200 border border-zinc-200/90 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
@@ -281,8 +291,8 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
               Cancelar
             </motion.button>
             <motion.button
-              whileTap={{ scale: 0.96 }}
-              transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+              whileTap={motionConfig.tap.button}
+              transition={motionConfig.pressSpring}
               type="submit"
               className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-colors min-h-[44px] cursor-pointer"
             >

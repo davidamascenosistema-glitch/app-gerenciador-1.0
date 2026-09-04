@@ -26,7 +26,7 @@ import {
   calculateComparisonInsight,
   exportPurchaseAsTxt,
 } from '../utils/purchaseHelpers';
-import { MOTION_TOKENS } from '../styles/motionSystem';
+import { MOTION_TOKENS, useMotionConfig } from '../styles/motionSystem';
 
 interface PurchaseCelebrationModalProps {
   isOpen: boolean;
@@ -130,6 +130,7 @@ export function PurchaseCelebrationModal({
   onViewDetails,
   showToast,
 }: PurchaseCelebrationModalProps) {
+  const motionConfig = useMotionConfig();
   const [copied, setCopied] = useState(false);
 
   // Dispara confetes, áudio e feedback tátil ao abrir
@@ -215,7 +216,7 @@ export function PurchaseCelebrationModal({
       textLines.push(`📊 *Comparação:* ${comparisonInsight.formattedDiffText}`);
     }
 
-    textLines.push(`\nGerenciado pelo Gerenciador de Compras.`);
+    textLines.push(`\nGerenciado pelo Lista & Compra.`);
 
     const fullText = textLines.join('\n');
 
@@ -262,12 +263,13 @@ export function PurchaseCelebrationModal({
         initial={{ opacity: 0, scale: 0.92, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        transition={MOTION_TOKENS.spring.modal}
+        transition={motionConfig.modalSpring}
         className="relative z-10 w-full max-w-[370px] sm:max-w-md max-h-[96dvh] bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-zinc-200/90 overflow-hidden my-auto flex flex-col justify-between"
       >
         {/* Botão Fechar X no topo */}
         <motion.button
-          whileTap={{ scale: 0.88 }}
+          whileTap={motionConfig.tap.iconButton}
+          transition={motionConfig.pressSpring}
           type="button"
           onClick={onClose}
           aria-label="Fechar"
@@ -280,8 +282,16 @@ export function PurchaseCelebrationModal({
         <div className="relative pt-3.5 sm:pt-4 pb-2 px-4 text-center overflow-hidden bg-gradient-to-b from-emerald-50/90 via-emerald-50/40 to-transparent shrink-0">
           {/* Anel de pulso sutil */}
           <motion.div
-            animate={{ scale: [1, 1.35, 1], opacity: [0.3, 0, 0.3] }}
-            transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+            animate={
+              motionConfig.shouldReduceMotion
+                ? { scale: 1, opacity: 0.15 }
+                : { scale: [1, 1.35, 1], opacity: [0.3, 0, 0.3] }
+            }
+            transition={
+              motionConfig.shouldReduceMotion
+                ? { duration: 0 }
+                : { duration: 2.5, repeat: Infinity, ease: 'easeInOut' }
+            }
             className="absolute top-3 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-emerald-400/20 -z-10 blur-sm pointer-events-none"
           />
 
@@ -462,7 +472,8 @@ export function PurchaseCelebrationModal({
           {/* Botões Secundários: Copiar Resumo e Exportar .txt */}
           <div className="grid grid-cols-2 gap-2">
             <motion.button
-              whileTap={{ scale: 0.96 }}
+              whileTap={motionConfig.tap.button}
+              transition={motionConfig.pressSpring}
               type="button"
               onClick={handleCopySummary}
               className="py-2 px-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 font-bold text-[11px] border border-zinc-200 flex items-center justify-center space-x-1.5 transition-colors min-h-[38px] cursor-pointer"
@@ -481,7 +492,8 @@ export function PurchaseCelebrationModal({
             </motion.button>
 
             <motion.button
-              whileTap={{ scale: 0.96 }}
+              whileTap={motionConfig.tap.button}
+              transition={motionConfig.pressSpring}
               type="button"
               onClick={handleExportTxt}
               className="py-2 px-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 font-bold text-[11px] border border-zinc-200 flex items-center justify-center space-x-1.5 transition-colors min-h-[38px] cursor-pointer"
@@ -494,8 +506,8 @@ export function PurchaseCelebrationModal({
           {/* Botão Primário: Voltar para a Tela Inicial */}
           <div className="space-y-1">
             <motion.button
-              whileTap={{ scale: 0.97 }}
-              transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+              whileTap={motionConfig.tap.button}
+              transition={motionConfig.pressSpring}
               type="button"
               onClick={onClose}
               className="w-full py-2.5 sm:py-3 px-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/25 flex items-center justify-center space-x-1.5 transition-all min-h-[44px] cursor-pointer"

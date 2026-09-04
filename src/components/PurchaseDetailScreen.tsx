@@ -12,6 +12,7 @@ import {
   ShoppingCart
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useMotionConfig } from '../styles/motionSystem';
 import { Purchase, Item } from '../types';
 import { 
   calculatePurchaseTotal, 
@@ -83,6 +84,7 @@ export function PurchaseDetailScreen({
   onBack,
   onRepeatPurchase,
 }: PurchaseDetailScreenProps) {
+  const motionConfig = useMotionConfig();
   const { showToast } = useToast();
   const totalValue = calculatePurchaseTotal(purchase);
   const items = purchase.items || [];
@@ -341,10 +343,11 @@ export function PurchaseDetailScreen({
 
           {/* Botão Único: Repetir Esta Compra */}
           <motion.button
-            whileTap={{ scale: 0.98 }}
+            whileTap={motionConfig.tap.button}
+            transition={motionConfig.pressSpring}
             onClick={() => onRepeatPurchase(purchase)}
             type="button"
-            className="w-full flex items-center justify-center space-x-2 py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md shadow-emerald-700/20 transition-all min-h-[48px] cursor-pointer active:scale-95"
+            className="w-full flex items-center justify-center space-x-2 py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md shadow-emerald-700/20 transition-all min-h-[48px] cursor-pointer"
           >
             <RotateCcw className="w-4 h-4 shrink-0 stroke-[2.5]" />
             <span>Repetir Esta Compra</span>

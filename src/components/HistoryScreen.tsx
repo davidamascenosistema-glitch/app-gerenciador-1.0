@@ -11,6 +11,7 @@ import {
   X
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useMotionConfig } from '../styles/motionSystem';
 import { Purchase } from '../types';
 import { calculatePurchaseTotal, formatCurrencyBRL, formatDateBRL } from '../utils/purchaseHelpers';
 
@@ -62,6 +63,7 @@ export function HistoryScreen({
   onRegisterManual,
   onRepeatPurchase,
 }: HistoryScreenProps) {
+  const motionConfig = useMotionConfig();
   const totalSpentAllTime = finishedPurchases.reduce(
     (acc, p) => acc + calculatePurchaseTotal(p),
     0
@@ -175,7 +177,8 @@ export function HistoryScreen({
               return (
                 <motion.div
                   key={purchase.id}
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={motionConfig.tap.row}
+                  transition={motionConfig.pressSpring}
                   onClick={() => onSelectPurchase && onSelectPurchase(purchase)}
                   className={`w-full bg-white rounded-2xl border shadow-2xs p-4 transition-all text-left flex flex-col justify-between cursor-pointer ${
                     selectionMode

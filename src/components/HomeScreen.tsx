@@ -14,6 +14,7 @@ import {
   User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useMotionConfig } from '../styles/motionSystem';
 import { usePurchases } from '../hooks/usePurchases';
 import { calculatePurchaseTotal, formatCurrencyBRL, formatDateBRL } from '../utils/purchaseHelpers';
 import { Purchase } from '../types';
@@ -38,6 +39,7 @@ export function HomeScreen({
   onSelectFinishedPurchase,
   initialToastMessage,
 }: HomeScreenProps) {
+  const motionConfig = useMotionConfig();
   const localHook = usePurchases();
   const hook = purchasesHook || localHook;
   const { getPendingPurchases, getFinishedPurchases, discardPurchase, createPurchase, createPurchaseFromTemplate } = hook;
@@ -160,7 +162,7 @@ export function HomeScreen({
             </div>
             <div>
               <h1 className="text-base sm:text-lg font-bold tracking-tight text-zinc-900 leading-tight">
-                Gerenciador de Compras
+                Lista &amp; Compra
               </h1>
               <p className="text-[11px] sm:text-xs text-zinc-500 font-medium leading-none mt-0.5">
                 Organize e controle seus gastos
@@ -213,8 +215,9 @@ export function HomeScreen({
                   Comece uma nova lista para planejar ou organizar sua próxima compra
                 </p>
                 <motion.button
-                  whileTap={{ scale: 0.98 }}
-                  whileHover={{ scale: 1.01 }}
+                  whileTap={motionConfig.tap.button}
+                  whileHover={motionConfig.shouldReduceMotion ? {} : { scale: 1.01 }}
+                  transition={motionConfig.pressSpring}
                   onClick={handleCreateNewList}
                   type="button"
                   className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md shadow-emerald-700/20 transition-all min-h-[48px] cursor-pointer"
@@ -294,7 +297,8 @@ export function HomeScreen({
 
                 {/* Botão para criar nova lista mesmo quando já existe uma pendência */}
                 <motion.button
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={motionConfig.tap.button}
+                  transition={motionConfig.pressSpring}
                   onClick={handleCreateNewList}
                   type="button"
                   className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-50 active:bg-zinc-100 text-zinc-700 border border-zinc-200 font-bold text-xs sm:text-sm transition-all min-h-[44px] shadow-2xs cursor-pointer"

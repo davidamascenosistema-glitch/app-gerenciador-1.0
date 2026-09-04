@@ -29,6 +29,7 @@ import {
   MoreVertical,
   Share2,
   Bookmark,
+  Filter,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Item, Purchase, ItemSuggestion, PricingModeDefault } from '../types';
@@ -40,7 +41,7 @@ import { PurchaseItemCard } from './PurchaseItemCard';
 import { BatchAddModal } from './BatchAddModal';
 import { EditItemModal } from './EditItemModal';
 import { AnimatedCurrency } from './AnimatedCurrency';
-import { MOTION_TOKENS } from '../styles/motionSystem';
+import { MOTION_TOKENS, MOTION_VARIANTS, useMotionConfig } from '../styles/motionSystem';
 import {
   calculateItemSubtotal,
   calculatePurchaseTotal,
@@ -52,6 +53,8 @@ import {
   isDefaultPurchaseName,
   ITEM_CATEGORIES,
   resolvePricingMode,
+  groupItemsByCategory,
+  CategorySection,
 } from '../utils/purchaseHelpers';
 import { useToast } from './Toast';
 
@@ -78,6 +81,22 @@ const getCategoryBadgeStyle = (category: string) => {
     case 'Geral':
     default:
       return 'bg-zinc-100 text-zinc-700 border-zinc-200/80';
+  }
+};
+
+const getCategoryAccentBarClass = (category: string) => {
+  switch (category) {
+    case 'Alimentos': return 'bg-emerald-400';
+    case 'Bebidas': return 'bg-blue-400';
+    case 'Limpeza': return 'bg-cyan-400';
+    case 'Higiene': return 'bg-purple-400';
+    case 'Açougue': return 'bg-rose-400';
+    case 'Frutas/Legumes': return 'bg-lime-400';
+    case 'Frios': return 'bg-orange-400';
+    case 'Padaria': return 'bg-amber-400';
+    case 'Hortifruti': return 'bg-teal-400';
+    case 'Geral':
+    default: return 'bg-zinc-400';
   }
 };
 
@@ -108,6 +127,7 @@ export function PurchaseScreen({
   onToggleBought,
   onFinishPurchase,
 }: PurchaseScreenProps) {
+  const motionConfig = useMotionConfig();
   const suggestionsHook = useItemSuggestions(userId, allPurchases);
   const selectedFromSuggestionRef = useRef<boolean>(false);
 
@@ -147,6 +167,15 @@ export function PurchaseScreen({
     purchase.origin === 'manual' && (!purchase.items || purchase.items.length === 0) ? 'choose' : 'manual'
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Category Multi-Selection Filter State
+  const [activeCategoryFilters, setActiveCategoryFilters] = useState<string[]>([]);
+
+  const toggleCategoryFilter = (category: string) => {
+    setActiveCategoryFilters((prev) =>
+      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
+    );
+  };
 
   // Receipt AI Analysis State
   const [isAnalyzingReceipt, setIsAnalyzingReceipt] = useState(false);
@@ -582,6 +611,12 @@ export function PurchaseScreen({
   const totalItemsCount = purchase.items.length;
   const boughtItemsCount = purchase.items.filter((i) => i.bought).length;
   const comparisonInsight = calculateComparisonInsight(purchase, allPurchases);
+
+  const allSections = groupItemsByCategory(purchase.items);
+  const visibleSections =
+    activeCategoryFilters.length > 0
+      ? allSections.filter((s) => activeCategoryFilters.includes(s.category))
+      : allSections;
 
   return (
     <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 flex flex-col justify-between selection:bg-emerald-500 selection:text-white font-sans">
@@ -1035,8 +1070,12 @@ export function PurchaseScreen({
                   {isAnalyzingReceipt && (
                     <motion.div
                       initial={{ top: '0%' }}
-                      animate={{ top: ['0%', '94%', '0%'] }}
-                      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                      animate={motionConfig.shouldReduceMotion ? { top: '0%' } : { top: ['0%', '94%', '0%'] }}
+                      transition={
+                        motionConfig.shouldReduceMotion
+                          ? { duration: 0 }
+                          : { duration: 2, repeat: Infinity, ease: 'easeInOut' }
+                      }
                       className="absolute left-0 right-0 h-1 bg-gradient-to-r from-emerald-500/10 via-emerald-400 to-emerald-500/10 shadow-[0_0_18px_3px_rgba(16,185,129,0.85)] z-10 pointer-events-none"
                     />
                   )}
@@ -1165,6 +1204,34 @@ export function PurchaseScreen({
           <div className="space-y-3">
             {/* Lista de Cards de Itens ou Estado Vazio com Animação Fluida desde o 1º item */}
             <div className="space-y-2.5">
+              {totalItemsCount > 0 && allSections.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1.5 px-0.5">
+                  <span className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 shrink-0 mr-0.5">
+                    <Filter className="w-3 h-3" />
+                    Filtrar:
+                  </span>
+                  {allSections.map((section) => {
+                    const isActive = activeCategoryFilters.includes(section.category);
+                    return (
+                      <motion.button
+                        key={section.category}
+                        type="button"
+                        whileTap={motionConfig.tap.pill}
+                        transition={motionConfig.pressSpring}
+                        onClick={() => toggleCategoryFilter(section.category)}
+                        className={`px-2.5 py-1 rounded-full border text-[11px] font-bold shrink-0 cursor-pointer transition-all ${
+                          isActive
+                            ? getCategoryBadgeStyle(section.category)
+                            : 'bg-white text-zinc-500 border-zinc-200/90 hover:bg-zinc-50'
+                        }`}
+                      >
+                        {section.category} · {section.items.length}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="space-y-2">
                 <AnimatePresence mode="popLayout">
                   {totalItemsCount === 0 ? (
@@ -1185,19 +1252,40 @@ export function PurchaseScreen({
                       </p>
                     </motion.div>
                   ) : (
-                    purchase.items.map((item) => (
-                      <PurchaseItemCard
-                        key={item.id}
-                        item={item}
-                        purchaseId={purchase.id}
-                        onToggleBought={onToggleBought}
-                        onEditItem={onEditItem}
-                        onRemoveItem={(pId, iId) => {
-                          onRemoveItem(pId, iId);
-                          showToast(`"${item.name}" removido da lista`);
-                        }}
-                        getCategoryBadgeStyle={getCategoryBadgeStyle}
-                      />
+                    visibleSections.map((section) => (
+                      <motion.div
+                        key={section.category}
+                        layout
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0, transition: { duration: 0.12 } }}
+                        className="space-y-2"
+                      >
+                        <div className="flex items-center gap-2 px-1 pt-1.5 pb-0.5">
+                          <span className={`w-1 h-3.5 rounded-full shrink-0 ${getCategoryAccentBarClass(section.category)}`} />
+                          <span className="text-[11px] font-bold text-zinc-600 uppercase tracking-wide">
+                            {section.category}
+                          </span>
+                          <span className="text-[11px] text-zinc-400 font-medium">{section.items.length}</span>
+                        </div>
+
+                        <AnimatePresence mode="popLayout">
+                          {section.items.map((item) => (
+                            <PurchaseItemCard
+                              key={item.id}
+                              item={item}
+                              purchaseId={purchase.id}
+                              onToggleBought={onToggleBought}
+                              onEditItem={onEditItem}
+                              onRemoveItem={(pId, iId) => {
+                                onRemoveItem(pId, iId);
+                                showToast(`"${item.name}" removido da lista`);
+                              }}
+                              getCategoryBadgeStyle={getCategoryBadgeStyle}
+                            />
+                          ))}
+                        </AnimatePresence>
+                      </motion.div>
                     ))
                   )}
                 </AnimatePresence>
@@ -1218,7 +1306,8 @@ export function PurchaseScreen({
                 <div className="flex flex-wrap items-center gap-2">
                   {availableSuggestions.map((suggestion, idx) => (
                     <motion.button
-                      whileTap={{ scale: 0.94 }}
+                      whileTap={motionConfig.tap.button}
+                      transition={motionConfig.pressSpring}
                       key={`quick-sug-${suggestion.name}-${idx}`}
                       type="button"
                       onClick={() => handleAddQuickSuggestion(suggestion)}
@@ -1270,12 +1359,13 @@ export function PurchaseScreen({
               initial={{ opacity: 0, scale: 0.94, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 12 }}
-              transition={MOTION_TOKENS.spring.modal}
+              transition={motionConfig.modalSpring}
               className="relative z-10 w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden my-auto"
             >
               {/* Botão Fechar (X) */}
               <motion.button
-                whileTap={{ scale: 0.88 }}
+                whileTap={motionConfig.tap.iconButton}
+                transition={motionConfig.pressSpring}
                 type="button"
                 onClick={() => setIsConfirmFinishOpen(false)}
                 aria-label="Fechar modal"
@@ -1362,7 +1452,8 @@ export function PurchaseScreen({
                 {/* Botões de Ação */}
                 <div className="mt-4 flex items-center space-x-2">
                   <motion.button
-                    whileTap={{ scale: 0.96 }}
+                    whileTap={motionConfig.tap.button}
+                    transition={motionConfig.pressSpring}
                     type="button"
                     onClick={() => setIsConfirmFinishOpen(false)}
                     className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
@@ -1370,8 +1461,8 @@ export function PurchaseScreen({
                     Continuar
                   </motion.button>
                   <motion.button
-                    whileTap={{ scale: 0.96 }}
-                    transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                    whileTap={motionConfig.tap.button}
+                    transition={motionConfig.pressSpring}
                     type="button"
                     onClick={handleConfirmFinish}
                     className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md shadow-emerald-700/20 transition-colors min-h-[44px] cursor-pointer"
@@ -1397,9 +1488,7 @@ export function PurchaseScreen({
             }}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              {...MOTION_VARIANTS.modalContent}
               className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden relative"
             >
               {/* Botão Fechar (X) no canto superior direito: apenas fecha o modal e continua no registro */}
@@ -1478,9 +1567,7 @@ export function PurchaseScreen({
             }}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              {...MOTION_VARIANTS.modalContent}
               className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden relative"
             >
               {/* Botão Fechar (X) */}
@@ -1572,9 +1659,7 @@ export function PurchaseScreen({
             }}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              {...MOTION_VARIANTS.modalContent}
               className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden relative"
             >
               {/* Botão Fechar (X) no canto superior direito: apenas fecha o modal e continua na tela */}
@@ -1664,9 +1749,7 @@ export function PurchaseScreen({
             }}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              {...MOTION_VARIANTS.modalContent}
               className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden relative"
             >
               {/* Botão Fechar (X) no canto superior direito: apenas fecha o modal e continua na tela */}
@@ -1754,7 +1837,7 @@ export function PurchaseScreen({
                     key={boughtItemsCount}
                     initial={{ scale: 1.28, color: '#059669' }}
                     animate={{ scale: 1, color: '#047857' }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                    transition={motionConfig.pressSpring}
                     className="inline-block font-bold"
                   >
                     {boughtItemsCount}
@@ -1770,8 +1853,8 @@ export function PurchaseScreen({
               {/* Botões de Ação do Rodapé */}
               {purchase.status === 'finished' ? (
                 <motion.button
-                  whileTap={{ scale: 0.96 }}
-                  transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                  whileTap={motionConfig.tap.button}
+                  transition={motionConfig.pressSpring}
                   onClick={() => onBack()}
                   type="button"
                   className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-colors min-h-[48px] cursor-pointer"
@@ -1782,8 +1865,8 @@ export function PurchaseScreen({
               ) : purchase.origin === 'manual' ? (
                 /* Sessão de Registrar Compra Já Feita: apenas o botão principal de Registrar Compra (sem Guardar Lista) */
                 <motion.button
-                  whileTap={{ scale: 0.96 }}
-                  transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                  whileTap={motionConfig.tap.button}
+                  transition={motionConfig.pressSpring}
                   onClick={() => {
                     setFinishNameInput('');
                     setIsConfirmFinishOpen(true);
@@ -1799,8 +1882,8 @@ export function PurchaseScreen({
                 <div className="grid grid-cols-2 gap-2">
                   {/* Botão Guardar Lista */}
                   <motion.button
-                    whileTap={{ scale: 0.96 }}
-                    transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                    whileTap={motionConfig.tap.button}
+                    transition={motionConfig.pressSpring}
                     onClick={handleSaveListForLater}
                     type="button"
                     className="w-full flex items-center justify-center space-x-2 py-3 px-3 sm:px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 border border-zinc-200/80 font-bold text-xs sm:text-sm transition-colors min-h-[48px] cursor-pointer"
@@ -1811,8 +1894,8 @@ export function PurchaseScreen({
 
                   {/* Botão Finalizar Compra */}
                   <motion.button
-                    whileTap={{ scale: 0.96 }}
-                    transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                    whileTap={motionConfig.tap.button}
+                    transition={motionConfig.pressSpring}
                     onClick={() => {
                       setFinishNameInput('');
                       setIsConfirmFinishOpen(true);

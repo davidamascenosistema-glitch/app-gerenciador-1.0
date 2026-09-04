@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, User as UserIcon, Sparkles, Shield, LogOut, CheckCircle2, Loader2, Mail, Calendar } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useMotionConfig } from '../styles/motionSystem';
 import { User } from '@supabase/supabase-js';
 
 interface ProfileScreenProps {
@@ -24,6 +25,7 @@ export function ProfileScreen({
   onRegisterManual,
   onRepeatPurchase,
 }: ProfileScreenProps) {
+  const motionConfig = useMotionConfig();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleLogout = async () => {
@@ -130,7 +132,8 @@ export function ProfileScreen({
           <div className="mt-6 w-full space-y-2.5">
             {/* Botão Sair da Conta */}
             <motion.button
-              whileTap={{ scale: 0.98 }}
+              whileTap={motionConfig.tap.button}
+              transition={motionConfig.pressSpring}
               onClick={handleLogout}
               disabled={isSigningOut}
               type="button"
@@ -151,7 +154,8 @@ export function ProfileScreen({
 
             {/* Botão Voltar */}
             <motion.button
-              whileTap={{ scale: 0.98 }}
+              whileTap={motionConfig.tap.button}
+              transition={motionConfig.pressSpring}
               onClick={onBack}
               type="button"
               className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 font-bold text-sm transition-all min-h-[48px] cursor-pointer"

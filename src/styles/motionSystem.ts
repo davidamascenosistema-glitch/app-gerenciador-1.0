@@ -1,9 +1,5 @@
 import { useReducedMotion } from 'motion/react';
 
-/**
- * MOTION DESIGN SYSTEM
- * Tokens de movimento padronizados para velocidade, precisão e sensação tátil nativa.
- */
 export const MOTION_TOKENS = {
   duration: {
     instant: 0.05,
@@ -30,12 +26,10 @@ export const MOTION_TOKENS = {
     iconButton: { scale: 0.88 },
     card: { scale: 0.985 },
     pill: { scale: 0.92 },
+    row: { scale: 0.98 }, // NOVO — itens de linha/dropdown (sugestões, listas)
   },
 };
 
-/**
- * Variantes pré-configuradas para componentes da interface.
- */
 export const MOTION_VARIANTS = {
   screenTransition: {
     initial: { opacity: 0, y: 6 },
@@ -46,12 +40,7 @@ export const MOTION_VARIANTS = {
   cardItem: {
     initial: { opacity: 0, y: -8, scale: 0.97 },
     animate: { opacity: 1, y: 0, scale: 1 },
-    exit: {
-      opacity: 0,
-      scale: 0.92,
-      x: -16,
-      transition: { duration: 0.14 },
-    },
+    exit: { opacity: 0, scale: 0.92, x: -16, transition: { duration: 0.14 } },
   },
   modalBackdrop: {
     initial: { opacity: 0 },
@@ -73,21 +62,26 @@ export const MOTION_VARIANTS = {
   },
 };
 
-/**
- * Hook de preferência de movimento para acessibilidade WCAG.
- */
+const REDUCED_TAP: Record<keyof typeof MOTION_TOKENS.tap, Record<string, never>> = {
+  button: {},
+  iconButton: {},
+  card: {},
+  pill: {},
+  row: {},
+};
+
 export function useMotionConfig() {
   const shouldReduceMotion = useReducedMotion();
+  const orInstant = (spring: Record<string, unknown>) =>
+    shouldReduceMotion ? { duration: 0.01 } : spring;
 
   return {
     shouldReduceMotion,
-    tap: shouldReduceMotion ? {} : MOTION_TOKENS.tap,
-    spring: shouldReduceMotion
-      ? { duration: 0.01 }
-      : MOTION_TOKENS.spring.snappy,
-    layoutSpring: shouldReduceMotion
-      ? { duration: 0.01 }
-      : MOTION_TOKENS.spring.layout,
+    tap: shouldReduceMotion ? REDUCED_TAP : MOTION_TOKENS.tap,
+    spring: orInstant(MOTION_TOKENS.spring.snappy),
+    pressSpring: orInstant(MOTION_TOKENS.spring.press), // NOVO
+    modalSpring: orInstant(MOTION_TOKENS.spring.modal), // NOVO
+    layoutSpring: orInstant(MOTION_TOKENS.spring.layout),
     fadeTransition: {
       duration: shouldReduceMotion ? 0.01 : MOTION_TOKENS.duration.fast,
     },

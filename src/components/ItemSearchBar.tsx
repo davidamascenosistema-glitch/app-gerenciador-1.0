@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Plus, ListPlus, History, Sparkles, X, CornerDownLeft, Mic, MicOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useMotionConfig } from '../styles/motionSystem';
 import { ItemSuggestion, PricingModeDefault } from '../types';
 import { resolvePricingMode } from '../utils/purchaseHelpers';
 
@@ -22,6 +23,7 @@ export function ItemSearchBar({
   getSuggestions,
   recordManualItem,
 }: ItemSearchBarProps) {
+  const motionConfig = useMotionConfig();
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
@@ -196,109 +198,98 @@ export function ItemSearchBar({
   return (
     <div ref={containerRef} className="w-full relative z-30">
       <div className="flex items-center gap-2">
-        {/* Input da Barra de Busca */}
+        {/* Input da Barra de Busca com Alta Hierarquia Visual */}
         <div className="relative flex-1 group">
-          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-emerald-600 transition-colors pointer-events-none">
-            <Search className="w-4 h-4" />
-          </div>
-
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setIsOpen(true);
-              setSelectedIndex(-1);
-            }}
-            onFocus={() => setIsOpen(true)}
-            onClick={() => setIsOpen(true)}
-            onKeyDown={handleKeyDown}
-            placeholder={isListening ? 'Ouvindo... Fale o nome do item' : 'Buscar ou adicionar item...'}
-            className={`w-full bg-white border ${
+          <div
+            className={`w-full flex items-center bg-white rounded-2xl border-2 transition-all shadow-sm ${
               isListening
-                ? 'border-rose-400 ring-2 ring-rose-400/20'
-                : 'border-zinc-200/90 hover:border-zinc-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
-            } rounded-2xl pl-9 ${
-              isListening
-                ? 'pr-28'
-                : query.trim().length > 0
-                ? 'pr-28 sm:pr-32'
-                : 'pr-11'
-            } py-2.5 sm:py-3 text-xs sm:text-sm font-medium text-zinc-900 placeholder:text-zinc-400 shadow-2xs transition-all outline-none`}
-          />
+                ? 'border-rose-400 ring-4 ring-rose-400/20'
+                : 'border-emerald-500/40 hover:border-emerald-500/70 focus-within:border-emerald-600 focus-within:ring-4 focus-within:ring-emerald-500/15'
+            } px-2.5 py-1.5`}
+          >
+            {/* Ícone de Destaque Primário */}
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mr-2 shadow-2xs">
+              <Search className="w-4 h-4 stroke-[2.5]" />
+            </div>
 
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1">
-            {/* Indicador quando está ouvindo voz */}
-            {isListening ? (
-              <button
-                type="button"
-                onClick={toggleVoiceRecognition}
-                className="flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold transition-all cursor-pointer shadow-2xs animate-pulse"
-                title="Clique para parar de ouvir"
-              >
-                <Mic className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
-                <span className="text-[11px]">Ouvindo...</span>
-              </button>
-            ) : (
-              /* Botão de Microfone / Pesquisa por Voz */
-              <button
-                type="button"
-                onClick={toggleVoiceRecognition}
-                className="w-8 h-8 rounded-xl hover:bg-emerald-50 active:bg-emerald-100 text-zinc-500 hover:text-emerald-700 active:text-emerald-800 flex items-center justify-center cursor-pointer transition-colors"
-                title="Pesquisar ou adicionar por voz"
-                aria-label="Pesquisar por voz"
-              >
-                <Mic className="w-4 h-4" />
-              </button>
-            )}
+            {/* Campo de Entrada de Texto */}
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setIsOpen(true);
+                setSelectedIndex(-1);
+              }}
+              onFocus={() => setIsOpen(true)}
+              onClick={() => setIsOpen(true)}
+              onKeyDown={handleKeyDown}
+              placeholder={isListening ? 'Ouvindo... Fale o nome do item' : 'O que deseja adicionar hoje?'}
+              className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal outline-none"
+            />
 
-            {query.trim().length > 0 && !isListening && (
-              <motion.button
-                initial={{ scale: 0.7, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.7, opacity: 0 }}
-                whileTap={{ scale: 0.86 }}
-                type="button"
-                onClick={() => {
-                  setQuery('');
-                  inputRef.current?.focus();
-                }}
-                className="w-7 h-7 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-400 hover:text-zinc-600 flex items-center justify-center cursor-pointer transition-colors"
-                title="Limpar texto"
-              >
-                <X className="w-3.5 h-3.5" />
-              </motion.button>
-            )}
+            {/* Ações Integradas à Direita */}
+            <div className="flex items-center space-x-1 shrink-0 ml-1.5">
+              {/* Indicador quando está ouvindo voz */}
+              {isListening ? (
+                <button
+                  type="button"
+                  onClick={toggleVoiceRecognition}
+                  className="flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold transition-all cursor-pointer shadow-2xs animate-pulse"
+                  title="Clique para parar de ouvir"
+                >
+                  <Mic className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
+                  <span className="text-[11px]">Ouvindo...</span>
+                </button>
+              ) : (
+                /* Botão de Microfone / Pesquisa por Voz */
+                <button
+                  type="button"
+                  onClick={toggleVoiceRecognition}
+                  className="w-8 h-8 rounded-xl hover:bg-emerald-50 active:bg-emerald-100 text-zinc-400 hover:text-emerald-700 active:text-emerald-800 flex items-center justify-center cursor-pointer transition-colors"
+                  title="Pesquisar ou adicionar por voz"
+                  aria-label="Pesquisar por voz"
+                >
+                  <Mic className="w-4 h-4" />
+                </button>
+              )}
 
-            {query.trim().length > 0 && !isListening && (
-              <motion.button
-                whileTap={{ scale: 0.92 }}
-                transition={{ type: 'spring', stiffness: 600, damping: 25 }}
-                type="button"
-                onClick={() => handleAddFreeText(query)}
-                className="h-8 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                title="Adicionar item"
-              >
-                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span className="hidden sm:inline">Adicionar</span>
-              </motion.button>
-            )}
+              {/* Botão de Limpar */}
+              {query.trim().length > 0 && !isListening && (
+                <motion.button
+                  initial={{ scale: 0.7, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.7, opacity: 0 }}
+                  whileTap={motionConfig.tap.iconButton}
+                  transition={motionConfig.pressSpring}
+                  type="button"
+                  onClick={() => {
+                    setQuery('');
+                    inputRef.current?.focus();
+                  }}
+                  className="w-7 h-7 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-400 hover:text-zinc-600 flex items-center justify-center cursor-pointer transition-colors"
+                  title="Limpar texto"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </motion.button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Botão Secundário: Adicionar Vários em Lote */}
         <motion.button
-          whileTap={{ scale: 0.94 }}
-          transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+          whileTap={motionConfig.tap.button}
+          transition={motionConfig.pressSpring}
           type="button"
           onClick={onOpenBatchModal}
           title="Adicionar vários itens em lote (colar lista)"
           aria-label="Adicionar vários itens"
-          className="w-11 h-11 md:w-auto md:px-3.5 rounded-2xl bg-white hover:bg-emerald-50 active:bg-emerald-100 border border-zinc-200/90 hover:border-emerald-200 text-zinc-700 hover:text-emerald-800 flex items-center justify-center md:gap-1.5 shrink-0 shadow-2xs transition-colors cursor-pointer font-semibold text-xs min-h-[44px]"
+          className="h-11 sm:h-12 w-11 sm:w-auto sm:px-3.5 rounded-2xl bg-emerald-50/80 hover:bg-emerald-100/90 active:bg-emerald-200/80 border border-emerald-200/90 text-emerald-800 flex items-center justify-center sm:gap-1.5 shrink-0 shadow-2xs transition-all cursor-pointer font-bold text-xs min-h-[44px]"
         >
-          <ListPlus className="w-4 h-4 text-emerald-600 shrink-0 m-0 p-0" />
-          <span className="hidden md:inline">Adicionar Vários</span>
+          <ListPlus className="w-4 h-4 text-emerald-700 shrink-0" />
+          <span className="hidden sm:inline">Em Lote</span>
         </motion.button>
       </div>
 
@@ -309,14 +300,15 @@ export function ItemSearchBar({
             initial={{ opacity: 0, y: -6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            transition={{ type: 'spring', stiffness: 450, damping: 28 }}
+            transition={motionConfig.pressSpring}
             className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-zinc-200 rounded-2xl shadow-xl overflow-hidden max-h-72 overflow-y-auto z-50 divide-y divide-zinc-100"
           >
             {/* Opção rápida de adicionar texto livre caso digitado */}
             {query.trim().length > 0 && (
               <div className="p-1.5 bg-zinc-50/70 border-b border-zinc-100">
                 <motion.button
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={motionConfig.tap.row}
+                  transition={motionConfig.pressSpring}
                   type="button"
                   onClick={() => handleAddFreeText(query)}
                   className="w-full text-left px-3 py-2 rounded-xl bg-white hover:bg-emerald-50 active:bg-emerald-100 border border-zinc-200/80 hover:border-emerald-300 transition-colors flex items-center justify-between text-xs font-bold text-emerald-700 cursor-pointer"
@@ -353,8 +345,8 @@ export function ItemSearchBar({
                     const isSelected = selectedIndex === idx;
                     return (
                       <motion.button
-                        whileTap={{ scale: 0.985 }}
-                        transition={{ duration: 0.08 }}
+                        whileTap={motionConfig.tap.row}
+                        transition={motionConfig.pressSpring}
                         key={`search-personal-${item.name}-${idx}`}
                         type="button"
                         onClick={() => handleSelectSuggestion(item)}
@@ -402,8 +394,8 @@ export function ItemSearchBar({
                     const isSelected = selectedIndex === globalIdx;
                     return (
                       <motion.button
-                        whileTap={{ scale: 0.985 }}
-                        transition={{ duration: 0.08 }}
+                        whileTap={motionConfig.tap.row}
+                        transition={motionConfig.pressSpring}
                         key={`search-generic-${item.name}-${idx}`}
                         type="button"
                         onClick={() => handleSelectSuggestion(item)}

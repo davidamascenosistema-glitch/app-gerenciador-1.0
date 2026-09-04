@@ -10,6 +10,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useMotionConfig } from '../styles/motionSystem';
 import { useToast } from './Toast';
 
 interface BottomNavBarProps {
@@ -30,6 +31,7 @@ export function BottomNavBar({
   onRegisterManual,
   onRepeatPurchase,
 }: BottomNavBarProps) {
+  const motionConfig = useMotionConfig();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const { showToast } = useToast();
 
@@ -82,7 +84,8 @@ export function BottomNavBar({
         <div className="w-full max-w-md md:max-w-xl mx-auto px-6 h-16 flex items-center justify-between relative z-10 pointer-events-auto">
           {/* 1. Item Home (Esquerda) */}
           <motion.button
-            whileTap={{ scale: 0.92 }}
+            whileTap={motionConfig.tap.button}
+            transition={motionConfig.pressSpring}
             type="button"
             onClick={onNavigateToHome}
             aria-current={isHomeActive ? 'page' : undefined}
@@ -96,7 +99,7 @@ export function BottomNavBar({
             {isHomeActive && (
               <motion.div
                 layoutId="active-nav-pill"
-                transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                transition={motionConfig.layoutSpring}
                 className="absolute inset-0 bg-emerald-50 rounded-xl -z-10 border border-emerald-200/50"
               />
             )}
@@ -110,9 +113,9 @@ export function BottomNavBar({
           <div className="absolute left-1/2 -translate-x-1/2 -top-7 flex flex-col items-center pointer-events-auto">
             {/* Botão flutuando livremente no recorte transparente */}
             <motion.button
-              whileTap={{ scale: 0.90 }}
-              whileHover={{ scale: 1.04 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+              whileTap={motionConfig.tap.button}
+              whileHover={motionConfig.shouldReduceMotion ? {} : { scale: 1.04 }}
+              transition={motionConfig.pressSpring}
               type="button"
               onClick={() => setIsSheetOpen(true)}
               aria-label="Abrir menu de novas ações de compra"
@@ -124,7 +127,8 @@ export function BottomNavBar({
 
           {/* 3. Item Histórico (Direita) */}
           <motion.button
-            whileTap={{ scale: 0.92 }}
+            whileTap={motionConfig.tap.button}
+            transition={motionConfig.pressSpring}
             type="button"
             onClick={onNavigateToHistory}
             aria-current={isHistoryActive ? 'page' : undefined}
@@ -138,7 +142,7 @@ export function BottomNavBar({
             {isHistoryActive && (
               <motion.div
                 layoutId="active-nav-pill"
-                transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                transition={motionConfig.layoutSpring}
                 className="absolute inset-0 bg-emerald-50 rounded-xl -z-10 border border-emerald-200/50"
               />
             )}
@@ -168,7 +172,7 @@ export function BottomNavBar({
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+              transition={motionConfig.modalSpring}
               className="relative w-full max-w-md md:max-w-xl mx-auto bg-white rounded-t-3xl shadow-2xl border-t border-zinc-200 p-5 pb-8 sm:pb-9 z-10"
             >
               {/* Handle visual superior */}
@@ -199,7 +203,8 @@ export function BottomNavBar({
               <div className="space-y-2.5">
                 {/* Opção 1: Criar Nova Lista */}
                 <motion.button
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={motionConfig.tap.row}
+                  transition={motionConfig.pressSpring}
                   type="button"
                   onClick={handleCreateList}
                   className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-emerald-50/80 active:bg-emerald-100/70 border border-zinc-200/90 hover:border-emerald-300 transition-colors text-left min-h-[56px] cursor-pointer"
@@ -222,7 +227,8 @@ export function BottomNavBar({
 
                 {/* Opção 2: Repetir Compra Anterior */}
                 <motion.button
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={motionConfig.tap.row}
+                  transition={motionConfig.pressSpring}
                   type="button"
                   onClick={handleRepeatPurchase}
                   className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-blue-50/80 active:bg-blue-100/70 border border-zinc-200/90 hover:border-blue-300 transition-colors text-left min-h-[56px] cursor-pointer"
@@ -245,7 +251,8 @@ export function BottomNavBar({
 
                 {/* Opção 3: Registrar Compra Já Feita */}
                 <motion.button
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={motionConfig.tap.row}
+                  transition={motionConfig.pressSpring}
                   type="button"
                   onClick={handleManualRegister}
                   className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-amber-50/80 active:bg-amber-100/70 border border-zinc-200/90 hover:border-amber-300 transition-colors text-left min-h-[56px] cursor-pointer"
