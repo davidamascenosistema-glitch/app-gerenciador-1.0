@@ -30,6 +30,7 @@ import {
   Share2,
   Bookmark,
   Filter,
+  ChevronDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Item, Purchase, ItemSuggestion, PricingModeDefault } from '../types';
@@ -173,6 +174,14 @@ export function PurchaseScreen({
 
   const toggleCategoryFilter = (category: string) => {
     setActiveCategoryFilters((prev) =>
+      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
+    );
+  };
+
+  const [collapsedSections, setCollapsedSections] = useState<string[]>([]); // vazio = tudo aberto
+
+  const toggleSectionCollapse = (category: string) => {
+    setCollapsedSections((prev) =>
       prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
     );
   };
@@ -1205,7 +1214,10 @@ export function PurchaseScreen({
             {/* Lista de Cards de Itens ou Estado Vazio com Animação Fluida desde o 1º item */}
             <div className="space-y-2.5">
               {totalItemsCount > 0 && allSections.length > 1 && (
-                <div className="flex flex-wrap items-center gap-1.5 px-0.5">
+                <div
+                  className="flex flex-nowrap items-center gap-1.5 px-0.5 overflow-x-auto [&::-webkit-scrollbar]:hidden"
+                  style={{ scrollbarWidth: 'none' }}
+                >
                   <span className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 shrink-0 mr-0.5">
                     <Filter className="w-3 h-3" />
                     Filtrar:
@@ -1219,13 +1231,13 @@ export function PurchaseScreen({
                         whileTap={motionConfig.tap.pill}
                         transition={motionConfig.pressSpring}
                         onClick={() => toggleCategoryFilter(section.category)}
-                        className={`px-2.5 py-1 rounded-full border text-[11px] font-bold shrink-0 cursor-pointer transition-all ${
+                        className={`px-2 py-0.5 rounded-full border text-[11px] font-bold shrink-0 whitespace-nowrap cursor-pointer transition-all ${
                           isActive
                             ? getCategoryBadgeStyle(section.category)
                             : 'bg-white text-zinc-500 border-zinc-200/90 hover:bg-zinc-50'
                         }`}
                       >
-                        {section.category} · {section.items.length}
+                        {isActive ? `${section.category} · ${section.items.length}` : section.category}
                       </motion.button>
                     );
                   })}
@@ -1261,29 +1273,41 @@ export function PurchaseScreen({
                         exit={{ opacity: 0, transition: { duration: 0.12 } }}
                         className="space-y-2"
                       >
-                        <div className="flex items-center gap-2 px-1 pt-1.5 pb-0.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleSectionCollapse(section.category)}
+                          className="flex items-center gap-2 px-1 pt-1.5 pb-0.5 w-full cursor-pointer"
+                        >
                           <span className={`w-1 h-3.5 rounded-full shrink-0 ${getCategoryAccentBarClass(section.category)}`} />
                           <span className="text-[11px] font-bold text-zinc-600 uppercase tracking-wide">
                             {section.category}
                           </span>
                           <span className="text-[11px] text-zinc-400 font-medium">{section.items.length}</span>
-                        </div>
+                          <motion.span
+                            animate={{ rotate: collapsedSections.includes(section.category) ? -90 : 0 }}
+                            transition={motionConfig.spring}
+                            className="ml-auto text-zinc-400"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </motion.span>
+                        </button>
 
-                        <AnimatePresence mode="popLayout">
-                          {section.items.map((item) => (
-                            <PurchaseItemCard
-                              key={item.id}
-                              item={item}
-                              purchaseId={purchase.id}
-                              onToggleBought={onToggleBought}
-                              onEditItem={onEditItem}
-                              onRemoveItem={(pId, iId) => {
-                                onRemoveItem(pId, iId);
-                                showToast(`"${item.name}" removido da lista`);
-                              }}
-                              getCategoryBadgeStyle={getCategoryBadgeStyle}
-                            />
-                          ))}
+                        <AnimatePresence mode="popLayout" initial={false}>
+                          {!collapsedSections.includes(section.category) &&
+                            section.items.map((item) => (
+                              <PurchaseItemCard
+                                key={item.id}
+                                item={item}
+                                purchaseId={purchase.id}
+                                onToggleBought={onToggleBought}
+                                onEditItem={onEditItem}
+                                onRemoveItem={(pId, iId) => {
+                                  onRemoveItem(pId, iId);
+                                  showToast(`"${item.name}" removido da lista`);
+                                }}
+                                getCategoryBadgeStyle={getCategoryBadgeStyle}
+                              />
+                            ))}
                         </AnimatePresence>
                       </motion.div>
                     ))
