@@ -322,6 +322,45 @@ export function useLists(userId?: string | null) {
   };
 
   /**
+   * Atualiza um item de uma lista existente
+   */
+  const editListItem = async (
+    listId: string,
+    itemId: string,
+    updates: Partial<ListItem>
+  ): Promise<void> => {
+    setLists((prev) => {
+      const updated = prev.map((l) => {
+        if (l.id !== listId) return l;
+        return {
+          ...l,
+          items: l.items.map((i) => (i.id === itemId ? { ...i, ...updates } : i)),
+        };
+      });
+      saveToLocal(updated);
+      return updated;
+    });
+
+    if (isSupabaseConfigured()) {
+      try {
+        const dbUpdates: any = {};
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.category !== undefined) dbUpdates.category = updates.category;
+        if (updates.quantity !== undefined) dbUpdates.quantity = updates.quantity;
+        if (updates.weight !== undefined) dbUpdates.weight = updates.weight;
+        if (updates.isWeighted !== undefined) dbUpdates.is_weighted = updates.isWeighted;
+        if (updates.pricingModeSource !== undefined) dbUpdates.pricing_mode_source = updates.pricingModeSource;
+
+        if (Object.keys(dbUpdates).length > 0) {
+          await supabase.from('list_items').update(dbUpdates).eq('id', itemId);
+        }
+      } catch (err) {
+        console.error('Erro ao atualizar item da lista no Supabase:', err);
+      }
+    }
+  };
+
+  /**
    * Remove um item de uma lista existente
    */
   const removeItemFromList = async (listId: string, itemId: string): Promise<void> => {
@@ -357,6 +396,7 @@ export function useLists(userId?: string | null) {
     deleteList,
     updateListName,
     addItemToList,
+    editListItem,
     removeItemFromList,
     getListById,
     refreshLists: fetchListsFromSupabase,

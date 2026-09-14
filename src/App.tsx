@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { HomeScreen } from './components/HomeScreen';
 import { PurchaseScreen } from './components/PurchaseScreen';
 import { PurchaseDetailScreen } from './components/PurchaseDetailScreen';
+import { ListScreen } from './components/ListScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { AuthScreen } from './components/AuthScreen';
@@ -25,6 +26,7 @@ function MainApp() {
   const { showToast } = useToast();
   const [activeScreen, setActiveScreen] = useState<'home' | 'history' | 'profile' | 'history_select'>('home');
   const [activePurchaseId, setActivePurchaseId] = useState<string | null>(null);
+  const [activeListId, setActiveListId] = useState<string | null>(null);
   const [selectedDetailPurchaseId, setSelectedDetailPurchaseId] = useState<string | null>(null);
   const [celebratingPurchase, setCelebratingPurchase] = useState<Purchase | null>(null);
 
@@ -58,6 +60,10 @@ function MainApp() {
 
   const activePurchase = activePurchaseId
     ? purchasesHook.getPurchaseById(activePurchaseId)
+    : null;
+
+  const activeList = activeListId
+    ? listsHook.getListById(activeListId)
     : null;
 
   const selectedDetailPurchase = selectedDetailPurchaseId
@@ -153,6 +159,51 @@ function MainApp() {
         onFinishPurchase={handleFinishPurchase}
       />
     );
+  } else if (activeList) {
+    // Nova tela cheia de gerenciamento de molde/template de lista
+    screenKey = `list-${activeList.id}`;
+    content = (
+      <ListScreen
+        userId={auth.user?.id}
+        list={activeList}
+        allPurchases={purchasesHook.purchases}
+        onBack={() => setActiveListId(null)}
+        onUpdateName={listsHook.updateListName}
+        onAddItem={listsHook.addItemToList}
+        onEditItem={listsHook.editListItem}
+        onRemoveItem={listsHook.removeItemFromList}
+        onDeleteList={(id) => {
+          listsHook.deleteList(id);
+          setActiveListId(null);
+          showToast('Molde de lista excluído.');
+        }}
+        onStartPurchaseFromList={(listTemplate) => {
+          const initialItems = (listTemplate.items || []).map((item) => ({
+            id: crypto.randomUUID(),
+            name: item.name,
+            category: item.category || 'Geral',
+            quantity: item.quantity || 1,
+            weight: item.weight,
+            isWeighted: item.isWeighted || false,
+            price: item.price,
+            bought: false,
+            pricingModeSource: item.pricingModeSource ?? null,
+          }));
+
+          const newPurchase = purchasesHook.createPurchase({
+            name: listTemplate.name || 'Nova Compra',
+            status: 'pending',
+            origin: 'list',
+            items: initialItems,
+            fromListId: listTemplate.id,
+          });
+
+          setActiveListId(null);
+          setActivePurchaseId(newPurchase.id);
+          showToast(`Compra iniciada com a lista "${listTemplate.name}"!`);
+        }}
+      />
+    );
   } else if (activeScreen === 'history_select') {
     screenKey = 'history_select';
     content = (
@@ -200,6 +251,9 @@ function MainApp() {
         onNavigateToPurchase={(id) => {
           setActivePurchaseId(id);
         }}
+        onNavigateToList={(id) => {
+          setActiveListId(id);
+        }}
         onNavigateToHistory={() => {
           setActiveScreen('history');
         }}
@@ -216,9 +270,10 @@ function MainApp() {
 
   // Definir se a barra de navegação inferior deve estar visível
   const isEditingPurchase = Boolean(activePurchase && activePurchase.status === 'pending');
+  const isEditingList = Boolean(activeList);
   const isViewingDetail = Boolean(selectedDetailPurchase && selectedDetailPurchase.status === 'finished');
   const isSelectingHistory = activeScreen === 'history_select';
-  const showBottomNav = !isEditingPurchase && !isViewingDetail && !isSelectingHistory;
+  const showBottomNav = !isEditingPurchase && !isEditingList && !isViewingDetail && !isSelectingHistory;
 
   return (
     <div className="w-full min-h-screen bg-zinc-50 text-zinc-900 flex flex-col relative overflow-x-clip">

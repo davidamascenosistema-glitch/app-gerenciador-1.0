@@ -452,18 +452,18 @@ export const isDefaultPurchaseName = (name?: string | null): boolean => {
   return DEFAULT_PURCHASE_NAMES.some((def) => def.toLowerCase() === trimmed);
 };
 
-export interface CategorySection {
+export interface CategorySection<T = Item> {
   category: string;
-  items: Item[];
+  items: T[];
 }
 
 /**
- * Agrupa os itens da compra por categoria, em ordem alfabética (pt-BR,
+ * Agrupa os itens da compra ou lista por categoria, em ordem alfabética (pt-BR,
  * considerando acentuação corretamente — "Açougue" antes de "Alimentos").
  * Categoria sem nenhum item não gera seção.
  */
-export const groupItemsByCategory = (items: Item[]): CategorySection[] => {
-  const map = new Map<string, Item[]>();
+export const groupItemsByCategory = <T extends { category?: string }>(items: T[]): CategorySection<T>[] => {
+  const map = new Map<string, T[]>();
   for (const item of items) {
     const cat = item.category || 'Geral';
     if (!map.has(cat)) map.set(cat, []);

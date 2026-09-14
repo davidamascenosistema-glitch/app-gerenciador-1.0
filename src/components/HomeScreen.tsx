@@ -29,13 +29,12 @@ import { calculatePurchaseTotal, formatCurrencyBRL, formatDateBRL } from '../uti
 import { Purchase, List, ListItem, Item } from '../types';
 import { useToast } from './Toast';
 import { NewPurchaseModal } from './NewPurchaseModal';
-import { CreateListModal } from './CreateListModal';
-import { ListDetailModal } from './ListDetailModal';
 
 interface HomeScreenProps {
   purchasesHook?: ReturnType<typeof usePurchases>;
   listsHook?: ReturnType<typeof useLists>;
   onNavigateToPurchase?: (purchaseId: string) => void;
+  onNavigateToList?: (listId: string) => void;
   onNavigateToHistory?: () => void;
   onNavigateToProfile?: () => void;
   onRepeatPurchase?: () => void;
@@ -47,6 +46,7 @@ export function HomeScreen({
   purchasesHook: externalPurchasesHook,
   listsHook: externalListsHook,
   onNavigateToPurchase,
+  onNavigateToList,
   onNavigateToHistory,
   onNavigateToProfile,
   onRepeatPurchase,
@@ -75,10 +75,24 @@ export function HomeScreen({
 
   // Estados dos Modais
   const [isNewPurchaseModalOpen, setIsNewPurchaseModalOpen] = useState(false);
-  const [isCreateListModalOpen, setIsCreateListModalOpen] = useState(false);
   const [selectedListForPurchase, setSelectedListForPurchase] = useState<string | null>(null);
-  const [selectedListForDetail, setSelectedListForDetail] = useState<List | null>(null);
   const [purchaseToDiscard, setPurchaseToDiscard] = useState<Purchase | null>(null);
+
+  // Navegação para a nova tela cheia de gerenciamento de lista
+  const handleOpenListScreen = (listId: string) => {
+    if (onNavigateToList) {
+      onNavigateToList(listId);
+    }
+  };
+
+  const handleCreateNewListTemplate = async () => {
+    const created = await createList({ name: 'Nova Lista' });
+    if (onNavigateToList) {
+      onNavigateToList(created.id);
+    } else {
+      showToast(`Molde "${created.name}" criado!`);
+    }
+  };
 
   const pendingPurchases = (getPendingPurchases() || []).sort((a, b) => {
     const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -254,7 +268,7 @@ export function HomeScreen({
               whileHover={motionConfig.shouldReduceMotion ? {} : { scale: 1.015 }}
               transition={motionConfig.pressSpring}
               type="button"
-              onClick={() => setIsCreateListModalOpen(true)}
+              onClick={handleCreateNewListTemplate}
               className="flex flex-col justify-between p-3.5 sm:p-4 rounded-2xl bg-white border border-zinc-200 hover:border-indigo-300 active:border-indigo-400 shadow-2xs hover:shadow-xs transition-all text-left cursor-pointer group min-h-[120px] relative overflow-hidden"
             >
               {/* Top Row: Badge & Ícone */}
@@ -335,7 +349,7 @@ export function HomeScreen({
 
             <button
               type="button"
-              onClick={() => setIsCreateListModalOpen(true)}
+              onClick={handleCreateNewListTemplate}
               className="inline-flex items-center space-x-1 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200/80 border border-indigo-200/80 px-2.5 py-1 rounded-lg transition-colors cursor-pointer min-h-[32px]"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -355,7 +369,7 @@ export function HomeScreen({
               </p>
               <button
                 type="button"
-                onClick={() => setIsCreateListModalOpen(true)}
+                onClick={handleCreateNewListTemplate}
                 className="py-2 px-3.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs transition-colors cursor-pointer min-h-[38px] flex items-center space-x-1"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -372,7 +386,10 @@ export function HomeScreen({
                     className="w-full bg-white rounded-2xl border border-zinc-200 hover:border-indigo-300 p-3.5 shadow-2xs flex flex-col justify-between transition-all hover:shadow-xs group"
                   >
                     {/* Top: Nome da Lista e Quantidade de Itens */}
-                    <div className="mb-2.5">
+                    <div
+                      className="mb-2.5 cursor-pointer"
+                      onClick={() => handleOpenListScreen(list.id)}
+                    >
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <h4 className="text-sm font-bold text-zinc-900 group-hover:text-indigo-900 truncate leading-snug transition-colors">
                           {list.name}
@@ -394,7 +411,7 @@ export function HomeScreen({
                     <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-zinc-100">
                       <button
                         type="button"
-                        onClick={() => setSelectedListForDetail(list)}
+                        onClick={() => handleOpenListScreen(list.id)}
                         className="w-full py-2 px-2.5 rounded-xl bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border border-zinc-200 font-semibold text-xs flex items-center justify-center space-x-1 transition-colors cursor-pointer min-h-[38px]"
                       >
                         <span>Ver Molde</span>
@@ -639,35 +656,6 @@ export function HomeScreen({
               setSelectedListForPurchase(null);
             }}
             onStartPurchase={handleStartPurchaseSession}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Modal: Criar Nova Lista (Planejamento em Casa) */}
-      <AnimatePresence>
-        {isCreateListModalOpen && (
-          <CreateListModal
-            isOpen={isCreateListModalOpen}
-            onClose={() => setIsCreateListModalOpen(false)}
-            onCreateList={handleCreateListSubmit}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Modal: Detalhes do Molde de Lista (Adicionar/Remover Itens, Comprar) */}
-      <AnimatePresence>
-        {selectedListForDetail && (
-          <ListDetailModal
-            list={selectedListForDetail}
-            isOpen={!!selectedListForDetail}
-            onClose={() => setSelectedListForDetail(null)}
-            onStartPurchaseWithList={handleOpenPurchaseWithList}
-            onAddItemToList={addItemToList}
-            onRemoveItemFromList={removeItemFromList}
-            onDeleteList={(id) => {
-              deleteList(id);
-              showToast('Molde de lista excluído.');
-            }}
           />
         )}
       </AnimatePresence>
