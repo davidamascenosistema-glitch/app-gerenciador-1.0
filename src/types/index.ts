@@ -29,4 +29,47 @@ export interface Purchase {
   createdAt: string;
   finishedAt?: string;
   items: Item[];
+  budget?: number;
+  storeName?: string;
+  fromListId?: string;
+}
+
+export interface ListItem {
+  id: string;
+  listId?: string;
+  name: string;
+  category: string;
+  quantity: number;
+  weight?: number;
+  isWeighted: boolean;
+  price?: number;
+  pricingModeSource?: PricingModeDefault | null;
+}
+
+export interface List {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt?: string;
+  items: ListItem[];
+}
+
+export interface CreatePurchaseParams {
+  id?: string;
+  name?: string;
+  status?: 'pending' | 'finished';
+  origin?: 'list' | 'invoice' | 'manual';
+  createdAt?: string;
+  finishedAt?: string;
+  items?: Item[];
+  budget?: number;
+  storeName?: string;
+  fromListId?: string;
+}
+
+export interface CreateListParams {
+  name: string;
+  description?: string;
+  items?: Omit<ListItem, 'id'>[];
 }

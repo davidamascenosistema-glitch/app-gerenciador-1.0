@@ -36,6 +36,9 @@ export function usePurchases(userId?: string | null) {
       origin: (dbPurchase.origin as 'list' | 'invoice' | 'manual') || 'list',
       createdAt: dbPurchase.created_at || dbPurchase.createdAt || new Date().toISOString(),
       finishedAt: dbPurchase.finished_at || dbPurchase.finishedAt || undefined,
+      budget: dbPurchase.budget != null ? Number(dbPurchase.budget) : undefined,
+      storeName: dbPurchase.store_name ?? dbPurchase.storeName ?? undefined,
+      fromListId: dbPurchase.from_list_id ?? dbPurchase.fromListId ?? undefined,
       items: dbItems.map(mapDbItemToAppItem),
     };
   };
@@ -293,6 +296,9 @@ export function usePurchases(userId?: string | null) {
       origin,
       createdAt,
       finishedAt: purchaseData.finishedAt,
+      budget: purchaseData.budget != null ? Number(purchaseData.budget) : undefined,
+      storeName: purchaseData.storeName || undefined,
+      fromListId: purchaseData.fromListId || undefined,
       items,
     };
 
@@ -310,6 +316,9 @@ export function usePurchases(userId?: string | null) {
           origin: newPurchase.origin,
           created_at: newPurchase.createdAt,
           finished_at: newPurchase.finishedAt || null,
+          budget: newPurchase.budget != null ? newPurchase.budget : null,
+          store_name: newPurchase.storeName || null,
+          from_list_id: newPurchase.fromListId || null,
         })
         .then(({ error: pError }) => {
           if (pError) console.error('Erro ao criar compra no Supabase:', pError);
@@ -336,6 +345,36 @@ export function usePurchases(userId?: string | null) {
     }
 
     return newPurchase;
+  };
+
+  /**
+   * Cria uma nova compra a partir de um molde de lista existente (da tabela lists/list_items)
+   */
+  const createPurchaseFromList = (
+    list: { id: string; name: string; items: any[] },
+    options?: { budget?: number; storeName?: string; name?: string }
+  ): Purchase => {
+    const clonedItems: Item[] = (list.items || []).map((item) => ({
+      id: crypto.randomUUID(),
+      name: item.name,
+      category: item.category || 'Geral',
+      quantity: item.quantity || 1,
+      weight: item.weight,
+      isWeighted: item.isWeighted || false,
+      price: item.price,
+      bought: false,
+      pricingModeSource: item.pricingModeSource ?? null,
+    }));
+
+    return createPurchase({
+      name: options?.name || list.name || 'Compra no Mercado',
+      status: 'pending',
+      origin: 'list',
+      items: clonedItems,
+      budget: options?.budget,
+      storeName: options?.storeName,
+      fromListId: list.id,
+    });
   };
 
   /**
@@ -583,6 +622,7 @@ export function usePurchases(userId?: string | null) {
     discardPurchase,
     createPurchase,
     createPurchaseFromTemplate,
+    createPurchaseFromList,
     updatePurchaseName,
     addItemToPurchase,
     editItemInPurchase,

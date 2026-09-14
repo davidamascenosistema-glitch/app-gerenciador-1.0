@@ -8,6 +8,7 @@ import { HistoryScreen } from './components/HistoryScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { usePurchases } from './hooks/usePurchases';
+import { useLists } from './hooks/useLists';
 import { useAuth } from './hooks/useAuth';
 import { ToastProvider, useToast } from './components/Toast';
 import { PurchaseCelebrationModal } from './components/PurchaseCelebrationModal';
@@ -20,6 +21,7 @@ import { Purchase } from './types';
 function MainApp() {
   const auth = useAuth();
   const purchasesHook = usePurchases(auth.user?.id);
+  const listsHook = useLists(auth.user?.id);
   const { showToast } = useToast();
   const [activeScreen, setActiveScreen] = useState<'home' | 'history' | 'profile' | 'history_select'>('home');
   const [activePurchaseId, setActivePurchaseId] = useState<string | null>(null);
@@ -194,6 +196,7 @@ function MainApp() {
     content = (
       <HomeScreen
         purchasesHook={purchasesHook}
+        listsHook={listsHook}
         onNavigateToPurchase={(id) => {
           setActivePurchaseId(id);
         }}
