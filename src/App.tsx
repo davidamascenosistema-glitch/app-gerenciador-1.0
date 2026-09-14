@@ -246,6 +246,7 @@ function MainApp() {
     screenKey = 'home';
     content = (
       <HomeScreen
+        user={auth.user}
         purchasesHook={purchasesHook}
         listsHook={listsHook}
         onNavigateToPurchase={(id) => {

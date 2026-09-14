@@ -1,36 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
-  ShoppingCart,
-  Play,
-  Trash2,
-  Clock,
-  Plus,
-  ShoppingBag,
-  X,
+  Settings,
+  Star,
+  MessageSquare,
   TrendingUp,
-  RotateCcw,
-  Receipt,
-  ChevronRight,
-  User,
-  ClipboardList,
-  Store,
+  ShoppingCart,
   DollarSign,
-  ListPlus,
-  Layers,
-  ArrowRight,
-  ExternalLink,
-  Info
+  Bookmark,
+  ChevronRight,
+  Clock,
+  Trash2,
+  Play,
+  Plus,
+  X,
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useMotionConfig } from '../styles/motionSystem';
 import { usePurchases } from '../hooks/usePurchases';
 import { useLists } from '../hooks/useLists';
-import { calculatePurchaseTotal, formatCurrencyBRL, formatDateBRL } from '../utils/purchaseHelpers';
-import { Purchase, List, ListItem, Item } from '../types';
+import { calculatePurchaseTotal, formatCurrencyBRL } from '../utils/purchaseHelpers';
+import { Purchase, Item } from '../types';
 import { useToast } from './Toast';
 import { NewPurchaseModal } from './NewPurchaseModal';
+import { User } from '@supabase/supabase-js';
 
 interface HomeScreenProps {
+  user?: User | null;
   purchasesHook?: ReturnType<typeof usePurchases>;
   listsHook?: ReturnType<typeof useLists>;
   onNavigateToPurchase?: (purchaseId: string) => void;
@@ -42,15 +39,27 @@ interface HomeScreenProps {
   initialToastMessage?: string;
 }
 
+// Catálogo base de itens frequentemente comprados em supermercados
+const DEFAULT_FREQUENT_ITEMS = [
+  { name: 'Leite Integral 1L', category: 'Bebidas' },
+  { name: 'Arroz Branco 5kg', category: 'Alimentos' },
+  { name: 'Feijão Carioca 1kg', category: 'Alimentos' },
+  { name: 'Café Tradicional 500g', category: 'Alimentos' },
+  { name: 'Pão Francês', category: 'Padaria' },
+  { name: 'Banana Prata', category: 'Hortifruti' },
+  { name: 'Ovos Brancos 12un', category: 'Alimentos' },
+  { name: 'Azeite de Oliva 500ml', category: 'Alimentos' },
+  { name: 'Detergente Neutro', category: 'Limpeza' },
+  { name: 'Sabonete Líquido', category: 'Higiene' },
+];
+
 export function HomeScreen({
+  user,
   purchasesHook: externalPurchasesHook,
   listsHook: externalListsHook,
   onNavigateToPurchase,
   onNavigateToList,
-  onNavigateToHistory,
   onNavigateToProfile,
-  onRepeatPurchase,
-  onSelectFinishedPurchase,
   initialToastMessage,
 }: HomeScreenProps) {
   const motionConfig = useMotionConfig();
@@ -64,27 +73,107 @@ export function HomeScreen({
     getPendingPurchases, 
     getFinishedPurchases, 
     discardPurchase, 
-    createPurchase, 
-    createPurchaseFromTemplate,
-    createPurchaseFromList 
+    createPurchase,
+    addItemToPurchase 
   } = purchasesHook;
 
-  const { lists, createList, deleteList, addItemToList, removeItemFromList } = listsHook;
-
+  const { lists, createList, addItemToList } = listsHook;
   const { showToast } = useToast();
 
-  // Estados dos Modais
+  // Estados locais
+  const [timeFilter, setTimeFilter] = useState<'ano' | 'mes' | 'semana'>('mes');
   const [isNewPurchaseModalOpen, setIsNewPurchaseModalOpen] = useState(false);
-  const [selectedListForPurchase, setSelectedListForPurchase] = useState<string | null>(null);
   const [purchaseToDiscard, setPurchaseToDiscard] = useState<Purchase | null>(null);
+  const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
 
-  // Navegação para a nova tela cheia de gerenciamento de lista
-  const handleOpenListScreen = (listId: string) => {
-    if (onNavigateToList) {
-      onNavigateToList(listId);
+  // Toast inicial se fornecido
+  React.useEffect(() => {
+    if (initialToastMessage) {
+      showToast(initialToastMessage);
     }
-  };
+  }, [initialToastMessage, showToast]);
 
+  // Identificação do Usuário
+  const userName = 
+    user?.user_metadata?.name || 
+    user?.user_metadata?.full_name || 
+    (user?.email ? user.email.split('@')[0] : 'Usuário');
+    
+  const userInitial = (user?.email || userName || 'U').charAt(0).toUpperCase();
+
+  // Compras pendentes e finalizadas
+  const pendingPurchases = (getPendingPurchases() || []).sort((a, b) => {
+    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return dateB - dateA;
+  });
+
+  const activePendingPurchase = pendingPurchases.length > 0 ? pendingPurchases[0] : null;
+  const finishedPurchases = getFinishedPurchases() || [];
+
+  // Cálculo das estatísticas com base no filtro de período
+  const stats = useMemo(() => {
+    const now = new Date();
+    const filtered = finishedPurchases.filter((p) => {
+      const dateStr = p.finishedAt || p.createdAt;
+      if (!dateStr) return false;
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return false;
+
+      if (timeFilter === 'semana') {
+        const diffMs = now.getTime() - date.getTime();
+        return diffMs >= 0 && diffMs <= 7 * 24 * 60 * 60 * 1000;
+      } else if (timeFilter === 'mes') {
+        return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+      } else {
+        // ano
+        return date.getFullYear() === now.getFullYear();
+      }
+    });
+
+    const total = filtered.reduce((acc, p) => acc + calculatePurchaseTotal(p), 0);
+    const count = filtered.length;
+    const avg = count > 0 ? total / count : 0;
+
+    return { total, count, avg };
+  }, [finishedPurchases, timeFilter]);
+
+  // Itens comprados com frequência: mescla os itens do histórico com os defaults
+  const frequentItems = useMemo(() => {
+    const counts = new Map<string, { name: string; category: string; count: number }>();
+
+    finishedPurchases.forEach((p) => {
+      (p.items || []).forEach((item) => {
+        if (!item.name || !item.name.trim()) return;
+        const key = item.name.trim().toLowerCase();
+        const existing = counts.get(key);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          counts.set(key, {
+            name: item.name.trim(),
+            category: item.category || 'Geral',
+            count: 1,
+          });
+        }
+      });
+    });
+
+    const fromHistory = Array.from(counts.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const historyNames = new Set(fromHistory.map((item) => item.name.toLowerCase()));
+    const fallbacks = DEFAULT_FREQUENT_ITEMS.filter(
+      (item) => !historyNames.has(item.name.toLowerCase())
+    );
+
+    return [...fromHistory, ...fallbacks].slice(0, 10);
+  }, [finishedPurchases]);
+
+  // Navegação para criar nova lista
   const handleCreateNewListTemplate = async () => {
     const created = await createList({ name: 'Nova Lista' });
     if (onNavigateToList) {
@@ -94,39 +183,7 @@ export function HomeScreen({
     }
   };
 
-  const pendingPurchases = (getPendingPurchases() || []).sort((a, b) => {
-    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-    return dateB - dateA;
-  });
-
-  const finishedPurchases = getFinishedPurchases() || [];
-  const latestFinishedPurchase = finishedPurchases.length > 0 ? finishedPurchases[0] : null;
-
-  // Gastos do mês atual
-  const currentMonthTotal = React.useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
-    return finishedPurchases.reduce((acc, p) => {
-      const dateStr = p.finishedAt || p.createdAt;
-      if (!dateStr) return acc;
-      const date = new Date(dateStr);
-      if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
-        return acc + calculatePurchaseTotal(p);
-      }
-      return acc;
-    }, 0);
-  }, [finishedPurchases]);
-
-  React.useEffect(() => {
-    if (initialToastMessage) {
-      showToast(initialToastMessage);
-    }
-  }, [initialToastMessage, showToast]);
-
-  // Handler para iniciar compra através do modal de configuração ágil
+  // Iniciar compra pelo modal
   const handleStartPurchaseSession = (params: {
     name?: string;
     storeName?: string;
@@ -163,7 +220,6 @@ export function HomeScreen({
     });
 
     setIsNewPurchaseModalOpen(false);
-    setSelectedListForPurchase(null);
 
     if (onNavigateToPurchase) {
       onNavigateToPurchase(newPurchase.id);
@@ -172,19 +228,7 @@ export function HomeScreen({
     }
   };
 
-  // Handler para criar nova lista de planejamento
-  const handleCreateListSubmit = async (name: string, items?: Omit<ListItem, 'id'>[]) => {
-    const created = await createList({ name, items });
-    showToast(`Molde de lista "${created.name}" criado com sucesso!`);
-  };
-
-  // Handler para abrir modal de nova compra a partir de um molde de lista específico
-  const handleOpenPurchaseWithList = (list: List) => {
-    setSelectedListForPurchase(list.id);
-    setIsNewPurchaseModalOpen(true);
-  };
-
-  // Handler para continuar compra pendente existente
+  // Continuar compra pendente
   const handleContinuePending = (purchase: Purchase) => {
     if (onNavigateToPurchase) {
       onNavigateToPurchase(purchase.id);
@@ -194,7 +238,7 @@ export function HomeScreen({
     }
   };
 
-  // Handler para descarte
+  // Descartar compra pendente
   const handleOpenDiscardModal = (purchase: Purchase, e?: React.MouseEvent) => {
     if (e) {
       e.preventDefault();
@@ -213,448 +257,381 @@ export function HomeScreen({
     showToast(`Compra "${name}" descartada com sucesso.`);
   };
 
-  // Handler para repetir última compra
-  const handleRepeatLatestPurchase = (template: Purchase) => {
-    const newPurchase = createPurchaseFromTemplate(template);
-    showToast(`Compra criada a partir de "${template.name || 'Última compra'}"`);
-    if (onNavigateToPurchase) {
-      onNavigateToPurchase(newPurchase.id);
+  // Ação ao clicar no "+" do item frequente
+  const handleAddFrequentItem = (item: { name: string; category: string }) => {
+    if (activePendingPurchase) {
+      // Se houver compra pendente, adiciona diretamente a ela
+      addItemToPurchase(activePendingPurchase.id, {
+        name: item.name,
+        category: item.category,
+        quantity: 1,
+        isWeighted: false,
+        bought: false,
+      });
+      showToast(`"${item.name}" adicionado à compra em andamento!`);
+    } else if (lists.length > 0) {
+      // Se houver listas, adiciona à lista principal/recente
+      addItemToList(lists[0].id, {
+        name: item.name,
+        category: item.category,
+        quantity: 1,
+        isWeighted: false,
+      });
+      showToast(`"${item.name}" adicionado à lista "${lists[0].name}"!`);
+    } else {
+      // Se não houver nada aberto, cria uma compra rápida ou lista
+      const newPurchase = createPurchase({
+        name: 'Compra Rápida',
+        status: 'pending',
+        origin: 'manual',
+        items: [
+          {
+            id: crypto.randomUUID(),
+            name: item.name,
+            category: item.category,
+            quantity: 1,
+            isWeighted: false,
+            bought: false,
+          },
+        ],
+      });
+      if (onNavigateToPurchase) {
+        onNavigateToPurchase(newPurchase.id);
+      } else {
+        showToast(`Compra criada com "${item.name}"!`);
+      }
     }
+  };
+
+  const handleSendFeedback = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedbackText.trim()) return;
+    showToast('Agradecemos seu feedback!');
+    setFeedbackText('');
+    setIsFeedbackModalOpen(false);
   };
 
   return (
     <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 flex flex-col justify-between selection:bg-emerald-500 selection:text-white font-sans relative">
-      {/* Mobile-Optimized Header */}
-      <header className="w-full bg-white border-b border-zinc-200/80 sticky top-0 z-20 shadow-2xs">
-        <div className="w-full max-w-md md:max-w-xl mx-auto px-3.5 py-3 sm:px-6 flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-2xs shrink-0">
-              <ShoppingCart className="w-4 h-4" />
-            </div>
-            <div>
-              <h1 className="text-base sm:text-lg font-bold tracking-tight text-zinc-900 leading-tight">
-                Lista &amp; Compra
-              </h1>
-              <p className="text-[11px] sm:text-xs text-zinc-500 font-medium leading-none mt-0.5">
-                Organize listas e controle seus gastos
-              </p>
-            </div>
-          </div>
+      
+      {/* ========================================================================= */}
+      {/* 1. HEADER DE PERFIL (FUNDO VERDE ESCURO)                                   */}
+      {/* ========================================================================= */}
+      <header className="w-full bg-emerald-900 text-white rounded-b-3xl shadow-md relative overflow-hidden pb-6 pt-5 sm:pt-6 px-4">
+        {/* Subtle background glow effect */}
+        <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-emerald-700/30 blur-2xl pointer-events-none" />
+        <div className="absolute -bottom-10 -left-10 w-40 h-40 rounded-full bg-emerald-600/20 blur-xl pointer-events-none" />
 
-          <button
-            type="button"
-            onClick={onNavigateToProfile}
-            aria-label="Ver Perfil"
-            className="w-10 h-10 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-600 hover:text-emerald-700 active:text-emerald-800 flex items-center justify-center transition-colors cursor-pointer shrink-0 min-h-[44px] min-w-[44px] active:scale-95"
-          >
-            <User className="w-5 h-5" />
-          </button>
-        </div>
-      </header>
-
-      {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 pt-3.5 sm:pt-4 pb-28 sm:pb-32 flex flex-col space-y-5">
-        
-        {/* ========================================================================= */}
-        {/* 1. DUAS AÇÕES PRIMÁRIAS EM DESTAQUE (HERO ACTIONS)                         */}
-        {/*    - Criar Lista (Planejamento em casa)                                   */}
-        {/*    - Iniciar Compra (Uso ativo no mercado)                                */}
-        {/* ========================================================================= */}
-        <section className="w-full space-y-2.5">
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-            {/* Ação 1: Criar Lista (Planejamento em Casa) */}
-            <motion.button
-              whileTap={motionConfig.tap.card}
-              whileHover={motionConfig.shouldReduceMotion ? {} : { scale: 1.015 }}
-              transition={motionConfig.pressSpring}
-              type="button"
-              onClick={handleCreateNewListTemplate}
-              className="flex flex-col justify-between p-3.5 sm:p-4 rounded-2xl bg-white border border-zinc-200 hover:border-indigo-300 active:border-indigo-400 shadow-2xs hover:shadow-xs transition-all text-left cursor-pointer group min-h-[120px] relative overflow-hidden"
-            >
-              {/* Top Row: Badge & Ícone */}
-              <div className="flex items-center justify-between w-full mb-2">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider">
-                  Em Casa
-                </span>
-                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-100/70 text-indigo-700 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
-                  <ClipboardList className="w-4 h-4 sm:w-4.5 sm:h-4.5 stroke-[2.2]" />
-                </div>
-              </div>
-
-              {/* Título e Descrição */}
-              <div>
-                <h3 className="text-sm sm:text-base font-bold text-zinc-900 group-hover:text-indigo-900 leading-tight transition-colors flex items-center space-x-1">
-                  <span>Criar Lista</span>
-                  <Plus className="w-3.5 h-3.5 text-indigo-600 stroke-[2.5]" />
-                </h3>
-                <p className="text-[11px] sm:text-xs text-zinc-500 font-medium leading-snug mt-1">
-                  Planeje moldes para reutilizar
-                </p>
-              </div>
-            </motion.button>
-
-            {/* Ação 2: Iniciar Compra (Uso Ativo no Mercado) */}
-            <motion.button
-              whileTap={motionConfig.tap.card}
-              whileHover={motionConfig.shouldReduceMotion ? {} : { scale: 1.015 }}
-              transition={motionConfig.pressSpring}
-              type="button"
-              onClick={() => {
-                setSelectedListForPurchase(null);
-                setIsNewPurchaseModalOpen(true);
-              }}
-              className="flex flex-col justify-between p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 active:from-emerald-800 active:to-teal-900 text-white shadow-md shadow-emerald-700/20 hover:shadow-lg hover:shadow-emerald-700/25 transition-all text-left cursor-pointer group min-h-[120px] relative overflow-hidden"
-            >
-              {/* Top Row: Badge & Ícone */}
-              <div className="flex items-center justify-between w-full mb-2">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-white/20 border border-white/25 text-white text-[10px] sm:text-[11px] font-bold uppercase tracking-wider">
-                  No Mercado
-                </span>
-                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/20 text-white flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
-                  <ShoppingCart className="w-4 h-4 sm:w-4.5 sm:h-4.5 stroke-[2.2]" />
-                </div>
-              </div>
-
-              {/* Título e Descrição */}
-              <div>
-                <h3 className="text-sm sm:text-base font-bold text-white leading-tight flex items-center space-x-1">
-                  <span>Iniciar Compra</span>
-                  <ArrowRight className="w-3.5 h-3.5 stroke-[2.5] opacity-90 group-hover:translate-x-0.5 transition-transform" />
-                </h3>
-                <p className="text-[11px] sm:text-xs text-emerald-100 font-medium leading-snug mt-1">
-                  Marque preços e teto de gastos
-                </p>
-              </div>
-            </motion.button>
-          </div>
-        </section>
-
-        {/* ========================================================================= */}
-        {/* 2. SEÇÃO: SUAS LISTAS (MOLDES DE PLANEJAMENTO REAPROVEITÁVEIS)             */}
-        {/* ========================================================================= */}
-        <section className="w-full space-y-2.5">
-          <div className="flex items-center justify-between px-0.5">
-            <div>
-              <h2 className="text-sm sm:text-base font-bold text-zinc-900 tracking-tight leading-snug flex items-center space-x-1.5">
-                <Layers className="w-4 h-4 text-indigo-600" />
-                <span>Suas Listas</span>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
-                  {lists.length}
-                </span>
-              </h2>
-              <p className="text-[11px] text-zinc-500 font-medium">
-                Moldes prontos para planejar e reaproveitar
-              </p>
-            </div>
-
+        <div className="w-full max-w-md md:max-w-xl mx-auto relative z-10">
+          {/* Canto Superior Direito: Engrenagem (Settings) */}
+          <div className="flex justify-end mb-1">
             <button
               type="button"
-              onClick={handleCreateNewListTemplate}
-              className="inline-flex items-center space-x-1 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200/80 border border-indigo-200/80 px-2.5 py-1 rounded-lg transition-colors cursor-pointer min-h-[32px]"
+              onClick={onNavigateToProfile}
+              aria-label="Configurações de Perfil"
+              className="w-10 h-10 rounded-xl bg-emerald-800/80 hover:bg-emerald-700 active:bg-emerald-600 text-emerald-100 hover:text-white flex items-center justify-center transition-colors cursor-pointer min-h-[44px] min-w-[44px] active:scale-95"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Nova Lista</span>
+              <Settings className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Cards das Listas de Molde */}
-          {lists.length === 0 ? (
-            <div className="w-full bg-white rounded-2xl border border-dashed border-zinc-300 p-5 text-center flex flex-col items-center justify-center shadow-2xs">
-              <ClipboardList className="w-8 h-8 text-zinc-300 mb-2" />
-              <p className="text-xs font-bold text-zinc-800">
-                Nenhum molde de lista criado
-              </p>
-              <p className="text-[11px] text-zinc-500 max-w-xs mt-0.5 mb-3">
-                Crie listas com os itens que você costuma comprar com frequência para agilizar suas idas ao mercado.
-              </p>
+          {/* Centro: Avatar Circular e Nome */}
+          <div className="flex flex-col items-center text-center">
+            <div className="w-16 h-16 rounded-full bg-white text-emerald-900 font-extrabold text-2xl flex items-center justify-center shadow-lg border-2 border-emerald-400/40 select-none">
+              {userInitial}
+            </div>
+            <h1 className="text-lg sm:text-xl font-bold text-white mt-2.5 tracking-tight leading-snug">
+              {userName}
+            </h1>
+
+            {/* Dois botões menores centralizados */}
+            <div className="flex flex-col items-center space-y-1.5 mt-3">
+              {/* Botão Branco: Assinar Premium > */}
               <button
                 type="button"
-                onClick={handleCreateNewListTemplate}
-                className="py-2 px-3.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs transition-colors cursor-pointer min-h-[38px] flex items-center space-x-1"
+                onClick={() => setIsPremiumModalOpen(true)}
+                className="bg-white hover:bg-zinc-100 active:scale-95 text-emerald-950 font-bold text-xs px-4 py-1.5 rounded-full shadow-sm flex items-center space-x-1.5 transition-all cursor-pointer min-h-[32px]"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Criar Primeiro Molde</span>
+                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                <span>Assinar Premium &gt;</span>
+              </button>
+
+              {/* Botão Fantasma: Enviar Feedback */}
+              <button
+                type="button"
+                onClick={() => setIsFeedbackModalOpen(true)}
+                className="text-emerald-100/90 hover:text-white hover:bg-emerald-800/60 active:scale-95 font-semibold text-xs px-3 py-1 rounded-full transition-all flex items-center space-x-1.5 cursor-pointer min-h-[28px]"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>Enviar Feedback</span>
               </button>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {lists.map((list) => {
-                const itemCount = list.items ? list.items.length : 0;
-                return (
-                  <div
-                    key={list.id}
-                    className="w-full bg-white rounded-2xl border border-zinc-200 hover:border-indigo-300 p-3.5 shadow-2xs flex flex-col justify-between transition-all hover:shadow-xs group"
-                  >
-                    {/* Top: Nome da Lista e Quantidade de Itens */}
-                    <div
-                      className="mb-2.5 cursor-pointer"
-                      onClick={() => handleOpenListScreen(list.id)}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <h4 className="text-sm font-bold text-zinc-900 group-hover:text-indigo-900 truncate leading-snug transition-colors">
-                          {list.name}
-                        </h4>
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600 border border-zinc-200 shrink-0">
-                          {itemCount} {itemCount === 1 ? 'item' : 'itens'}
-                        </span>
-                      </div>
+          </div>
+        </div>
+      </header>
 
-                      {/* Prévia de itens */}
-                      <p className="text-[11px] text-zinc-500 line-clamp-1">
-                        {itemCount > 0
-                          ? list.items.slice(0, 3).map((i) => i.name).join(', ') + (itemCount > 3 ? ` e mais ${itemCount - 3}` : '')
-                          : 'Lista sem itens ainda'}
-                      </p>
-                    </div>
+      {/* ========================================================================= */}
+      {/* CONTEÚDO PRINCIPAL DO DASHBOARD                                            */}
+      {/* ========================================================================= */}
+      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-4 pt-5 pb-28 sm:pb-32 flex flex-col space-y-6">
 
-                    {/* Ações da Lista: Iniciar Compra & Ver Molde */}
-                    <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-zinc-100">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenListScreen(list.id)}
-                        className="w-full py-2 px-2.5 rounded-xl bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border border-zinc-200 font-semibold text-xs flex items-center justify-center space-x-1 transition-colors cursor-pointer min-h-[38px]"
-                      >
-                        <span>Ver Molde</span>
-                      </button>
+        {/* ========================================================================= */}
+        {/* 2. SEÇÃO DE ESTATÍSTICAS (FILTRO E CARDS)                                 */}
+        {/* ========================================================================= */}
+        <section aria-label="Estatísticas Financeiras">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+              Filtrar por último:
+            </span>
+          </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleOpenPurchaseWithList(list)}
-                        className="w-full py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center space-x-1 shadow-2xs shadow-emerald-700/15 transition-all cursor-pointer min-h-[38px]"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>Comprar</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+          {/* Segmented Control (Ano, Mês, Semana) */}
+          <div className="bg-zinc-200/70 p-1 rounded-xl flex items-center border border-zinc-200/90 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setTimeFilter('ano')}
+              className={`flex-1 py-1.5 text-xs rounded-lg transition-all text-center cursor-pointer min-h-[34px] ${
+                timeFilter === 'ano'
+                  ? 'bg-white text-emerald-700 font-bold shadow-2xs'
+                  : 'text-zinc-600 hover:text-zinc-900 font-medium'
+              }`}
+            >
+              Ano
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeFilter('mes')}
+              className={`flex-1 py-1.5 text-xs rounded-lg transition-all text-center cursor-pointer min-h-[34px] ${
+                timeFilter === 'mes'
+                  ? 'bg-white text-emerald-700 font-bold shadow-2xs'
+                  : 'text-zinc-600 hover:text-zinc-900 font-medium'
+              }`}
+            >
+              Mês
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeFilter('semana')}
+              className={`flex-1 py-1.5 text-xs rounded-lg transition-all text-center cursor-pointer min-h-[34px] ${
+                timeFilter === 'semana'
+                  ? 'bg-white text-emerald-700 font-bold shadow-2xs'
+                  : 'text-zinc-600 hover:text-zinc-900 font-medium'
+              }`}
+            >
+              Semana
+            </button>
+          </div>
+
+          {/* Três cards menores dispostos horizontalmente num grid */}
+          <div className="grid grid-cols-3 gap-2.5 sm:gap-3 mt-3">
+            {/* Card 1: Média */}
+            <div className="bg-white border border-zinc-200/90 rounded-2xl p-3 shadow-2xs flex flex-col justify-between min-h-[90px]">
+              <div className="text-zinc-400">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+              <div className="mt-2">
+                <span className="text-[11px] font-medium text-zinc-500 block leading-tight">
+                  Média
+                </span>
+                <span className="text-xs sm:text-sm font-bold text-zinc-900 truncate block mt-0.5">
+                  {formatCurrencyBRL(stats.avg)}
+                </span>
+              </div>
             </div>
-          )}
+
+            {/* Card 2: Compras */}
+            <div className="bg-white border border-zinc-200/90 rounded-2xl p-3 shadow-2xs flex flex-col justify-between min-h-[90px]">
+              <div className="text-zinc-400">
+                <ShoppingCart className="w-4 h-4" />
+              </div>
+              <div className="mt-2">
+                <span className="text-[11px] font-medium text-zinc-500 block leading-tight">
+                  Compras
+                </span>
+                <span className="text-xs sm:text-sm font-bold text-zinc-900 truncate block mt-0.5">
+                  {stats.count}
+                </span>
+              </div>
+            </div>
+
+            {/* Card 3: Total (Fundo Verde Escuro em Destaque) */}
+            <div className="bg-emerald-900 border border-emerald-800 rounded-2xl p-3 shadow-2xs flex flex-col justify-between min-h-[90px] text-white">
+              <div className="text-emerald-300">
+                <DollarSign className="w-4 h-4" />
+              </div>
+              <div className="mt-2">
+                <span className="text-[11px] font-medium text-emerald-200 block leading-tight">
+                  Total
+                </span>
+                <span className="text-xs sm:text-sm font-bold text-white truncate block mt-0.5">
+                  {formatCurrencyBRL(stats.total)}
+                </span>
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* ========================================================================= */}
-        {/* 3. SEÇÃO: COMPRAS EM ANDAMENTO (NO MERCADO)                                */}
+        {/* 3. BOTÕES DE AÇÃO PRINCIPAIS (EMPILHADOS)                                   */}
         {/* ========================================================================= */}
-        {pendingPurchases.length > 0 && (
-          <section className="w-full space-y-2.5 pt-1">
-            <div className="flex items-center justify-between px-0.5">
-              <span className="inline-flex items-center space-x-1.5 text-xs font-bold uppercase tracking-wider text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
-                <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-                <span>Em Andamento no Mercado ({pendingPurchases.length})</span>
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              {pendingPurchases.map((purchase) => {
-                const total = calculatePurchaseTotal(purchase);
-                const itemsCount = purchase.items.length;
-                const boughtCount = purchase.items.filter((i) => i.bought).length;
-                const hasBudget = purchase.budget != null && purchase.budget > 0;
-                const budgetExceeded = hasBudget && total > (purchase.budget || 0);
-
-                return (
-                  <div
-                    key={purchase.id}
-                    onClick={() => handleContinuePending(purchase)}
-                    className="w-full rounded-2xl bg-white border border-zinc-200 hover:border-emerald-300 p-3.5 sm:p-4 shadow-2xs transition-all hover:shadow-xs cursor-pointer group"
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div>
-                        {/* Loja / Estabelecimento se houver */}
-                        {purchase.storeName && (
-                          <div className="inline-flex items-center space-x-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100 mb-1">
-                            <Store className="w-3 h-3" />
-                            <span>{purchase.storeName}</span>
-                          </div>
-                        )}
-                        <h4 className="text-sm sm:text-base font-bold text-zinc-900 group-hover:text-emerald-800 transition-colors leading-tight">
-                          {purchase.name || 'Compra no Mercado'}
-                        </h4>
-                        <p className="text-xs text-zinc-500 mt-0.5">
-                          {boughtCount} de {itemsCount} itens no carrinho
-                        </p>
-                      </div>
-
-                      {/* Total & Orçamento */}
-                      <div className="text-right">
-                        <p className="text-xs text-zinc-500 font-medium">Subtotal</p>
-                        <p className={`text-sm sm:text-base font-extrabold ${budgetExceeded ? 'text-rose-600' : 'text-zinc-900'}`}>
-                          {formatCurrencyBRL(total)}
-                        </p>
-                        {hasBudget && (
-                          <p className={`text-[10px] font-bold ${budgetExceeded ? 'text-rose-600 font-extrabold' : 'text-zinc-400'}`}>
-                            Teto: {formatCurrencyBRL(purchase.budget!)}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Barra de Progresso de Orçamento se configurado */}
-                    {hasBudget && (
-                      <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden mb-3">
-                        <div
-                          className={`h-full transition-all duration-300 ${
-                            budgetExceeded ? 'bg-rose-500' : 'bg-emerald-500'
-                          }`}
-                          style={{
-                            width: `${Math.min(100, (total / (purchase.budget || 1)) * 100)}%`,
-                          }}
-                        />
-                      </div>
-                    )}
-
-                    {/* Ações: Continuar & Descartar */}
-                    <div className="flex items-center space-x-2 pt-2 border-t border-zinc-100">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleContinuePending(purchase);
-                        }}
-                        className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-2xs shadow-emerald-700/15 transition-all min-h-[42px] cursor-pointer"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>Continuar Compra</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => handleOpenDiscardModal(purchase, e)}
-                        className="py-2.5 px-3 rounded-xl bg-white hover:bg-red-50 text-red-600 border border-red-200 font-semibold text-xs transition-colors min-h-[42px] cursor-pointer"
-                        title="Descartar compra em andamento"
-                        aria-label="Descartar compra"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-600" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 4. SEÇÃO: HISTÓRICO DE COMPRAS FINALIZADAS                                  */}
-        {/* ========================================================================= */}
-        {finishedPurchases.length > 0 && (
-          <section className="w-full pt-2 border-t border-zinc-200/80 space-y-3">
-            <div className="flex items-center justify-between px-0.5">
+        <section aria-label="Ações Rápidas" className="space-y-3">
+          {/* Botão 1: Nova Lista (Fundo Escuro quase preto) */}
+          <motion.button
+            whileTap={motionConfig.shouldReduceMotion ? {} : { scale: 0.985 }}
+            type="button"
+            onClick={handleCreateNewListTemplate}
+            className="w-full bg-zinc-900 hover:bg-black active:bg-zinc-950 border border-zinc-800 text-white rounded-2xl p-4 flex items-center justify-between text-left transition-all shadow-sm cursor-pointer min-h-[72px] group"
+          >
+            <div className="flex items-center space-x-3.5">
+              <div className="w-11 h-11 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                <Bookmark className="w-5 h-5 fill-emerald-400/20" />
+              </div>
               <div>
-                <h3 className="text-sm font-bold text-zinc-900 tracking-tight flex items-center space-x-1.5">
-                  <Receipt className="w-4 h-4 text-emerald-600" />
-                  <span>Histórico de Compras</span>
+                <h3 className="text-base font-bold text-white leading-tight">
+                  Nova Lista
                 </h3>
-                <p className="text-[11px] text-zinc-500">
-                  Resumo dos seus gastos anteriores
+                <p className="text-xs text-zinc-400 mt-0.5 leading-snug">
+                  Planejar produtos e quantidades
+                </p>
+              </div>
+            </div>
+            <div className="text-zinc-500 group-hover:text-zinc-300 transition-colors ml-2 shrink-0">
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </motion.button>
+
+          {/* Botão 2: Ir às Compras (Fundo Verde) */}
+          <motion.button
+            whileTap={motionConfig.shouldReduceMotion ? {} : { scale: 0.985 }}
+            type="button"
+            onClick={() => setIsNewPurchaseModalOpen(true)}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl p-4 flex items-center justify-between text-left transition-all shadow-md shadow-emerald-600/20 cursor-pointer min-h-[72px] group"
+          >
+            <div className="flex items-center space-x-3.5">
+              <div className="w-11 h-11 rounded-xl bg-emerald-700/80 border border-emerald-400/30 text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                <ShoppingCart className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white leading-tight">
+                  Ir às Compras
+                </h3>
+                <p className="text-xs text-emerald-100 mt-0.5 leading-snug">
+                  Comprar com orçamento e lista
+                </p>
+              </div>
+            </div>
+            <div className="text-emerald-200 group-hover:text-white transition-colors ml-2 shrink-0">
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </motion.button>
+        </section>
+
+        {/* ========================================================================= */}
+        {/* 4. SEÇÃO "CONTINUAR COMPRANDO" (SESSÃO ATIVA CONDICIONAL)                  */}
+        {/* ========================================================================= */}
+        {activePendingPurchase && (
+          <section aria-label="Sessão Ativa de Compra" className="space-y-2">
+            <div className="flex items-center space-x-1.5">
+              <Clock className="w-4 h-4 text-amber-500 shrink-0" />
+              <h3 className="text-sm sm:text-base font-bold text-zinc-900 tracking-tight">
+                Continuar Comprando
+              </h3>
+            </div>
+
+            <div className="w-full bg-white border border-amber-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs flex items-center justify-between transition-all">
+              {/* Informações da compra */}
+              <div 
+                className="flex-1 pr-3 cursor-pointer"
+                onClick={() => handleContinuePending(activePendingPurchase)}
+              >
+                <h4 className="text-sm font-bold text-zinc-900 truncate leading-tight hover:text-emerald-700 transition-colors">
+                  {activePendingPurchase.name || 'Compra em andamento'}
+                </h4>
+                <p className="text-xs text-zinc-500 font-medium mt-1">
+                  {activePendingPurchase.items.length}{' '}
+                  {activePendingPurchase.items.length === 1 ? 'item' : 'itens'} •{' '}
+                  {formatCurrencyBRL(calculatePurchaseTotal(activePendingPurchase))}
                 </p>
               </div>
 
-              {onNavigateToHistory && (
+              {/* Ações: Descartar (Lixeira) e Retomar (Play) */}
+              <div className="flex items-center space-x-2 shrink-0">
                 <button
                   type="button"
-                  onClick={onNavigateToHistory}
-                  className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 flex items-center space-x-0.5 py-1 px-2 rounded-lg hover:bg-emerald-50 transition-colors cursor-pointer min-h-[32px]"
+                  onClick={(e) => handleOpenDiscardModal(activePendingPurchase, e)}
+                  aria-label="Descartar compra em andamento"
+                  className="w-9 h-9 rounded-xl border border-red-200 hover:border-red-300 text-red-600 hover:bg-red-50 active:bg-red-100 flex items-center justify-center cursor-pointer transition-colors min-h-[36px] min-w-[36px]"
                 >
-                  <span>Ver todas</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
+                  <Trash2 className="w-4 h-4" />
                 </button>
-              )}
-            </div>
-
-            {/* Card com Total do Mês e Total de Compras */}
-            <div className="w-full bg-white rounded-2xl border border-zinc-200 p-3.5 sm:p-4 shadow-2xs">
-              <div className="grid grid-cols-2 gap-3 divide-x divide-zinc-100">
-                <div className="flex items-center space-x-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                    <TrendingUp className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-medium text-zinc-500 truncate">
-                      Gasto este mês
-                    </p>
-                    <p className="text-sm sm:text-base font-extrabold text-zinc-900 truncate">
-                      {formatCurrencyBRL(currentMonthTotal)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pl-3 flex items-center space-x-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-zinc-100 border border-zinc-200/80 text-zinc-700 flex items-center justify-center shrink-0">
-                    <Receipt className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-medium text-zinc-500 truncate">
-                      Finalizadas
-                    </p>
-                    <p className="text-sm sm:text-base font-extrabold text-zinc-900 truncate">
-                      {finishedPurchases.length} {finishedPurchases.length === 1 ? 'compra' : 'compras'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Atalho para a última compra finalizada */}
-            {latestFinishedPurchase && (
-              <div
-                onClick={() => {
-                  if (onSelectFinishedPurchase) {
-                    onSelectFinishedPurchase(latestFinishedPurchase);
-                  }
-                }}
-                className="w-full bg-white rounded-xl border border-zinc-200 hover:border-emerald-300 p-3 shadow-2xs flex items-center justify-between gap-3 cursor-pointer transition-all hover:shadow-xs group"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center space-x-1.5 mb-0.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                      Última compra ({formatDateBRL(latestFinishedPurchase.finishedAt || latestFinishedPurchase.createdAt)})
-                    </span>
-                    {latestFinishedPurchase.storeName && (
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-100">
-                        {latestFinishedPurchase.storeName}
-                      </span>
-                    )}
-                  </div>
-                  <h4 className="text-xs sm:text-sm font-bold text-zinc-800 group-hover:text-emerald-800 truncate transition-colors">
-                    {latestFinishedPurchase.name || 'Compra no Mercado'}
-                  </h4>
-                  <p className="text-[11px] text-zinc-500">
-                    {latestFinishedPurchase.items.length} itens • <span className="font-semibold text-zinc-700">{formatCurrencyBRL(calculatePurchaseTotal(latestFinishedPurchase))}</span>
-                  </p>
-                </div>
 
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRepeatLatestPurchase(latestFinishedPurchase);
-                  }}
-                  title="Criar nova lista com estes itens"
-                  className="shrink-0 flex items-center space-x-1.5 py-2 px-3 rounded-xl bg-zinc-100 group-hover:bg-emerald-50 active:bg-emerald-100 text-zinc-700 group-hover:text-emerald-700 border border-zinc-200 group-hover:border-emerald-200 text-xs font-bold transition-all min-h-[38px] cursor-pointer active:scale-95"
+                  onClick={() => handleContinuePending(activePendingPurchase)}
+                  aria-label="Retomar compra"
+                  className="w-9 h-9 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 flex items-center justify-center cursor-pointer transition-colors min-h-[36px] min-w-[36px]"
                 >
-                  <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Repetir</span>
+                  <Play className="w-4 h-4 fill-emerald-700" />
                 </button>
               </div>
-            )}
+            </div>
           </section>
         )}
 
+        {/* ========================================================================= */}
+        {/* 5. SEÇÃO "COMPRADOS COM FREQUÊNCIA" (SUGESTÕES)                           */}
+        {/* ========================================================================= */}
+        <section aria-label="Comprados com Frequência">
+          <h3 className="text-sm sm:text-base font-bold text-zinc-900 mb-2.5 tracking-tight">
+            Comprados com frequência
+          </h3>
+
+          <div 
+            className="overflow-x-auto flex gap-3 pb-2 pt-0.5 scroll-smooth"
+            style={{ scrollbarWidth: 'none' }}
+          >
+            {frequentItems.map((item, index) => (
+              <div
+                key={`${item.name}-${index}`}
+                className="w-32 min-w-[128px] p-3 rounded-2xl bg-white border border-zinc-200/90 shadow-2xs flex flex-col items-center text-center justify-between transition-all hover:border-emerald-300 hover:shadow-xs group shrink-0"
+              >
+                {/* Botão circular verde claro com ícone "+" grande no topo */}
+                <button
+                  type="button"
+                  onClick={() => handleAddFrequentItem(item)}
+                  aria-label={`Adicionar ${item.name}`}
+                  className="w-11 h-11 rounded-full bg-emerald-100 group-hover:bg-emerald-200 active:bg-emerald-300 text-emerald-700 flex items-center justify-center transition-colors cursor-pointer mb-2 shadow-2xs active:scale-95 shrink-0"
+                >
+                  <Plus className="w-5 h-5 stroke-[2.5]" />
+                </button>
+
+                {/* Nome do item abaixo (negrito) */}
+                <span className="text-xs font-bold text-zinc-900 leading-snug line-clamp-2 min-h-[32px] flex items-center justify-center">
+                  {item.name}
+                </span>
+
+                {/* Categoria (cinza e menor) */}
+                <span className="text-[10.5px] font-medium text-zinc-500 mt-1 truncate max-w-full block">
+                  {item.category}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+
       </main>
 
-      {/* Modal: Iniciar Nova Compra (Agile Buyo-inspired flow) */}
+      {/* ========================================================================= */}
+      {/* MODAIS: NOVA COMPRA, DESCARTE, PREMIUM E FEEDBACK                         */}
+      {/* ========================================================================= */}
+
+      {/* Modal: Iniciar Nova Compra */}
       <AnimatePresence>
         {isNewPurchaseModalOpen && (
           <NewPurchaseModal
             isOpen={isNewPurchaseModalOpen}
             lists={lists}
-            selectedListId={selectedListForPurchase}
-            onClose={() => {
-              setIsNewPurchaseModalOpen(false);
-              setSelectedListForPurchase(null);
-            }}
+            onClose={() => setIsNewPurchaseModalOpen(false)}
             onStartPurchase={handleStartPurchaseSession}
           />
         )}
@@ -663,17 +640,13 @@ export function HomeScreen({
       {/* Modal: Confirmar Descarte de Compra Pendente */}
       <AnimatePresence>
         {purchaseToDiscard && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setPurchaseToDiscard(null);
-            }}
-          >
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden relative"
+              initial={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+              transition={motionConfig.modalSpring}
+              className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-zinc-200 relative"
             >
               <button
                 type="button"
@@ -737,6 +710,148 @@ export function HomeScreen({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Modal: Assinar Premium */}
+      <AnimatePresence>
+        {isPremiumModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+              transition={motionConfig.modalSpring}
+              className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-zinc-200 relative"
+            >
+              <button
+                type="button"
+                onClick={() => setIsPremiumModalOpen(false)}
+                aria-label="Fechar modal"
+                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="p-5 pt-6 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-600 mb-3 mx-auto shadow-2xs">
+                  <Star className="w-6 h-6 fill-amber-500 text-amber-500" />
+                </div>
+
+                <h3 className="text-lg font-bold text-zinc-900 tracking-tight">
+                  Lista &amp; Compra Premium
+                </h3>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Desbloqueie todo o potencial da sua economia doméstica.
+                </p>
+
+                <div className="mt-4 bg-emerald-50/60 border border-emerald-100 rounded-2xl p-3.5 text-left space-y-2 text-xs">
+                  <div className="flex items-center space-x-2 text-zinc-700">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Sincronização em nuvem ilimitada</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-zinc-700">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Relatórios analíticos de gastos mensais</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-zinc-700">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Histórico completo de compras anteriores</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-zinc-700">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Categorias e metas de orçamento avançadas</span>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPremiumModalOpen(false);
+                      showToast('Plano Premium ativado como degustação!');
+                    }}
+                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Experimentar Premium Grátis</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsPremiumModalOpen(false)}
+                    className="w-full py-2.5 px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-600 font-semibold text-xs transition-colors cursor-pointer"
+                  >
+                    Agora não
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal: Enviar Feedback */}
+      <AnimatePresence>
+        {isFeedbackModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
+              transition={motionConfig.modalSpring}
+              className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-zinc-200 relative"
+            >
+              <button
+                type="button"
+                onClick={() => setIsFeedbackModalOpen(false)}
+                aria-label="Fechar modal"
+                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <form onSubmit={handleSendFeedback} className="p-5 pt-6">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 mb-3 mx-auto">
+                  <MessageSquare className="w-6 h-6" />
+                </div>
+
+                <h3 className="text-lg font-bold text-zinc-900 text-center tracking-tight">
+                  Enviar Feedback
+                </h3>
+                <p className="text-xs text-zinc-500 text-center mt-1">
+                  Conte-nos sua opinião, sugestão de melhoria ou reporte de dúvidas.
+                </p>
+
+                <div className="mt-4">
+                  <textarea
+                    rows={4}
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
+                    placeholder="Escreva sua mensagem aqui..."
+                    required
+                    className="w-full p-3 rounded-xl border border-zinc-200 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none"
+                  />
+                </div>
+
+                <div className="mt-4 flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsFeedbackModalOpen(false)}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1"
+                  >
+                    <span>Enviar</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
