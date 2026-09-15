@@ -37,6 +37,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     }, duration);
   }, []);
 
+  // Ouvinte global para eventos customizados 'app-toast' (permite disparar toasts a partir de hooks e serviços assíncronos)
+  React.useEffect(() => {
+    const handleCustomToast = (e: Event) => {
+      const customEvent = e as CustomEvent<{ message?: string; duration?: number }>;
+      if (customEvent.detail?.message) {
+        showToast(customEvent.detail.message, customEvent.detail.duration || 3500);
+      }
+    };
+    window.addEventListener('app-toast', handleCustomToast);
+    return () => window.removeEventListener('app-toast', handleCustomToast);
+  }, [showToast]);
+
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}

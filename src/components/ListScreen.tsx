@@ -93,6 +93,7 @@ interface ListScreenProps {
   list: List;
   allPurchases?: Purchase[];
   onBack: () => void;
+  onSaveList?: (list: List) => Promise<boolean | void> | void;
   onUpdateName: (listId: string, name: string) => void;
   onAddItem: (listId: string, itemData: Omit<ListItem, 'id'>) => void;
   onEditItem: (listId: string, itemId: string, updates: Partial<ListItem>) => void;
@@ -106,6 +107,7 @@ export function ListScreen({
   list,
   allPurchases = [],
   onBack,
+  onSaveList,
   onUpdateName,
   onAddItem,
   onEditItem,
@@ -200,14 +202,17 @@ export function ListScreen({
 
     if (existingItem) {
       if (existingItem.isWeighted) {
-        const currentWeight = existingItem.weight ?? existingItem.quantity ?? 1;
-        const newWeight = Math.round((currentWeight + 1) * 1000) / 1000;
-        onEditItem(list.id, existingItem.id, { weight: newWeight });
+        const rawWeight = existingItem.weight ?? existingItem.quantity ?? 1;
+        const currentWeight = typeof rawWeight === 'string' ? parseFloat(String(rawWeight).replace(',', '.')) : Number(rawWeight || 1);
+        const newWeight = Math.round(((isNaN(currentWeight) ? 1 : currentWeight) + 1) * 1000) / 1000;
+        onEditItem(list.id, existingItem.id, { isWeighted: true, weight: newWeight });
         showToast(`"${existingItem.name}" +1kg (Total: ${newWeight.toString().replace('.', ',')} kg)`);
       } else {
-        const currentQty = (existingItem.quantity || 1) + 1;
-        onEditItem(list.id, existingItem.id, { quantity: currentQty });
-        showToast(`"${existingItem.name}" +1 un (Total: ${currentQty})`);
+        const rawQty = existingItem.quantity || 1;
+        const currentQty = typeof rawQty === 'string' ? parseInt(String(rawQty), 10) : Number(rawQty || 1);
+        const newQty = (isNaN(currentQty) ? 1 : currentQty) + 1;
+        onEditItem(list.id, existingItem.id, { isWeighted: false, quantity: newQty });
+        showToast(`"${existingItem.name}" +1 un (Total: ${newQty})`);
       }
       return;
     }
@@ -216,6 +221,7 @@ export function ListScreen({
       name,
       category,
       isWeighted,
+      weight: isWeighted ? 1 : undefined,
       pricingModeSource,
       quantity: 1,
     });
@@ -228,11 +234,13 @@ export function ListScreen({
     if (parsed.length === 0) return;
 
     parsed.forEach((item) => {
+      const isWeighted = Boolean(item.isWeighted);
       onAddItem(list.id, {
         name: item.name,
         category: item.category || 'Geral',
         quantity: item.quantity || 1,
-        isWeighted: item.isWeighted || false,
+        isWeighted,
+        weight: isWeighted ? 1 : undefined,
       });
     });
 
@@ -251,14 +259,17 @@ export function ListScreen({
 
     if (existingItem) {
       if (existingItem.isWeighted) {
-        const currentWeight = existingItem.weight ?? existingItem.quantity ?? 1;
-        const newWeight = Math.round((currentWeight + 1) * 1000) / 1000;
-        onEditItem(list.id, existingItem.id, { weight: newWeight });
+        const rawWeight = existingItem.weight ?? existingItem.quantity ?? 1;
+        const currentWeight = typeof rawWeight === 'string' ? parseFloat(String(rawWeight).replace(',', '.')) : Number(rawWeight || 1);
+        const newWeight = Math.round(((isNaN(currentWeight) ? 1 : currentWeight) + 1) * 1000) / 1000;
+        onEditItem(list.id, existingItem.id, { isWeighted: true, weight: newWeight });
         showToast(`"${existingItem.name}" +1kg (Total: ${newWeight.toString().replace('.', ',')} kg)`);
       } else {
-        const currentQty = (existingItem.quantity || 1) + 1;
-        onEditItem(list.id, existingItem.id, { quantity: currentQty });
-        showToast(`"${existingItem.name}" +1 un (Total: ${currentQty})`);
+        const rawQty = existingItem.quantity || 1;
+        const currentQty = typeof rawQty === 'string' ? parseInt(String(rawQty), 10) : Number(rawQty || 1);
+        const newQty = (isNaN(currentQty) ? 1 : currentQty) + 1;
+        onEditItem(list.id, existingItem.id, { isWeighted: false, quantity: newQty });
+        showToast(`"${existingItem.name}" +1 un (Total: ${newQty})`);
       }
       return;
     }
@@ -270,6 +281,7 @@ export function ListScreen({
       category: suggestion.category,
       quantity: 1,
       isWeighted,
+      weight: isWeighted ? 1 : undefined,
       pricingModeSource,
     });
     showToast(`"${suggestion.name}" adicionado`);
@@ -376,6 +388,21 @@ export function ListScreen({
     onDeleteList(list.id);
   };
 
+  const handleSaveAndFinish = async () => {
+    if (onSaveList) {
+      await onSaveList(list);
+    }
+    showToast('Lista salva com sucesso!');
+    onBack();
+  };
+
+  const handleBack = () => {
+    if (onSaveList && list.items && list.items.length > 0) {
+      onSaveList(list);
+    }
+    onBack();
+  };
+
   const allSections = groupItemsByCategory(list.items || []);
   const visibleSections =
     activeCategoryFilters.length > 0
@@ -394,7 +421,7 @@ export function ListScreen({
             {/* Lado Esquerdo: Botão Voltar + Nome da Lista */}
             <div className="flex items-center space-x-2 min-w-0 flex-1">
               <button
-                onClick={onBack}
+                onClick={handleBack}
                 aria-label="Voltar para início"
                 className="w-10 h-10 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 flex items-center justify-center transition-colors cursor-pointer shrink-0 min-h-[44px] min-w-[44px] active:scale-95"
               >
@@ -464,6 +491,19 @@ export function ListScreen({
                         transition={{ duration: 0.12 }}
                         className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-xl border border-zinc-200/90 py-1.5 z-50 overflow-hidden"
                       >
+                        {/* Salvar lista */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMenuOpen(false);
+                            handleSaveAndFinish();
+                          }}
+                          className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
+                        >
+                          <Check className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />
+                          <span>Salvar lista</span>
+                        </button>
+
                         {/* Compartilhar */}
                         <button
                           type="button"
@@ -688,16 +728,29 @@ export function ListScreen({
               </span>
             </div>
 
-            <motion.button
-              whileTap={motionConfig.tap.button}
-              transition={motionConfig.pressSpring}
-              type="button"
-              onClick={() => onStartPurchaseFromList(list)}
-              className="py-3 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md shadow-emerald-600/20 flex items-center space-x-2 cursor-pointer transition-all active:scale-[0.98]"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              <span>Iniciar Compra</span>
-            </motion.button>
+            <div className="flex items-center space-x-2">
+              <motion.button
+                whileTap={motionConfig.tap.button}
+                transition={motionConfig.pressSpring}
+                type="button"
+                onClick={handleSaveAndFinish}
+                className="py-3 px-3.5 sm:px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 font-bold text-sm flex items-center space-x-1.5 cursor-pointer transition-all active:scale-[0.98] border border-zinc-200 shrink-0"
+              >
+                <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                <span>Salvar Lista</span>
+              </motion.button>
+
+              <motion.button
+                whileTap={motionConfig.tap.button}
+                transition={motionConfig.pressSpring}
+                type="button"
+                onClick={() => onStartPurchaseFromList(list)}
+                className="py-3 px-4 sm:px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md shadow-emerald-600/20 flex items-center space-x-2 cursor-pointer transition-all active:scale-[0.98] shrink-0"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>Iniciar Compra</span>
+              </motion.button>
+            </div>
           </div>
         </div>
       )}

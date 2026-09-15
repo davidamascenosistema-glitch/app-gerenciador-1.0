@@ -5,16 +5,18 @@ import { HomeScreen } from './components/HomeScreen';
 import { PurchaseScreen } from './components/PurchaseScreen';
 import { PurchaseDetailScreen } from './components/PurchaseDetailScreen';
 import { ListScreen } from './components/ListScreen';
+import { ListsOverviewScreen } from './components/ListsOverviewScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { AuthScreen } from './components/AuthScreen';
+import { CartScreen } from './components/CartScreen';
 import { usePurchases } from './hooks/usePurchases';
 import { useLists } from './hooks/useLists';
 import { useAuth } from './hooks/useAuth';
 import { ToastProvider, useToast } from './components/Toast';
 import { PurchaseCelebrationModal } from './components/PurchaseCelebrationModal';
 import { BottomNavBar } from './components/BottomNavBar';
-import { Purchase } from './types';
+import { Purchase, List } from './types';
 
 /**
  * Conteúdo principal da aplicação envolto pelo ToastProvider e gerenciado por useAuth.
@@ -24,7 +26,7 @@ function MainApp() {
   const purchasesHook = usePurchases(auth.user?.id);
   const listsHook = useLists(auth.user?.id);
   const { showToast } = useToast();
-  const [activeScreen, setActiveScreen] = useState<'home' | 'history' | 'profile' | 'history_select'>('home');
+  const [activeScreen, setActiveScreen] = useState<'home' | 'lists' | 'cart' | 'history' | 'profile' | 'history_select'>('home');
   const [activePurchaseId, setActivePurchaseId] = useState<string | null>(null);
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [selectedDetailPurchaseId, setSelectedDetailPurchaseId] = useState<string | null>(null);
@@ -69,6 +71,55 @@ function MainApp() {
   const selectedDetailPurchase = selectedDetailPurchaseId
     ? purchasesHook.getPurchaseById(selectedDetailPurchaseId)
     : null;
+
+  // Navegação para a aba Carrinho
+  const handleNavigateToCart = () => {
+    setActiveScreen('cart');
+    setActivePurchaseId(null);
+    setActiveListId(null);
+    setSelectedDetailPurchaseId(null);
+  };
+
+  // Navegação para a aba Listas
+  const handleNavigateToLists = () => {
+    setActiveScreen('lists');
+    setActivePurchaseId(null);
+    setActiveListId(null);
+    setSelectedDetailPurchaseId(null);
+  };
+
+  // Criar novo molde de lista
+  const handleCreateListTemplate = async () => {
+    const created = await listsHook.createList({ name: 'Nova Lista' });
+    setActiveListId(created.id);
+  };
+
+  // Iniciar compra a partir de um molde de lista
+  const handleStartPurchaseFromListTemplate = (listTemplate: List) => {
+    const initialItems = (listTemplate.items || []).map((item) => ({
+      id: crypto.randomUUID(),
+      name: item.name,
+      category: item.category || 'Geral',
+      quantity: item.quantity || 1,
+      weight: item.weight,
+      isWeighted: item.isWeighted || false,
+      price: item.price,
+      bought: false,
+      pricingModeSource: item.pricingModeSource ?? null,
+    }));
+
+    const newPurchase = purchasesHook.createPurchase({
+      name: listTemplate.name || 'Nova Compra',
+      status: 'pending',
+      origin: 'list',
+      items: initialItems,
+      fromListId: listTemplate.id,
+    });
+
+    setActiveListId(null);
+    setActivePurchaseId(newPurchase.id);
+    showToast(`Compra iniciada com a lista "${listTemplate.name}"!`);
+  };
 
   const handleCreateNewList = () => {
     const newPurchase = purchasesHook.createPurchase({
@@ -168,6 +219,12 @@ function MainApp() {
         list={activeList}
         allPurchases={purchasesHook.purchases}
         onBack={() => setActiveListId(null)}
+        onSaveList={async (currentList) => {
+          const success = await listsHook.saveListItems(currentList.id, currentList.items);
+          if (success) {
+            showToast('Lista e itens salvos com sucesso!');
+          }
+        }}
         onUpdateName={listsHook.updateListName}
         onAddItem={listsHook.addItemToList}
         onEditItem={listsHook.editListItem}
@@ -202,6 +259,63 @@ function MainApp() {
           setActivePurchaseId(newPurchase.id);
           showToast(`Compra iniciada com a lista "${listTemplate.name}"!`);
         }}
+      />
+    );
+  } else if (activeScreen === 'lists') {
+    screenKey = 'lists';
+    content = (
+      <ListsOverviewScreen
+        lists={listsHook.lists}
+        loading={listsHook.loading}
+        onCreateList={handleCreateListTemplate}
+        onOpenList={(id) => setActiveListId(id)}
+        onDeleteList={(id) => {
+          listsHook.deleteList(id);
+          showToast('Molde de lista excluído.');
+        }}
+        onStartPurchaseFromList={handleStartPurchaseFromListTemplate}
+      />
+    );
+  } else if (activeScreen === 'cart') {
+    screenKey = 'cart';
+    content = (
+      <CartScreen
+        pendingPurchases={purchasesHook.getPendingPurchases()}
+        lists={listsHook.lists}
+        onContinuePurchase={(purchaseId) => setActivePurchaseId(purchaseId)}
+        onStartNewPurchase={(params) => {
+          let initialItems: any[] = [];
+          if (params.fromListId) {
+            const foundList = listsHook.getListById(params.fromListId);
+            if (foundList && foundList.items) {
+              initialItems = foundList.items.map((item) => ({
+                id: crypto.randomUUID(),
+                name: item.name,
+                category: item.category || 'Geral',
+                quantity: item.quantity || 1,
+                weight: item.weight,
+                isWeighted: item.isWeighted || false,
+                price: item.price,
+                bought: false,
+                pricingModeSource: item.pricingModeSource ?? null,
+              }));
+            }
+          }
+
+          const newPurchase = purchasesHook.createPurchase({
+            name: params.name || 'Nova Compra',
+            status: 'pending',
+            origin: params.fromListId ? 'list' : 'manual',
+            budget: params.budget,
+            storeName: params.storeName,
+            fromListId: params.fromListId,
+            items: initialItems,
+          });
+
+          setActivePurchaseId(newPurchase.id);
+          showToast(`Compra iniciada: "${newPurchase.name}"`);
+        }}
+        onNavigateToLists={handleNavigateToLists}
       />
     );
   } else if (activeScreen === 'history_select') {
@@ -276,6 +390,9 @@ function MainApp() {
   const isSelectingHistory = activeScreen === 'history_select';
   const showBottomNav = !isEditingPurchase && !isEditingList && !isViewingDetail && !isSelectingHistory;
 
+  const pendingPurchases = purchasesHook.getPendingPurchases();
+  const latestPending = pendingPurchases && pendingPurchases.length > 0 ? pendingPurchases[0] : null;
+
   return (
     <div className="w-full min-h-screen bg-zinc-50 text-zinc-900 flex flex-col relative overflow-x-clip">
       <AnimatePresence mode="wait" initial={false}>
@@ -291,7 +408,7 @@ function MainApp() {
         </motion.div>
       </AnimatePresence>
 
-      {/* Barra de Navegação Fixa Inferior Persistente - Não desmonta entre Início, Histórico e Perfil */}
+      {/* Barra de Navegação Fixa Inferior Persistente - 4 Abas: Início, Listas, Carrinho, Histórico */}
       <AnimatePresence>
         {showBottomNav && (
           <motion.div
@@ -301,13 +418,33 @@ function MainApp() {
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
           >
             <BottomNavBar
-              currentScreen={activeScreen === 'history' ? 'history' : activeScreen === 'profile' ? 'profile' : 'home'}
-              onNavigateToHome={() => setActiveScreen('home')}
-              onNavigateToHistory={() => setActiveScreen('history')}
-              onNavigateToProfile={() => setActiveScreen('profile')}
-              onCreateNewList={handleCreateNewList}
-              onRegisterManual={handleRegisterManual}
-              onRepeatPurchase={handleStartRepeatPurchase}
+              currentScreen={
+                activeScreen === 'history'
+                  ? 'history'
+                  : activeScreen === 'lists'
+                  ? 'lists'
+                  : activeScreen === 'cart'
+                  ? 'cart'
+                  : activeScreen === 'profile'
+                  ? 'profile'
+                  : 'home'
+              }
+              onNavigateToHome={() => {
+                setActiveScreen('home');
+                setActivePurchaseId(null);
+                setActiveListId(null);
+                setSelectedDetailPurchaseId(null);
+              }}
+              onNavigateToLists={handleNavigateToLists}
+              onNavigateToCart={handleNavigateToCart}
+              onNavigateToHistory={() => {
+                setActiveScreen('history');
+                setActivePurchaseId(null);
+                setActiveListId(null);
+                setSelectedDetailPurchaseId(null);
+              }}
+              hasPendingPurchase={Boolean(latestPending)}
+              pendingItemsCount={latestPending ? latestPending.items.length : 0}
             />
           </motion.div>
         )}

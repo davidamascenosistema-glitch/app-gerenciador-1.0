@@ -27,11 +27,6 @@ export const ListItemCard: React.FC<ListItemCardProps> = ({
   const badgeStyle = getCategoryBadgeStyle(item.category);
   const cleanItemName = item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, '').trim();
 
-  // Configuração de exibição do identificador de modalidade
-  const isFixedUnit = item.pricingModeSource === 'unit';
-  const isFixedWeight = item.pricingModeSource === 'weight';
-  const isFixedMode = isFixedUnit || isFixedWeight;
-
   // 1. Estados locais para edição inline de NOME
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(cleanItemName);
@@ -51,6 +46,23 @@ export const ListItemCard: React.FC<ListItemCardProps> = ({
       : item.quantity.toString()
   );
   const qtyInputRef = useRef<HTMLInputElement>(null);
+
+  // Guarda os últimos valores válidos para que ao alternar entre Unidade e Peso os valores nunca se percam ou fiquem zerados
+  const lastKnownQtyRef = useRef<number>(
+    item.quantity && item.quantity >= 1 ? item.quantity : 1
+  );
+  const lastKnownWeightRef = useRef<number>(
+    item.weight && item.weight > 0 ? item.weight : 1
+  );
+
+  useEffect(() => {
+    if (item.quantity && item.quantity >= 1) {
+      lastKnownQtyRef.current = item.quantity;
+    }
+    if (item.weight && item.weight > 0) {
+      lastKnownWeightRef.current = item.weight;
+    }
+  }, [item.quantity, item.weight]);
 
   // Sincronizar estados locais se o item mudar externamente
   useEffect(() => {
@@ -127,13 +139,16 @@ export const ListItemCard: React.FC<ListItemCardProps> = ({
   // 2. Stepper handlers
   const handleStepQty = (delta: number) => {
     if (item.isWeighted) {
-      const currentWeight = item.weight !== undefined && item.weight !== null ? item.weight : item.quantity;
+      const rawWeight = item.weight !== undefined && item.weight !== null ? item.weight : item.quantity;
+      const currentWeight = typeof rawWeight === 'string' ? parseFloat(String(rawWeight).replace(',', '.')) : Number(rawWeight || 1);
       const step = delta > 0 ? 0.1 : -0.1;
-      const newWeight = Math.max(0.1, Math.round((currentWeight + step) * 1000) / 1000);
-      onEditItem(listId, item.id, { weight: newWeight });
+      const newWeight = Math.max(0.1, Math.round(((isNaN(currentWeight) ? 1 : currentWeight) + step) * 1000) / 1000);
+      onEditItem(listId, item.id, { isWeighted: true, weight: newWeight });
     } else {
-      const newQty = Math.max(1, (item.quantity || 1) + delta);
-      onEditItem(listId, item.id, { quantity: newQty });
+      const rawQty = typeof item.quantity === 'number' ? item.quantity : parseInt(String(item.quantity || 1), 10);
+      const currentQty = !isNaN(rawQty) && rawQty >= 1 ? rawQty : 1;
+      const newQty = Math.max(1, currentQty + delta);
+      onEditItem(listId, item.id, { isWeighted: false, quantity: newQty });
     }
   };
 
@@ -144,29 +159,68 @@ export const ListItemCard: React.FC<ListItemCardProps> = ({
       const sanitized = sanitizeWeightInput(qtyInput);
       const parsed = parseFloat(sanitized.replace(',', '.'));
       if (!isNaN(parsed) && parsed > 0) {
-        onEditItem(listId, item.id, { weight: parsed });
+        onEditItem(listId, item.id, { isWeighted: true, weight: parsed });
       } else {
-        const fallback = item.weight !== undefined && item.weight !== null ? item.weight : 1;
+        const fallback = item.weight !== undefined && item.weight !== null ? Number(item.weight) : 1;
         setQtyInput(sanitizeWeightInput(fallback.toString()));
       }
     } else {
       const parsed = parseInt(qtyInput, 10);
       if (!isNaN(parsed) && parsed >= 1) {
-        onEditItem(listId, item.id, { quantity: parsed });
+        onEditItem(listId, item.id, { isWeighted: false, quantity: parsed });
       } else {
         setQtyInput(item.quantity.toString());
       }
     }
   };
 
-  // 4. Alterar Modalidade (Unidade vs Peso)
-  const handleSetPricingMode = (weighted: boolean) => {
-    if (weighted) {
-      const initialWeight = item.weight && item.weight > 0 ? item.weight : (item.quantity && item.quantity > 0 ? item.quantity : 1);
-      onEditItem(listId, item.id, { isWeighted: true, weight: initialWeight });
+  // 4. Alternar Modalidade (Unidade vs Peso) com inversão garantida de is_weighted
+  const handleTogglePricingMode = () => {
+    const nextIsWeighted = !Boolean(item.isWeighted);
+
+    if (nextIsWeighted) {
+      // Alternando para PESO (kg)
+      const targetWeight =
+        item.weight && item.weight > 0
+          ? item.weight
+          : lastKnownWeightRef.current && lastKnownWeightRef.current > 0
+          ? lastKnownWeightRef.current
+          : item.quantity && item.quantity > 0
+          ? item.quantity
+          : 1;
+
+      const roundedWeight = Math.round(targetWeight * 1000) / 1000;
+      lastKnownWeightRef.current = roundedWeight;
+
+      onEditItem(listId, item.id, {
+        isWeighted: true,
+        weight: roundedWeight,
+        pricingModeSource: null,
+      });
+      setQtyInput(sanitizeWeightInput(roundedWeight.toString()));
     } else {
-      const initialQty = item.quantity && item.quantity >= 1 ? item.quantity : Math.max(1, Math.round(item.weight || 1));
-      onEditItem(listId, item.id, { isWeighted: false, quantity: initialQty });
+      // Alternando para UNIDADE
+      const targetQty =
+        item.quantity && item.quantity >= 1
+          ? item.quantity
+          : lastKnownQtyRef.current && lastKnownQtyRef.current >= 1
+          ? lastKnownQtyRef.current
+          : Math.max(1, Math.round(Number(item.weight) || 1));
+
+      lastKnownQtyRef.current = targetQty;
+
+      onEditItem(listId, item.id, {
+        isWeighted: false,
+        quantity: targetQty,
+        pricingModeSource: null,
+      });
+      setQtyInput(targetQty.toString());
+    }
+  };
+
+  const handleSetPricingMode = (weighted: boolean) => {
+    if (weighted !== Boolean(item.isWeighted)) {
+      handleTogglePricingMode();
     }
   };
 
@@ -276,74 +330,38 @@ export const ListItemCard: React.FC<ListItemCardProps> = ({
 
       {/* LINHA 2: MARCADOR (UNID. / PESO) + QUANTIDADE/PESO COM STEPPER */}
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
-        {/* 1. Marcador de Modalidade: Unid. / Peso */}
+        {/* 1. Marcador de Modalidade (TIPO): Unidade vs Peso (kg) - Controle Fixo Sempre Interativo */}
         <div className="flex items-center space-x-1.5">
           <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
             Tipo:
           </label>
-          {isFixedMode ? (
-            <div
-              className={`h-8 px-2.5 inline-flex items-center justify-center rounded-lg border shadow-2xs select-none ${
-                isFixedUnit
-                  ? 'bg-emerald-50/50 border-emerald-200/70 text-emerald-800'
-                  : 'bg-amber-50/50 border-amber-200/70 text-amber-800'
+          <motion.button
+            whileTap={motionConfig.shouldReduceMotion ? {} : { scale: 0.95 }}
+            type="button"
+            onClick={handleTogglePricingMode}
+            title={item.isWeighted ? 'Toque para alternar para Unidade' : 'Toque para alternar para Peso (kg)'}
+            aria-label={item.isWeighted ? 'Tipo: Peso (kg). Toque para alternar para Unidade' : 'Tipo: Unidade. Toque para alternar para Peso (kg)'}
+            className={`h-8 px-2.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs select-none ${
+              item.isWeighted
+                ? 'bg-amber-50 hover:bg-amber-100 border-amber-200/90 text-amber-900 active:bg-amber-100'
+                : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200/90 text-emerald-900 active:bg-emerald-100'
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                item.isWeighted ? 'bg-amber-500' : 'bg-emerald-500'
               }`}
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full mr-1.5 shrink-0 ${
-                  isFixedUnit ? 'bg-emerald-500' : 'bg-amber-500'
-                }`}
-              />
-              <span className="text-[11px] font-bold">{isFixedUnit ? 'Unidade' : 'Pesado'}</span>
-            </div>
-          ) : (
-            <div className="h-8 relative inline-flex p-0.5 rounded-lg bg-zinc-100 border border-zinc-200/80 shadow-2xs items-center">
-              <button
-                type="button"
-                onClick={() => handleSetPricingMode(false)}
-                title="Planejar por quantidade unitária"
-                className={`px-2.5 py-1 h-full rounded-[6px] text-[11px] font-bold transition-colors cursor-pointer z-10 flex items-center justify-center leading-none ${
-                  !item.isWeighted
-                    ? 'text-emerald-800 font-extrabold'
-                    : 'text-zinc-400 hover:text-zinc-700'
-                }`}
-              >
-                {!item.isWeighted && (
-                  <motion.div
-                    layoutId={`list-pricing-pill-${item.id}`}
-                    className="absolute inset-0 bg-white rounded-[6px] shadow-2xs -z-10"
-                    transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-                  />
-                )}
-                <span>Unid.</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSetPricingMode(true)}
-                title="Planejar por peso (kg)"
-                className={`px-2.5 py-1 h-full rounded-[6px] text-[11px] font-bold transition-colors cursor-pointer z-10 flex items-center justify-center leading-none ${
-                  item.isWeighted
-                    ? 'text-amber-800 font-extrabold'
-                    : 'text-zinc-400 hover:text-zinc-700'
-                }`}
-              >
-                {item.isWeighted && (
-                  <motion.div
-                    layoutId={`list-pricing-pill-${item.id}`}
-                    className="absolute inset-0 bg-white rounded-[6px] shadow-2xs -z-10"
-                    transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-                  />
-                )}
-                <span>Peso (kg)</span>
-              </button>
-            </div>
-          )}
+            />
+            <span className="text-[11px] font-bold tracking-tight whitespace-nowrap">
+              {item.isWeighted ? 'Peso (kg)' : '• Unidade'}
+            </span>
+          </motion.button>
         </div>
 
         {/* 2. Stepper de Quantidade / Peso */}
         <div className="flex items-center space-x-1.5">
           <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-            {item.isWeighted ? 'Peso:' : 'Qtd:'}
+            {item.isWeighted ? 'PESO:' : 'QTD:'}
           </label>
           <div className="h-8 w-28 flex items-center bg-zinc-50 hover:bg-zinc-100/70 rounded-lg border border-zinc-200/90 p-0.5 transition-colors">
             <motion.button
@@ -390,13 +408,13 @@ export const ListItemCard: React.FC<ListItemCardProps> = ({
                       const val =
                         item.weight !== undefined && item.weight !== null
                           ? item.weight
-                          : item.quantity;
+                          : (lastKnownWeightRef.current || 1);
                       const rounded = Math.round(Number(val) * 1000) / 1000;
                       return `${rounded.toString().replace('.', ',')} kg`;
                     })()}
                   </span>
                 ) : (
-                  <span>{item.quantity} un</span>
+                  <span>{item.quantity || 1} un</span>
                 )}
               </button>
             )}

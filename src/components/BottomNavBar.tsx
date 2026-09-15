@@ -1,282 +1,192 @@
-import React, { useState } from 'react';
-import { 
-  Home,
-  History, 
-  Plus, 
-  ClipboardList, 
-  RotateCcw, 
-  Receipt, 
-  X,
-  ChevronRight
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import React from 'react';
+import { Home, ClipboardList, ShoppingCart, History } from 'lucide-react';
+import { motion } from 'motion/react';
 import { useMotionConfig } from '../styles/motionSystem';
-import { useToast } from './Toast';
+
+export type NavScreen = 'home' | 'lists' | 'cart' | 'history' | 'profile';
 
 interface BottomNavBarProps {
-  currentScreen?: 'home' | 'history' | 'profile';
-  onNavigateToHome?: () => void;
+  currentScreen?: NavScreen;
+  onNavigateToHome: () => void;
+  onNavigateToLists: () => void;
+  onNavigateToCart: () => void;
   onNavigateToHistory: () => void;
-  onNavigateToProfile?: () => void;
-  onCreateNewList: () => void;
-  onRegisterManual: () => void;
-  onRepeatPurchase?: () => void;
+  pendingItemsCount?: number;
+  hasPendingPurchase?: boolean;
 }
 
 export function BottomNavBar({
   currentScreen = 'home',
   onNavigateToHome,
+  onNavigateToLists,
+  onNavigateToCart,
   onNavigateToHistory,
-  onCreateNewList,
-  onRegisterManual,
-  onRepeatPurchase,
+  pendingItemsCount = 0,
+  hasPendingPurchase = false,
 }: BottomNavBarProps) {
   const motionConfig = useMotionConfig();
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const { showToast } = useToast();
-
-  const handleCreateList = () => {
-    setIsSheetOpen(false);
-    onCreateNewList();
-  };
-
-  const handleRepeatPurchase = () => {
-    setIsSheetOpen(false);
-    if (onRepeatPurchase) {
-      onRepeatPurchase();
-    } else {
-      showToast('Em breve');
-    }
-  };
-
-  const handleManualRegister = () => {
-    setIsSheetOpen(false);
-    onRegisterManual();
-  };
 
   const isHomeActive = currentScreen === 'home';
+  const isListsActive = currentScreen === 'lists';
+  const isCartActive = currentScreen === 'cart';
   const isHistoryActive = currentScreen === 'history';
 
   return (
-    <>
-      {/* Barra Fixa no Rodapé com Recorte/Cradle Transparente */}
-      <nav
-        aria-label="Navegação Principal"
-        className="fixed bottom-0 left-0 right-0 z-40 pb-safe pointer-events-none"
-      >
-        {/* Fundo da barra com máscara de recorte circular (notch) 100% transparente */}
-        <div
-          className="absolute inset-0 bg-white/95 backdrop-blur-md shadow-lg pointer-events-none"
-          style={{
-            WebkitMaskImage: 'radial-gradient(circle 38px at 50% 0px, transparent 37px, black 38px)',
-            maskImage: 'radial-gradient(circle 38px at 50% 0px, transparent 37px, black 38px)',
-          }}
-        />
+    <nav
+      aria-label="Navegação Principal"
+      className="fixed bottom-0 left-0 right-0 z-40 pb-safe pointer-events-none"
+    >
+      {/* Barra de Fundo com Blur e Sombra Elegante */}
+      <div className="absolute inset-0 bg-white/95 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.06)] border-t border-zinc-200/80 pointer-events-none" />
 
-        {/* Linhas de borda superior e contorno da curvatura do notch */}
-        <div className="absolute top-0 left-0 right-[calc(50%+37px)] h-[1px] bg-zinc-200/90 pointer-events-none" />
-        <div className="absolute top-0 left-[calc(50%+37px)] right-0 h-[1px] bg-zinc-200/90 pointer-events-none" />
-        <div
-          className="absolute left-1/2 -translate-x-1/2 -top-[38px] w-[76px] h-[76px] rounded-full border border-zinc-200/90 pointer-events-none"
-          style={{ clipPath: 'inset(38px 0 0 0)' }}
-        />
-
-        <div className="w-full max-w-md md:max-w-xl mx-auto px-6 h-16 flex items-center justify-between relative z-10 pointer-events-auto">
-          {/* 1. Item Home (Esquerda) */}
-          <motion.button
-            whileTap={motionConfig.tap.button}
-            transition={motionConfig.pressSpring}
-            type="button"
-            onClick={onNavigateToHome}
-            aria-current={isHomeActive ? 'page' : undefined}
-            className={`relative flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 px-3 rounded-xl transition-colors cursor-pointer group focus:outline-none ${
-              isHomeActive
-                ? 'text-emerald-700 font-bold'
-                : 'text-zinc-500 hover:text-zinc-900 active:text-emerald-600'
-            }`}
-            aria-label="Ir para a Tela Inicial"
-          >
-            {isHomeActive && (
-              <motion.div
-                layoutId="active-nav-pill"
-                transition={motionConfig.layoutSpring}
-                className="absolute inset-0 bg-emerald-50 rounded-xl -z-10 border border-emerald-200/50"
-              />
-            )}
-            <Home className={`w-5 h-5 transition-colors ${isHomeActive ? 'text-emerald-600 stroke-[2.5]' : 'group-hover:text-emerald-600'}`} />
-            <span className={`text-[11px] mt-1 leading-none transition-colors ${isHomeActive ? 'text-emerald-700 font-bold' : 'text-zinc-600 group-hover:text-emerald-700 font-medium'}`}>
-              Início
-            </span>
-          </motion.button>
-
-          {/* 2. Botão Central Flutuante Elevado com Espaçamento Totalmente Transparente */}
-          <div className="absolute left-1/2 -translate-x-1/2 -top-7 flex flex-col items-center pointer-events-auto">
-            {/* Botão flutuando livremente no recorte transparente */}
-            <motion.button
-              whileTap={motionConfig.tap.button}
-              whileHover={motionConfig.shouldReduceMotion ? {} : { scale: 1.04 }}
-              transition={motionConfig.pressSpring}
-              type="button"
-              onClick={() => setIsSheetOpen(true)}
-              aria-label="Abrir menu de novas ações de compra"
-              className="w-14 h-14 rounded-full bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 hover:from-emerald-600 hover:to-emerald-800 active:from-emerald-700 active:to-emerald-900 text-white shadow-lg shadow-emerald-700/30 flex items-center justify-center transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
-            >
-              <Plus className="w-7 h-7 stroke-[2.5]" />
-            </motion.button>
-          </div>
-
-          {/* 3. Item Histórico (Direita) */}
-          <motion.button
-            whileTap={motionConfig.tap.button}
-            transition={motionConfig.pressSpring}
-            type="button"
-            onClick={onNavigateToHistory}
-            aria-current={isHistoryActive ? 'page' : undefined}
-            className={`relative flex flex-col items-center justify-center min-w-[56px] min-h-[44px] py-1 px-3 rounded-xl transition-colors cursor-pointer group focus:outline-none ${
-              isHistoryActive
-                ? 'text-emerald-700 font-bold'
-                : 'text-zinc-500 hover:text-zinc-900 active:text-emerald-600'
-            }`}
-            aria-label="Ver Histórico de Compras"
-          >
-            {isHistoryActive && (
-              <motion.div
-                layoutId="active-nav-pill"
-                transition={motionConfig.layoutSpring}
-                className="absolute inset-0 bg-emerald-50 rounded-xl -z-10 border border-emerald-200/50"
-              />
-            )}
-            <History className={`w-5 h-5 transition-colors ${isHistoryActive ? 'text-emerald-600 stroke-[2.5]' : 'group-hover:text-emerald-600'}`} />
-            <span className={`text-[11px] mt-1 leading-none transition-colors ${isHistoryActive ? 'text-emerald-700 font-bold' : 'text-zinc-600 group-hover:text-emerald-700 font-medium'}`}>
-              Histórico
-            </span>
-          </motion.button>
-        </div>
-      </nav>
-
-      {/* Bottom Sheet do Botão Central */}
-      <AnimatePresence>
-        {isSheetOpen && (
-          <div className="fixed inset-0 z-50 flex flex-col justify-end">
-            {/* Backdrop escurecido com blur */}
+      <div className="w-full max-w-md md:max-w-xl mx-auto px-2 sm:px-4 h-16 flex items-center justify-around relative z-10 pointer-events-auto">
+        {/* 1. Início */}
+        <motion.button
+          whileTap={motionConfig.tap.button}
+          transition={motionConfig.pressSpring}
+          type="button"
+          onClick={onNavigateToHome}
+          aria-current={isHomeActive ? 'page' : undefined}
+          className={`relative flex-1 flex flex-col items-center justify-center min-h-[48px] py-1 px-1 rounded-xl transition-colors cursor-pointer group focus:outline-none ${
+            isHomeActive
+              ? 'text-emerald-700 font-bold'
+              : 'text-zinc-500 hover:text-zinc-900 active:text-emerald-600'
+          }`}
+          aria-label="Início"
+        >
+          {isHomeActive && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsSheetOpen(false)}
-              className="fixed inset-0 bg-black/50 backdrop-blur-xs cursor-pointer"
+              layoutId="bottom-nav-active-pill"
+              transition={motionConfig.layoutSpring}
+              className="absolute inset-x-2 inset-y-1 bg-emerald-50 rounded-xl -z-10 border border-emerald-200/50"
             />
+          )}
+          <Home
+            className={`w-5 h-5 transition-colors ${
+              isHomeActive ? 'text-emerald-600 stroke-[2.5]' : 'group-hover:text-emerald-600'
+            }`}
+          />
+          <span
+            className={`text-[11px] mt-1 leading-none transition-colors ${
+              isHomeActive ? 'text-emerald-700 font-bold' : 'text-zinc-600 font-medium'
+            }`}
+          >
+            Início
+          </span>
+        </motion.button>
 
-            {/* Painel do Bottom Sheet */}
+        {/* 2. Listas */}
+        <motion.button
+          whileTap={motionConfig.tap.button}
+          transition={motionConfig.pressSpring}
+          type="button"
+          onClick={onNavigateToLists}
+          aria-current={isListsActive ? 'page' : undefined}
+          className={`relative flex-1 flex flex-col items-center justify-center min-h-[48px] py-1 px-1 rounded-xl transition-colors cursor-pointer group focus:outline-none ${
+            isListsActive
+              ? 'text-emerald-700 font-bold'
+              : 'text-zinc-500 hover:text-zinc-900 active:text-emerald-600'
+          }`}
+          aria-label="Listas"
+        >
+          {isListsActive && (
             <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={motionConfig.modalSpring}
-              className="relative w-full max-w-md md:max-w-xl mx-auto bg-white rounded-t-3xl shadow-2xl border-t border-zinc-200 p-5 pb-8 sm:pb-9 z-10"
-            >
-              {/* Handle visual superior */}
-              <div className="w-12 h-1.5 rounded-full bg-zinc-300 mx-auto mb-4" />
+              layoutId="bottom-nav-active-pill"
+              transition={motionConfig.layoutSpring}
+              className="absolute inset-x-2 inset-y-1 bg-emerald-50 rounded-xl -z-10 border border-emerald-200/50"
+            />
+          )}
+          <ClipboardList
+            className={`w-5 h-5 transition-colors ${
+              isListsActive ? 'text-emerald-600 stroke-[2.5]' : 'group-hover:text-emerald-600'
+            }`}
+          />
+          <span
+            className={`text-[11px] mt-1 leading-none transition-colors ${
+              isListsActive ? 'text-emerald-700 font-bold' : 'text-zinc-600 font-medium'
+            }`}
+          >
+            Listas
+          </span>
+        </motion.button>
 
-              {/* Cabeçalho do Bottom Sheet com Botão Fechar */}
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight">
-                    O que deseja fazer?
-                  </h3>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    Escolha uma das opções abaixo para iniciar
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsSheetOpen(false)}
-                  className="w-9 h-9 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[36px] min-w-[36px]"
-                  aria-label="Fechar menu"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Lista de 3 Opções */}
-              <div className="space-y-2.5">
-                {/* Opção 1: Criar Nova Lista */}
-                <motion.button
-                  whileTap={motionConfig.tap.row}
-                  transition={motionConfig.pressSpring}
-                  type="button"
-                  onClick={handleCreateList}
-                  className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-emerald-50/80 active:bg-emerald-100/70 border border-zinc-200/90 hover:border-emerald-300 transition-colors text-left min-h-[56px] cursor-pointer"
-                >
-                  <div className="flex items-center space-x-3.5 min-w-0 flex-1">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                      <ClipboardList className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h4 className="text-sm font-bold text-zinc-900 group-hover:text-emerald-800 transition-colors">
-                        Criar Nova Lista
-                      </h4>
-                      <p className="text-xs text-zinc-500 group-hover:text-emerald-700/80 transition-colors mt-0.5">
-                        Planejar compras adicionando itens
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-transform shrink-0 ml-2" />
-                </motion.button>
-
-                {/* Opção 2: Repetir Compra Anterior */}
-                <motion.button
-                  whileTap={motionConfig.tap.row}
-                  transition={motionConfig.pressSpring}
-                  type="button"
-                  onClick={handleRepeatPurchase}
-                  className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-blue-50/80 active:bg-blue-100/70 border border-zinc-200/90 hover:border-blue-300 transition-colors text-left min-h-[56px] cursor-pointer"
-                >
-                  <div className="flex items-center space-x-3.5 min-w-0 flex-1">
-                    <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                      <RotateCcw className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h4 className="text-sm font-bold text-zinc-900 group-hover:text-blue-800 transition-colors">
-                        Repetir Compra Anterior
-                      </h4>
-                      <p className="text-xs text-zinc-500 group-hover:text-blue-700/80 transition-colors mt-0.5">
-                        Copiar itens de uma compra já finalizada
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-transform shrink-0 ml-2" />
-                </motion.button>
-
-                {/* Opção 3: Registrar Compra Já Feita */}
-                <motion.button
-                  whileTap={motionConfig.tap.row}
-                  transition={motionConfig.pressSpring}
-                  type="button"
-                  onClick={handleManualRegister}
-                  className="w-full group flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 hover:bg-amber-50/80 active:bg-amber-100/70 border border-zinc-200/90 hover:border-amber-300 transition-colors text-left min-h-[56px] cursor-pointer"
-                >
-                  <div className="flex items-center space-x-3.5 min-w-0 flex-1">
-                    <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-                      <Receipt className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h4 className="text-sm font-bold text-zinc-900 group-hover:text-amber-800 transition-colors">
-                        Registrar Compra Já Feita
-                      </h4>
-                      <p className="text-xs text-zinc-500 group-hover:text-amber-700/80 transition-colors mt-0.5">
-                        Lançar comprovante ou nota fiscal
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-transform shrink-0 ml-2" />
-                </motion.button>
-              </div>
-            </motion.div>
+        {/* 3. Carrinho */}
+        <motion.button
+          whileTap={motionConfig.tap.button}
+          transition={motionConfig.pressSpring}
+          type="button"
+          onClick={onNavigateToCart}
+          aria-current={isCartActive ? 'page' : undefined}
+          className={`relative flex-1 flex flex-col items-center justify-center min-h-[48px] py-1 px-1 rounded-xl transition-colors cursor-pointer group focus:outline-none ${
+            isCartActive
+              ? 'text-emerald-700 font-bold'
+              : 'text-zinc-500 hover:text-zinc-900 active:text-emerald-600'
+          }`}
+          aria-label="Carrinho de Compras"
+        >
+          {isCartActive && (
+            <motion.div
+              layoutId="bottom-nav-active-pill"
+              transition={motionConfig.layoutSpring}
+              className="absolute inset-x-2 inset-y-1 bg-emerald-50 rounded-xl -z-10 border border-emerald-200/50"
+            />
+          )}
+          <div className="relative">
+            <ShoppingCart
+              className={`w-5 h-5 transition-colors ${
+                isCartActive ? 'text-emerald-600 stroke-[2.5]' : 'group-hover:text-emerald-600'
+              }`}
+            />
+            {hasPendingPurchase && (
+              <span className="absolute -top-1 -right-1.5 min-w-[14px] h-[14px] px-0.5 bg-emerald-600 text-white text-[9px] font-black rounded-full flex items-center justify-center ring-2 ring-white">
+                {pendingItemsCount > 0 ? (pendingItemsCount > 9 ? '9+' : pendingItemsCount) : '•'}
+              </span>
+            )}
           </div>
-        )}
-      </AnimatePresence>
-    </>
+          <span
+            className={`text-[11px] mt-1 leading-none transition-colors ${
+              isCartActive ? 'text-emerald-700 font-bold' : 'text-zinc-600 font-medium'
+            }`}
+          >
+            Carrinho
+          </span>
+        </motion.button>
+
+        {/* 4. Histórico */}
+        <motion.button
+          whileTap={motionConfig.tap.button}
+          transition={motionConfig.pressSpring}
+          type="button"
+          onClick={onNavigateToHistory}
+          aria-current={isHistoryActive ? 'page' : undefined}
+          className={`relative flex-1 flex flex-col items-center justify-center min-h-[48px] py-1 px-1 rounded-xl transition-colors cursor-pointer group focus:outline-none ${
+            isHistoryActive
+              ? 'text-emerald-700 font-bold'
+              : 'text-zinc-500 hover:text-zinc-900 active:text-emerald-600'
+          }`}
+          aria-label="Histórico de Compras"
+        >
+          {isHistoryActive && (
+            <motion.div
+              layoutId="bottom-nav-active-pill"
+              transition={motionConfig.layoutSpring}
+              className="absolute inset-x-2 inset-y-1 bg-emerald-50 rounded-xl -z-10 border border-emerald-200/50"
+            />
+          )}
+          <History
+            className={`w-5 h-5 transition-colors ${
+              isHistoryActive ? 'text-emerald-600 stroke-[2.5]' : 'group-hover:text-emerald-600'
+            }`}
+          />
+          <span
+            className={`text-[11px] mt-1 leading-none transition-colors ${
+              isHistoryActive ? 'text-emerald-700 font-bold' : 'text-zinc-600 font-medium'
+            }`}
+          >
+            Histórico
+          </span>
+        </motion.button>
+      </div>
+    </nav>
   );
 }

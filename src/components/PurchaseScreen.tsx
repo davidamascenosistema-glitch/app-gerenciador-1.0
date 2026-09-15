@@ -28,7 +28,6 @@ import {
   Square,
   MoreVertical,
   Share2,
-  Bookmark,
   Filter,
   ChevronDown,
 } from 'lucide-react';
@@ -140,15 +139,9 @@ export function PurchaseScreen({
     setTitleValue(isDefaultPurchaseName(purchase.name) ? '' : (purchase.name || ''));
   }, [purchase.name, purchase.id]);
 
-  // Back confirmation modal state
-  const [isBackModalOpen, setIsBackModalOpen] = useState(false);
-  const [backNameInput, setBackNameInput] = useState('');
+  // Modais de descarte
   const [isDiscardManualModalOpen, setIsDiscardManualModalOpen] = useState(false);
   const [isDiscardModalOpen, setIsDiscardModalOpen] = useState(false);
-
-  // Naming modal state (for 3+ items with default name on back click or Guardar Lista)
-  const [isNamingModalOpen, setIsNamingModalOpen] = useState(false);
-  const [namingInput, setNamingInput] = useState('');
 
   // Finish purchase modal states
   const [isConfirmFinishOpen, setIsConfirmFinishOpen] = useState(false);
@@ -162,11 +155,9 @@ export function PurchaseScreen({
   // Toast feedback hook
   const { showToast } = useToast();
 
-  // Receipt Photo & Mode State (for origin === 'manual')
+  // Receipt Photo & Mode State
   const [receiptImage, setReceiptImage] = useState<string | null>(null);
-  const [registrationMode, setRegistrationMode] = useState<'choose' | 'manual' | 'photo'>(
-    purchase.origin === 'manual' && (!purchase.items || purchase.items.length === 0) ? 'choose' : 'manual'
-  );
+  const [registrationMode, setRegistrationMode] = useState<'choose' | 'manual' | 'photo'>('manual');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Category Multi-Selection Filter State
@@ -546,63 +537,13 @@ export function PurchaseScreen({
     }
 
     // Sessão de "Registrar compra já feita" (origin === 'manual'):
-    // Ao ter 1 ou mais itens, pergunta se deseja descartar o registro ou continuar com o registro
     if (purchase.origin === 'manual') {
       setIsDiscardManualModalOpen(true);
       return;
     }
 
-    // Sessão de "Planejamento de compras" (origin === 'list'):
-    // Abre a janela de confirmação para salvar ou descartar a lista
-    setBackNameInput(isDefaultPurchaseName(purchase.name) ? '' : purchase.name);
-    setIsBackModalOpen(true);
-  };
-
-  const handleSaveNameAndExit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = namingInput.trim();
-    if (trimmed) {
-      onUpdateName(purchase.id, trimmed);
-    }
-    setIsNamingModalOpen(false);
-    onBack('Lista salva com sucesso');
-  };
-
-  const handleSaveAndExit = () => {
-    const trimmed = backNameInput.trim();
-    if (trimmed) {
-      onUpdateName(purchase.id, trimmed);
-    }
-    setIsBackModalOpen(false);
-    onBack('Lista salva com sucesso');
-  };
-
-  const handleSaveListForLater = () => {
-    if (isDefaultPurchaseName(purchase.name)) {
-      setNamingInput('');
-      setIsNamingModalOpen(true);
-      return;
-    }
-
-    showFeedbackToast('Lista salva com sucesso');
-    setTimeout(() => {
-      onBack('Lista salva com sucesso');
-    }, 150);
-  };
-
-  const handleDiscardAndExit = () => {
-    setIsBackModalOpen(false);
-    setIsNamingModalOpen(false);
-    if (onDiscardPurchase) {
-      onDiscardPurchase(purchase.id);
-      showFeedbackToast(
-        purchase.origin === 'manual'
-          ? 'Registro de compra descartado'
-          : 'Lista de compras descartada'
-      );
-    } else {
-      onBack();
-    }
+    // Na compra ativa (carrinho), voltar apenas retorna mantendo o estado salvo
+    onBack();
   };
 
   const handleConfirmFinish = () => {
@@ -620,6 +561,11 @@ export function PurchaseScreen({
   const totalItemsCount = purchase.items.length;
   const boughtItemsCount = purchase.items.filter((i) => i.bought).length;
   const comparisonInsight = calculateComparisonInsight(purchase, allPurchases);
+
+  // Orçamento (Budget) da compra
+  const numericBudget = purchase.budget != null && Number(purchase.budget) > 0 ? Number(purchase.budget) : undefined;
+  const isOverBudget = numericBudget !== undefined && totalValue > numericBudget;
+  const isNearBudget = numericBudget !== undefined && totalValue >= numericBudget * 0.85;
 
   const allSections = groupItemsByCategory(purchase.items);
   const visibleSections =
@@ -754,7 +700,7 @@ export function PurchaseScreen({
         {/* Barra de Pesquisa Fixa integrada ao Header (visível durante planejamento ou digitação manual) */}
         {purchase.status !== 'finished' &&
           (purchase.origin !== 'manual' || registrationMode === 'manual') && (
-            <div className="w-full max-w-md md:max-w-xl mx-auto px-3 sm:px-6 pb-2.5 pt-0.5">
+            <div className="w-full max-w-md md:max-w-xl mx-auto px-3 sm:px-6 pb-2 pt-0.5">
               <ItemSearchBar
                 onAddItem={handleAddItemFromSearch}
                 onOpenBatchModal={() => setIsBatchModalOpen(true)}
@@ -763,6 +709,88 @@ export function PurchaseScreen({
               />
             </div>
           )}
+
+        {/* Barra de Progresso do Orçamento (Abaixo do subtotal no topo da tela) */}
+        {numericBudget !== undefined && (
+          <div className="w-full max-w-md md:max-w-xl mx-auto px-3 sm:px-6 pb-2.5 pt-0">
+            <div
+              className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
+                isOverBudget
+                  ? 'bg-rose-50/95 border-rose-300 text-rose-950 shadow-xs'
+                  : isNearBudget
+                  ? 'bg-amber-50/95 border-amber-300 text-amber-950 shadow-xs'
+                  : 'bg-emerald-50/95 border-emerald-300/80 text-emerald-950 shadow-xs'
+              }`}
+            >
+              {/* Linha superior: Subtotal e R$ X de R$ Y */}
+              <div className="flex items-center justify-between gap-2 mb-1.5 text-xs">
+                <div className="flex items-center space-x-1 min-w-0">
+                  <span className="font-semibold text-zinc-600 shrink-0">Subtotal:</span>
+                  <span
+                    className={`font-black text-xs sm:text-sm truncate ${
+                      isOverBudget ? 'text-rose-700' : 'text-zinc-900'
+                    }`}
+                  >
+                    {formatCurrencyBRL(totalValue)}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-1 shrink-0 text-right">
+                  <span
+                    className={`font-bold text-xs ${
+                      isOverBudget
+                        ? 'text-rose-700 font-extrabold'
+                        : isNearBudget
+                        ? 'text-amber-800 font-extrabold'
+                        : 'text-zinc-700'
+                    }`}
+                  >
+                    {formatCurrencyBRL(totalValue)} de {formatCurrencyBRL(numericBudget)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Barra de Progresso visual animada */}
+              <div className="w-full h-2.5 bg-black/10 rounded-full overflow-hidden relative">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    isOverBudget
+                      ? 'bg-rose-600'
+                      : isNearBudget
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                  }`}
+                  style={{
+                    width: `${Math.min(100, Math.round((totalValue / numericBudget) * 100))}%`,
+                  }}
+                />
+              </div>
+
+              {/* Informação descritiva de limite */}
+              <div className="flex items-center justify-between text-[11px] mt-1.5 font-semibold">
+                {isOverBudget ? (
+                  <span className="text-rose-700 font-bold">
+                    Orçamento ultrapassado em {formatCurrencyBRL(totalValue - numericBudget)}
+                  </span>
+                ) : (
+                  <span className="text-zinc-600">
+                    Restam {formatCurrencyBRL(numericBudget - totalValue)} para atingir o limite
+                  </span>
+                )}
+                <span
+                  className={
+                    isOverBudget
+                      ? 'text-rose-700 font-extrabold'
+                      : isNearBudget
+                      ? 'text-amber-800 font-bold'
+                      : 'text-emerald-700 font-bold'
+                  }
+                >
+                  {Math.round((totalValue / numericBudget) * 100)}%
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main Content (Rolagem Livre com padding inferior dinâmico para não sobrepor o rodapé fixo) */}
@@ -781,71 +809,6 @@ export function PurchaseScreen({
           className="hidden"
           id="receipt-camera-input"
         />
-
-        {/* Flow Selection for 'Registrar compra já feita' */}
-        {purchase.origin === 'manual' && registrationMode === 'choose' && (
-          <div className="w-full bg-white rounded-2xl border border-amber-200/90 p-4 sm:p-5 shadow-2xs mb-4">
-            <div className="flex items-center space-x-2 mb-2">
-              <span className="px-2.5 py-0.5 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200/80 rounded-full flex items-center space-x-1">
-                <Receipt className="w-3 h-3 text-amber-600" />
-                <span>Registrar compra já feita</span>
-              </span>
-            </div>
-            <h2 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight mb-1">
-              Como deseja registrar esta compra?
-            </h2>
-            <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
-              Escolha entre lançar os itens manualmente ou fotografar a nota fiscal para anexar.
-            </p>
-
-            <div className="space-y-3">
-              {/* Option 1: Adicionar itens manualmente */}
-              <button
-                type="button"
-                onClick={() => {
-                  setRegistrationMode('manual');
-                }}
-                className="w-full p-3.5 sm:p-4 rounded-xl border border-zinc-200 hover:border-emerald-500 bg-zinc-50/80 hover:bg-emerald-50/50 transition-all flex items-center space-x-3.5 text-left cursor-pointer group active:scale-[0.98] min-h-[60px]"
-              >
-                <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-sm font-bold text-zinc-900 group-hover:text-emerald-900 transition-colors">
-                    Adicionar itens manualmente
-                  </h3>
-                  <p className="text-xs text-zinc-500 mt-0.5 leading-tight">
-                    Digitar produtos, quantidades e preços um a um
-                  </p>
-                </div>
-              </button>
-
-              {/* Option 2: Anexar foto da nota fiscal */}
-              <button
-                type="button"
-                onClick={() => {
-                  setRegistrationMode('photo');
-                  setTimeout(() => handleTriggerCamera(), 100);
-                }}
-                className="w-full p-3.5 sm:p-4 rounded-xl border border-amber-200/90 hover:border-amber-400 bg-amber-50/40 hover:bg-amber-50 transition-all flex items-center space-x-3.5 text-left cursor-pointer group active:scale-[0.98] min-h-[60px]"
-              >
-                <div className="w-11 h-11 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 group-hover:bg-amber-600 group-hover:text-white transition-colors">
-                  <Camera className="w-5 h-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center space-x-2">
-                    <h3 className="text-sm font-bold text-zinc-900 group-hover:text-amber-950 transition-colors">
-                      Anexar foto da nota fiscal
-                    </h3>
-                  </div>
-                  <p className="text-xs text-zinc-500 mt-0.5 leading-tight">
-                    Tirar foto do cupom impresso diretamente com a câmera
-                  </p>
-                </div>
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Receipt Photo Section */}
         {purchase.origin === 'manual' && registrationMode === 'photo' && (
@@ -1673,170 +1636,6 @@ export function PurchaseScreen({
         )}
       </AnimatePresence>
 
-      {/* Modal Customizado de Confirmação ao Voltar */}
-      <AnimatePresence>
-        {isBackModalOpen && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setIsBackModalOpen(false);
-            }}
-          >
-            <motion.div
-              {...MOTION_VARIANTS.modalContent}
-              className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden relative"
-            >
-              {/* Botão Fechar (X) no canto superior direito: apenas fecha o modal e continua na tela */}
-              <button
-                type="button"
-                onClick={() => setIsBackModalOpen(false)}
-                aria-label="Fechar modal e continuar editando"
-                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <div className="p-5 pt-6">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3 mx-auto bg-emerald-100 border border-emerald-200 text-emerald-700">
-                  <ShoppingBag className="w-6 h-6" />
-                </div>
-
-                <h3 className="text-lg font-bold text-zinc-900 text-center tracking-tight">
-                  Deseja salvar esta lista?
-                </h3>
-                <p className="text-xs text-zinc-500 text-center mt-1.5 leading-relaxed">
-                  Sua lista possui itens adicionados. Deseja salvar para comprar mais tarde ou descartar?
-                </p>
-
-                <div className="mt-4 bg-zinc-50 border border-zinc-200/80 rounded-xl p-3 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between text-zinc-600">
-                    <span>Itens adicionados:</span>
-                    <span className="font-bold text-zinc-800">{totalItemsCount}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-zinc-600">
-                    <span>Valor estimado:</span>
-                    <span className="font-bold text-zinc-800">{formatCurrencyBRL(totalValue)}</span>
-                  </div>
-                </div>
-
-                {/* Campo de nome opcional se a purchase ainda tiver o nome padrão automático */}
-                {isDefaultPurchaseName(purchase.name) && (
-                  <div className="mt-3.5">
-                    <label htmlFor="back-purchase-name-input" className="sr-only">
-                      Nome da lista
-                    </label>
-                    <input
-                      id="back-purchase-name-input"
-                      type="text"
-                      value={backNameInput}
-                      onChange={(e) => setBackNameInput(e.target.value)}
-                      placeholder="Dê um nome a esta lista (opcional)"
-                      className="w-full px-3.5 py-2.5 text-sm bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-zinc-900 placeholder:text-zinc-400 font-medium transition-all outline-none"
-                    />
-                  </div>
-                )}
-
-                <div className="mt-5 space-y-2">
-                  {/* Ação Primária em Destaque */}
-                  <button
-                    type="button"
-                    onClick={handleSaveAndExit}
-                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
-                  >
-                    <Check className="w-4 h-4 stroke-[2.5]" />
-                    <span>Salvar Lista</span>
-                  </button>
-
-                  {/* Ação Destrutiva Secundária */}
-                  <button
-                    type="button"
-                    onClick={handleDiscardAndExit}
-                    className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-red-50 active:bg-red-100 text-red-600 border border-red-200 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Descartar Lista</span>
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Modal para Nomear Lista ao Salvar Automaticamente (3+ itens com nome padrão ou Guardar Lista) */}
-      <AnimatePresence>
-        {isNamingModalOpen && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setIsNamingModalOpen(false);
-            }}
-          >
-            <motion.div
-              {...MOTION_VARIANTS.modalContent}
-              className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden relative"
-            >
-              {/* Botão Fechar (X) no canto superior direito: apenas fecha o modal e continua na tela */}
-              <button
-                type="button"
-                onClick={() => setIsNamingModalOpen(false)}
-                aria-label="Fechar modal e continuar editando"
-                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <div className="p-5 pt-6">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3 mx-auto bg-emerald-100 border border-emerald-200 text-emerald-700">
-                  <ShoppingBag className="w-6 h-6" />
-                </div>
-
-                <h3 className="text-lg font-bold text-zinc-900 text-center tracking-tight">
-                  Salvar Lista
-                </h3>
-                <p className="text-xs text-zinc-500 text-center mt-1.5 leading-relaxed">
-                  Sua lista possui {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'itens'}. Deseja salvar para mais tarde ou descartar?
-                </p>
-
-                <form onSubmit={handleSaveNameAndExit} className="mt-4 space-y-3">
-                  <div>
-                    <label htmlFor="purchase-name-input" className="sr-only">
-                      Nome da lista
-                    </label>
-                    <input
-                      id="purchase-name-input"
-                      type="text"
-                      value={namingInput}
-                      onChange={(e) => setNamingInput(e.target.value)}
-                      placeholder="Dê um nome a esta lista (opcional)"
-                      autoFocus
-                      className="w-full px-3.5 py-2.5 text-sm bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-zinc-900 placeholder:text-zinc-400 font-medium transition-all outline-none"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
-                  >
-                    <Check className="w-4 h-4 stroke-[2.5]" />
-                    <span>Salvar Lista</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDiscardAndExit}
-                    className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-red-50 active:bg-red-100 text-red-600 border border-red-200 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Descartar Lista</span>
-                  </button>
-                </form>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
       {/* Rodapé Fixo Inferior - Sempre à mostra na viewport quando há itens na lista */}
       <AnimatePresence>
         {totalItemsCount > 0 && (
@@ -1874,7 +1673,7 @@ export function PurchaseScreen({
                 </div>
               </div>
 
-              {/* Botões de Ação do Rodapé */}
+              {/* Botão de Ação Principal do Rodapé */}
               {purchase.status === 'finished' ? (
                 <motion.button
                   whileTap={motionConfig.tap.button}
@@ -1886,8 +1685,7 @@ export function PurchaseScreen({
                   <ArrowLeft className="w-4 h-4" />
                   <span>Voltar para o Início</span>
                 </motion.button>
-              ) : purchase.origin === 'manual' ? (
-                /* Sessão de Registrar Compra Já Feita: apenas o botão principal de Registrar Compra (sem Guardar Lista) */
+              ) : (
                 <motion.button
                   whileTap={motionConfig.tap.button}
                   transition={motionConfig.pressSpring}
@@ -1899,38 +1697,8 @@ export function PurchaseScreen({
                   className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-colors min-h-[48px] cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>Registrar Compra</span>
+                  <span>{purchase.origin === 'manual' ? 'Registrar Compra' : 'Finalizar Compra'}</span>
                 </motion.button>
-              ) : (
-                /* Sessão de Planejamento de Compra: exibe Guardar Lista e Finalizar Compra */
-                <div className="grid grid-cols-2 gap-2">
-                  {/* Botão Guardar Lista */}
-                  <motion.button
-                    whileTap={motionConfig.tap.button}
-                    transition={motionConfig.pressSpring}
-                    onClick={handleSaveListForLater}
-                    type="button"
-                    className="w-full flex items-center justify-center space-x-2 py-3 px-3 sm:px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 border border-zinc-200/80 font-bold text-xs sm:text-sm transition-colors min-h-[48px] cursor-pointer"
-                  >
-                    <Bookmark className="w-4 h-4 text-zinc-600" />
-                    <span>Guardar Lista</span>
-                  </motion.button>
-
-                  {/* Botão Finalizar Compra */}
-                  <motion.button
-                    whileTap={motionConfig.tap.button}
-                    transition={motionConfig.pressSpring}
-                    onClick={() => {
-                      setFinishNameInput('');
-                      setIsConfirmFinishOpen(true);
-                    }}
-                    type="button"
-                    className="w-full flex items-center justify-center space-x-2 py-3 px-3 sm:px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-colors min-h-[48px] cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>Finalizar Compra</span>
-                  </motion.button>
-                </div>
               )}
             </div>
           </motion.footer>

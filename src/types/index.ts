@@ -49,7 +49,6 @@ export interface ListItem {
 export interface List {
   id: string;
   name: string;
-  description?: string;
   createdAt: string;
   updatedAt?: string;
   items: ListItem[];
@@ -70,6 +69,5 @@ export interface CreatePurchaseParams {
 
 export interface CreateListParams {
   name: string;
-  description?: string;
   items?: Omit<ListItem, 'id'>[];
 }

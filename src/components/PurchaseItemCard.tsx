@@ -33,11 +33,6 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   const badgeStyle = getCategoryBadgeStyle(item.category);
   const cleanItemName = item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, '').trim();
 
-  // Configuração de exibição do identificador de precificação baseada no pricingModeSource
-  const isFixedUnit = item.pricingModeSource === 'unit';
-  const isFixedWeight = item.pricingModeSource === 'weight';
-  const isFixedMode = isFixedUnit || isFixedWeight;
-
   // 1. Estados locais para edição inline de NOME
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(cleanItemName);
@@ -66,6 +61,23 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
       : item.quantity.toString()
   );
   const qtyInputRef = useRef<HTMLInputElement>(null);
+
+  // Guarda os últimos valores válidos para que ao alternar entre Unidade e Peso os valores nunca se percam ou fiquem zerados
+  const lastKnownQtyRef = useRef<number>(
+    item.quantity && item.quantity >= 1 ? item.quantity : 1
+  );
+  const lastKnownWeightRef = useRef<number>(
+    item.weight && item.weight > 0 ? item.weight : 1
+  );
+
+  useEffect(() => {
+    if (item.quantity && item.quantity >= 1) {
+      lastKnownQtyRef.current = item.quantity;
+    }
+    if (item.weight && item.weight > 0) {
+      lastKnownWeightRef.current = item.weight;
+    }
+  }, [item.quantity, item.weight]);
 
   // Sincronizar estados locais se o item mudar externamente
   useEffect(() => {
@@ -206,24 +218,53 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
     }
   };
 
-  // 5. Alternar Modo de Precificação (Unidade vs Peso)
-  const handleSetPricingMode = (weighted: boolean) => {
-    if (weighted === Boolean(item.isWeighted)) return;
+  // 5. Alternar Modo de Precificação (Unidade vs Peso) com inversão garantida de is_weighted
+  const handleTogglePricingMode = () => {
+    const nextIsWeighted = !Boolean(item.isWeighted);
 
-    if (weighted) {
-      const rawWeight = item.weight || item.quantity || 1;
-      const newWeight = Math.round(rawWeight * 1000) / 1000;
+    if (nextIsWeighted) {
+      // Alternando para PESO (kg)
+      const targetWeight =
+        item.weight && item.weight > 0
+          ? item.weight
+          : lastKnownWeightRef.current && lastKnownWeightRef.current > 0
+          ? lastKnownWeightRef.current
+          : item.quantity && item.quantity > 0
+          ? item.quantity
+          : 1;
+
+      const roundedWeight = Math.round(targetWeight * 1000) / 1000;
+      lastKnownWeightRef.current = roundedWeight;
+
       onEditItem(purchaseId, item.id, {
         isWeighted: true,
-        weight: newWeight,
-        quantity: 1,
+        weight: roundedWeight,
+        pricingModeSource: null,
       });
+      setQtyInput(sanitizeWeightInput(roundedWeight.toString()));
     } else {
-      const newQty = item.weight ? Math.max(1, Math.round(item.weight)) : item.quantity || 1;
+      // Alternando para UNIDADE
+      const targetQty =
+        item.quantity && item.quantity >= 1
+          ? item.quantity
+          : lastKnownQtyRef.current && lastKnownQtyRef.current >= 1
+          ? lastKnownQtyRef.current
+          : Math.max(1, Math.round(Number(item.weight) || 1));
+
+      lastKnownQtyRef.current = targetQty;
+
       onEditItem(purchaseId, item.id, {
         isWeighted: false,
-        quantity: newQty,
+        quantity: targetQty,
+        pricingModeSource: null,
       });
+      setQtyInput(targetQty.toString());
+    }
+  };
+
+  const handleSetPricingMode = (weighted: boolean) => {
+    if (weighted !== Boolean(item.isWeighted)) {
+      handleTogglePricingMode();
     }
   };
 
@@ -394,83 +435,40 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
 
       {/* LINHA 2: MARCADOR (UNID. / PESO) + QUANTIDADE/PESO + PREÇO + SUBTOTAL COM PROPORÇÕES EQUILIBRADAS */}
       <div className="grid grid-cols-[auto_1.2fr_1fr_auto] items-end gap-1.5 sm:gap-2 pt-0.5">
-        {/* 1. Marcador de Modalidade: Unid. / Peso ou Identificador Fixo */}
+        {/* 1. Marcador de Modalidade: Unidade vs Peso (kg) - Controle Fixo Sempre Interativo */}
         <div className="flex flex-col shrink-0">
           <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate">
             Tipo
           </label>
-          {isFixedMode ? (
-            <div
-              className={`h-8 sm:h-8.5 w-[83.75px] inline-flex items-center justify-center p-0.5 rounded-lg border shadow-2xs select-none ${
-                isFixedUnit
-                  ? 'bg-emerald-50/50 border-emerald-200/70'
-                  : 'bg-amber-50/50 border-amber-200/70'
+          <motion.button
+            whileTap={motionConfig.shouldReduceMotion ? {} : { scale: 0.95 }}
+            type="button"
+            onClick={handleTogglePricingMode}
+            title={item.isWeighted ? 'Toque para alternar para Unidade' : 'Toque para alternar para Peso (kg)'}
+            aria-label={item.isWeighted ? 'Tipo: Peso (kg). Toque para alternar para Unidade' : 'Tipo: Unidade. Toque para alternar para Peso (kg)'}
+            className={`h-8 sm:h-8.5 px-2 sm:px-2.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs select-none ${
+              item.isWeighted
+                ? 'bg-amber-50 hover:bg-amber-100 border-amber-200/90 text-amber-900 active:bg-amber-100'
+                : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200/90 text-emerald-900 active:bg-emerald-100'
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                item.isWeighted ? 'bg-amber-500' : 'bg-emerald-500'
               }`}
-              title={`Modalidade fixa: ${isFixedUnit ? 'Unidade' : 'Pesado'}`}
-            >
-              <div
-                className={`w-full h-full bg-white rounded-[6px] shadow-2xs flex items-center justify-center gap-1.5 text-[10px] sm:text-[10.5px] font-bold tracking-tight ${
-                  isFixedUnit ? 'text-emerald-800' : 'text-amber-800'
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    isFixedUnit ? 'bg-emerald-500' : 'bg-amber-500'
-                  }`}
-                />
-                <span>{isFixedUnit ? 'Unidade' : 'Pesado'}</span>
-              </div>
-            </div>
-          ) : (
-            <div className="h-8 sm:h-8.5 w-[83.75px] relative inline-flex p-0.5 rounded-lg bg-zinc-100/90 border border-zinc-200/80 shadow-2xs items-center">
-              <button
-                type="button"
-                onClick={() => handleSetPricingMode(false)}
-                title="Cobrança por unidade"
-                className={`w-[38.66px] relative px-2 py-1 h-full rounded-[6px] text-[10px] sm:text-[10.5px] font-bold tracking-tight transition-colors cursor-pointer z-10 flex items-center justify-center leading-none ${
-                  !item.isWeighted
-                    ? 'text-emerald-800 font-extrabold'
-                    : 'text-zinc-400 hover:text-zinc-700'
-                }`}
-              >
-                {!item.isWeighted && (
-                  <motion.div
-                    layoutId={`pricing-pill-${item.id}`}
-                    className="absolute inset-0 bg-white rounded-[6px] shadow-2xs -z-10"
-                    transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-                  />
-                )}
-                <span>Unid.</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSetPricingMode(true)}
-                title="Cobrança por peso (kg)"
-                className={`relative px-2 py-1 h-full rounded-[6px] text-[10px] sm:text-[10.5px] font-bold tracking-tight transition-colors cursor-pointer z-10 flex items-center justify-center leading-none ${
-                  item.isWeighted
-                    ? 'text-amber-800 font-extrabold'
-                    : 'text-zinc-400 hover:text-zinc-700'
-                }`}
-              >
-                {item.isWeighted && (
-                  <motion.div
-                    layoutId={`pricing-pill-${item.id}`}
-                    className="absolute inset-0 w-[36.09px] bg-white rounded-[6px] shadow-2xs -z-10"
-                    transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-                  />
-                )}
-                <span className="pl-0 -ml-[1px]">Peso</span>
-              </button>
-            </div>
-          )}
+            />
+            <span className="text-[10.5px] sm:text-[11px] font-bold tracking-tight whitespace-nowrap">
+              {item.isWeighted ? 'Peso (kg)' : '• Unidade'}
+            </span>
+          </motion.button>
         </div>
 
         {/* 2. Coluna: Quantidade / Peso */}
         <div className="flex flex-col min-w-0">
           <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate">
-            {item.isWeighted ? 'Peso (kg)' : 'Quantidade'}
+            {item.isWeighted ? 'PESO' : 'QTD'}
           </label>
-          <div className="h-8 sm:h-8.5 w-full min-w-[86px] sm:min-w-[88px] flex items-center bg-zinc-50 hover:bg-zinc-100/70 rounded-lg border border-zinc-200/90 p-0.5 transition-colors">
+          <div className="h-8 sm:h-8.5 w-full min-w-[92px] sm:min-w-[98px] flex items-center bg-zinc-50 hover:bg-zinc-100/70 rounded-lg border border-zinc-200/90 p-0.5 transition-colors">
             <motion.button
               whileTap={motionConfig.tap.iconButton}
               transition={motionConfig.pressSpring}
@@ -515,13 +513,13 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                       const val =
                         item.weight !== undefined && item.weight !== null
                           ? item.weight
-                          : item.quantity;
+                          : (lastKnownWeightRef.current || 1);
                       const rounded = Math.round(Number(val) * 1000) / 1000;
-                      return rounded.toString().replace('.', ',');
+                      return `${rounded.toString().replace('.', ',')} kg`;
                     })()}
                   </span>
                 ) : (
-                  <span>{item.quantity}</span>
+                  <span>{item.quantity || 1} un</span>
                 )}
               </button>
             )}

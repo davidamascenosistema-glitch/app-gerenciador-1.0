@@ -208,8 +208,7 @@ export function usePurchases(userId?: string | null) {
    * Cria e armazena uma nova compra a partir de um modelo existente (compra finalizada),
    * clonando todos os itens com bought=false na tabela purchase_items.
    */
-  const createPurchaseFromTemplate = (originalPurchase: Purchase): Purchase => {
-    const newPurchaseId = crypto.randomUUID();
+  const createPurchaseFromTemplate = async (originalPurchase: Purchase): Promise<Purchase> => {
     const clonedItems: Item[] = (originalPurchase.items || []).map((item) => ({
       id: crypto.randomUUID(),
       name: item.name,
@@ -217,131 +216,191 @@ export function usePurchases(userId?: string | null) {
       quantity: item.quantity || 1,
       weight: item.weight,
       isWeighted: item.isWeighted || false,
-      price: item.price,
+      price: undefined,
       bought: false,
       pricingModeSource: item.pricingModeSource ?? null,
     }));
 
-    const newPurchase: Purchase = {
-      id: newPurchaseId,
+    return await createPurchase({
       name: originalPurchase.name || 'Planejamento de compra',
       status: 'pending',
       origin: 'list',
-      createdAt: new Date().toISOString(),
       items: clonedItems,
-    };
-
-    setPurchases((prev) => [newPurchase, ...prev]);
-
-    // Persistência no Supabase com user_id obrigatório
-    if (isSupabaseConfigured() && userId) {
-      supabase
-        .from('purchases')
-        .insert({
-          id: newPurchase.id,
-          user_id: userId,
-          name: newPurchase.name,
-          status: newPurchase.status,
-          origin: newPurchase.origin,
-          created_at: newPurchase.createdAt,
-          finished_at: null,
-        })
-        .then(({ error: pError }) => {
-          if (pError) console.error('Erro ao inserir compra do modelo:', pError);
-
-          if (clonedItems.length > 0) {
-            const dbItemsToInsert = clonedItems.map((item) => ({
-              id: item.id,
-              purchase_id: newPurchase.id,
-              user_id: userId,
-              name: item.name,
-              category: item.category || 'Geral',
-              quantity: item.quantity || 1,
-              weight: item.weight != null ? item.weight : null,
-              is_weighted: Boolean(item.isWeighted),
-              price: item.price != null ? item.price : null,
-              bought: false,
-              created_at: new Date().toISOString(),
-            }));
-            supabase.from('purchase_items').insert(dbItemsToInsert).then(({ error: iError }) => {
-              if (iError) console.error('Erro ao inserir itens do modelo:', iError);
-            });
-          }
-        });
-    }
-
-    return newPurchase;
+    });
   };
 
   /**
-   * Cria e armazena uma nova compra no Supabase e na lista em memória
+   * Cria e armazena uma nova compra no Supabase e no estado em memória,
+   * inserindo na tabela purchases com status 'pending' e copiando os itens de list_items
+   * para purchase_items se from_list_id foi fornecido.
    */
-  const createPurchase = (
+  const createPurchase = async (
     purchaseData: Omit<Purchase, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
-  ): Purchase => {
-    const origin = purchaseData.origin || 'manual';
+  ): Promise<Purchase> => {
+    const origin = purchaseData.origin || (purchaseData.fromListId ? 'list' : 'manual');
     const newPurchaseId = purchaseData.id || crypto.randomUUID();
     const createdAt = purchaseData.createdAt || new Date().toISOString();
 
-    const items = (purchaseData.items || []).map((item) => ({
+    // Itens iniciais fornecidos diretamente
+    let initialItems: Item[] = (purchaseData.items || []).map((item) => ({
       ...item,
       id: item.id || crypto.randomUUID(),
-      bought: item.bought !== undefined ? item.bought : (origin === 'manual' ? true : false),
+      bought: false,
     }));
 
     const newPurchase: Purchase = {
       id: newPurchaseId,
       name: purchaseData.name || 'Nova Compra',
-      status: purchaseData.status || 'pending',
+      status: 'pending',
       origin,
       createdAt,
       finishedAt: purchaseData.finishedAt,
       budget: purchaseData.budget != null ? Number(purchaseData.budget) : undefined,
       storeName: purchaseData.storeName || undefined,
       fromListId: purchaseData.fromListId || undefined,
-      items,
+      items: initialItems,
     };
 
-    setPurchases((prev) => [newPurchase, ...prev]);
+    // Atualiza estado local imediatamente para agilidade de navegação
+    setPurchases((prev) => [newPurchase, ...prev.filter((p) => p.id !== newPurchaseId)]);
 
-    // Persistência no Supabase com user_id obrigatório
+    // Persistência com Supabase
     if (isSupabaseConfigured() && userId) {
-      supabase
-        .from('purchases')
-        .insert({
+      try {
+        const isUUID = (str?: string) =>
+          Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+
+        const validFromListId = isUUID(newPurchase.fromListId) ? newPurchase.fromListId : null;
+
+        const purchasePayload: any = {
           id: newPurchase.id,
           user_id: userId,
           name: newPurchase.name,
-          status: newPurchase.status,
+          status: 'pending',
           origin: newPurchase.origin,
           created_at: newPurchase.createdAt,
-          finished_at: newPurchase.finishedAt || null,
+          finished_at: null,
           budget: newPurchase.budget != null ? newPurchase.budget : null,
           store_name: newPurchase.storeName || null,
-          from_list_id: newPurchase.fromListId || null,
-        })
-        .then(({ error: pError }) => {
-          if (pError) console.error('Erro ao criar compra no Supabase:', pError);
+          from_list_id: validFromListId,
+        };
 
-          if (items.length > 0) {
-            const dbItemsToInsert = items.map((item) => ({
-              id: item.id,
+        // 1. Aguarda a criação da compra na tabela purchases
+        let { error: pError } = await supabase.from('purchases').insert(purchasePayload);
+
+        // Se falhou por Foreign Key (ex: from_list_id não existe na tabela lists), retenta sem from_list_id
+        if (pError && pError.code === '23503' && purchasePayload.from_list_id) {
+          console.warn('Foreign key falhou para from_list_id, retentando sem o vínculo:', pError);
+          const retryPayload = { ...purchasePayload, from_list_id: null };
+          const { error: retryError } = await supabase.from('purchases').insert(retryPayload);
+          pError = retryError;
+        }
+
+        if (pError) {
+          console.error('Erro ao inserir compra no Supabase:', pError);
+        } else {
+          console.log(`Compra ${newPurchase.id} inserida com sucesso em purchases.`);
+        }
+
+        // 2. O Passo Crucial (Cópia de Itens):
+        // Se um from_list_id foi fornecido, o código deve buscar todos os itens correspondentes
+        // na tabela list_items e fazer um bulk insert copiando esses itens para purchase_items
+        let itemsToCopy: any[] = [];
+
+        if (newPurchase.fromListId) {
+          const { data: listItemsData, error: fetchItemsErr } = await supabase
+            .from('list_items')
+            .select('*')
+            .eq('list_id', newPurchase.fromListId);
+
+          if (!fetchItemsErr && listItemsData && listItemsData.length > 0) {
+            itemsToCopy = listItemsData;
+          } else if (initialItems.length > 0) {
+            // Fallback caso itens tenham sido fornecidos em memória
+            itemsToCopy = initialItems;
+          }
+        } else if (initialItems.length > 0) {
+          // Compra criada sem molde mas com itens iniciais
+          itemsToCopy = initialItems;
+        }
+
+        if (itemsToCopy.length > 0) {
+          const finalCopiedItems: Item[] = [];
+
+          const dbItemsToInsert = itemsToCopy.map((item) => {
+            const newItemId = crypto.randomUUID();
+            const isWeighted = Boolean(item.is_weighted ?? item.isWeighted ?? false);
+            const quantity = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
+            const weight =
+              item.weight != null && !isNaN(Number(item.weight))
+                ? Number(item.weight)
+                : isWeighted
+                ? quantity
+                : null;
+            const pricingModeSource = item.pricing_mode_source ?? item.pricingModeSource ?? null;
+
+            finalCopiedItems.push({
+              id: newItemId,
+              name: item.name || 'Item sem nome',
+              category: item.category || 'Geral',
+              quantity,
+              weight: weight != null ? weight : undefined,
+              isWeighted,
+              bought: false,
+              price: undefined,
+              pricingModeSource,
+            });
+
+            const row: any = {
+              id: newItemId,
               purchase_id: newPurchase.id,
               user_id: userId,
-              name: item.name,
+              name: item.name || 'Item sem nome',
               category: item.category || 'Geral',
-              quantity: item.quantity || 1,
-              weight: item.weight != null ? item.weight : null,
-              is_weighted: Boolean(item.isWeighted),
-              price: item.price != null ? item.price : null,
-              bought: Boolean(item.bought),
+              quantity,
+              weight: weight,
+              is_weighted: isWeighted,
+              price: null,
+              brand: null,
+              bought: false,
               created_at: new Date().toISOString(),
-            }));
-            supabase.from('purchase_items').insert(dbItemsToInsert).then(({ error: iError }) => {
-              if (iError) console.error('Erro ao inserir itens no Supabase:', iError);
-            });
+            };
+
+            if (pricingModeSource !== undefined && pricingModeSource !== null) {
+              row.pricing_mode_source = pricingModeSource;
+            }
+
+            return row;
+          });
+
+          // Inserção em massa (bulk insert) segura
+          let { error: insertItemsErr } = await supabase
+            .from('purchase_items')
+            .insert(dbItemsToInsert);
+
+          // Se a tabela purchase_items não tiver a coluna 'brand' ou 'pricing_mode_source' (erro 42703), retenta removendo-as
+          if (insertItemsErr && insertItemsErr.code === '42703') {
+            console.warn('Retentando bulk insert em purchase_items sem colunas estendidas opcionais...');
+            const fallbackRows = dbItemsToInsert.map(({ brand, pricing_mode_source, ...safeCols }) => safeCols);
+            const { error: retryItemsErr } = await supabase.from('purchase_items').insert(fallbackRows);
+            insertItemsErr = retryItemsErr;
           }
-        });
+
+          if (insertItemsErr) {
+            console.error('Erro no bulk insert de purchase_items:', insertItemsErr);
+          } else {
+            console.log(`Sucesso: ${dbItemsToInsert.length} itens copiados para purchase_items.`);
+          }
+
+          // Atualiza lista em memória com os itens copiados
+          newPurchase.items = finalCopiedItems;
+          setPurchases((prev) =>
+            prev.map((p) => (p.id === newPurchase.id ? { ...p, items: finalCopiedItems } : p))
+          );
+        }
+      } catch (dbErr) {
+        console.error('Erro inesperado na criação de compra no Supabase:', dbErr);
+      }
     }
 
     return newPurchase;
@@ -350,27 +409,15 @@ export function usePurchases(userId?: string | null) {
   /**
    * Cria uma nova compra a partir de um molde de lista existente (da tabela lists/list_items)
    */
-  const createPurchaseFromList = (
+  const createPurchaseFromList = async (
     list: { id: string; name: string; items: any[] },
     options?: { budget?: number; storeName?: string; name?: string }
-  ): Purchase => {
-    const clonedItems: Item[] = (list.items || []).map((item) => ({
-      id: crypto.randomUUID(),
-      name: item.name,
-      category: item.category || 'Geral',
-      quantity: item.quantity || 1,
-      weight: item.weight,
-      isWeighted: item.isWeighted || false,
-      price: item.price,
-      bought: false,
-      pricingModeSource: item.pricingModeSource ?? null,
-    }));
-
-    return createPurchase({
+  ): Promise<Purchase> => {
+    return await createPurchase({
       name: options?.name || list.name || 'Compra no Mercado',
       status: 'pending',
       origin: 'list',
-      items: clonedItems,
+      items: list.items,
       budget: options?.budget,
       storeName: options?.storeName,
       fromListId: list.id,
