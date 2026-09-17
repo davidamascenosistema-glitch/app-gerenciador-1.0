@@ -475,27 +475,27 @@ export function HomeScreen({
         {/* 3. BOTÕES DE AÇÃO PRINCIPAIS (EMPILHADOS)                                   */}
         {/* ========================================================================= */}
         <section aria-label="Ações Rápidas" className="space-y-3">
-          {/* Botão 1: Nova Lista (Fundo Escuro quase preto) */}
+          {/* Botão 1: Nova Lista (Fundo Claro com destaque verde no ícone) */}
           <motion.button
             whileTap={motionConfig.shouldReduceMotion ? {} : { scale: 0.985 }}
             type="button"
             onClick={handleCreateNewListTemplate}
-            className="w-full bg-zinc-900 hover:bg-black active:bg-zinc-950 border border-zinc-800 text-white rounded-2xl p-4 flex items-center justify-between text-left transition-all shadow-sm cursor-pointer min-h-[72px] group"
+            className="w-full bg-white hover:bg-zinc-50 active:bg-zinc-100 border border-zinc-200 text-zinc-900 rounded-2xl p-3.5 flex items-center justify-between text-left transition-all shadow-2xs cursor-pointer min-h-[64px] group"
           >
             <div className="flex items-center space-x-3.5">
-              <div className="w-11 h-11 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                <Bookmark className="w-5 h-5 fill-emerald-400/20" />
+              <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-200/70 text-emerald-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                <Bookmark className="w-5 h-5 fill-emerald-600/20" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white leading-tight">
+                <h3 className="text-base font-bold text-zinc-900 leading-tight">
                   Nova Lista
                 </h3>
-                <p className="text-xs text-zinc-400 mt-0.5 leading-snug">
+                <p className="text-xs text-zinc-500 mt-0.5 leading-snug">
                   Planejar produtos e quantidades
                 </p>
               </div>
             </div>
-            <div className="text-zinc-500 group-hover:text-zinc-300 transition-colors ml-2 shrink-0">
+            <div className="text-zinc-400 group-hover:text-zinc-600 transition-colors ml-2 shrink-0">
               <ChevronRight className="w-5 h-5" />
             </div>
           </motion.button>
@@ -505,7 +505,7 @@ export function HomeScreen({
             whileTap={motionConfig.shouldReduceMotion ? {} : { scale: 0.985 }}
             type="button"
             onClick={() => setIsNewPurchaseModalOpen(true)}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl p-4 flex items-center justify-between text-left transition-all shadow-md shadow-emerald-600/20 cursor-pointer min-h-[72px] group"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl p-3.5 flex items-center justify-between text-left transition-all shadow-md shadow-emerald-600/20 cursor-pointer min-h-[64px] group"
           >
             <div className="flex items-center space-x-3.5">
               <div className="w-11 h-11 rounded-xl bg-emerald-700/80 border border-emerald-400/30 text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -541,16 +541,18 @@ export function HomeScreen({
             <div className="w-full bg-white border border-amber-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs flex items-center justify-between transition-all">
               {/* Informações da compra */}
               <div 
-                className="flex-1 pr-3 cursor-pointer"
+                className="flex-1 min-w-0 overflow-hidden pr-3 cursor-pointer"
                 onClick={() => handleContinuePending(activePendingPurchase)}
               >
-                <h4 className="text-sm font-bold text-zinc-900 truncate leading-tight hover:text-emerald-700 transition-colors">
+                <h4 className="text-sm font-semibold text-zinc-900 truncate break-all pr-2 leading-tight hover:text-emerald-700 transition-colors">
                   {activePendingPurchase.name || 'Compra em andamento'}
                 </h4>
                 <p className="text-xs text-zinc-500 font-medium mt-1">
                   {activePendingPurchase.items.length}{' '}
                   {activePendingPurchase.items.length === 1 ? 'item' : 'itens'} •{' '}
-                  {formatCurrencyBRL(calculatePurchaseTotal(activePendingPurchase))}
+                  {calculatePurchaseTotal(activePendingPurchase) > 0
+                    ? formatCurrencyBRL(calculatePurchaseTotal(activePendingPurchase))
+                    : 'aguardando preços'}
                 </p>
               </div>
 
@@ -560,7 +562,7 @@ export function HomeScreen({
                   type="button"
                   onClick={(e) => handleOpenDiscardModal(activePendingPurchase, e)}
                   aria-label="Descartar compra em andamento"
-                  className="w-9 h-9 rounded-xl border border-red-200 hover:border-red-300 text-red-600 hover:bg-red-50 active:bg-red-100 flex items-center justify-center cursor-pointer transition-colors min-h-[36px] min-w-[36px]"
+                  className="w-9 h-9 rounded-xl border border-zinc-200 hover:border-red-300 text-zinc-400 hover:text-red-600 hover:bg-red-50 active:bg-red-100 flex items-center justify-center cursor-pointer transition-colors min-h-[36px] min-w-[36px]"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -593,20 +595,20 @@ export function HomeScreen({
             {frequentItems.map((item, index) => (
               <div
                 key={`${item.name}-${index}`}
-                className="w-32 min-w-[128px] p-3 rounded-2xl bg-white border border-zinc-200/90 shadow-2xs flex flex-col items-center text-center justify-between transition-all hover:border-emerald-300 hover:shadow-xs group shrink-0"
+                className="w-24 min-w-[96px] p-2.5 rounded-2xl bg-white border border-zinc-200/90 shadow-2xs flex flex-col items-center text-center justify-between transition-all hover:border-emerald-300 hover:shadow-xs group shrink-0"
               >
                 {/* Botão circular verde claro com ícone "+" grande no topo */}
                 <button
                   type="button"
                   onClick={() => handleAddFrequentItem(item)}
                   aria-label={`Adicionar ${item.name}`}
-                  className="w-11 h-11 rounded-full bg-emerald-100 group-hover:bg-emerald-200 active:bg-emerald-300 text-emerald-700 flex items-center justify-center transition-colors cursor-pointer mb-2 shadow-2xs active:scale-95 shrink-0"
+                  className="w-9 h-9 rounded-full bg-emerald-100 group-hover:bg-emerald-200 active:bg-emerald-300 text-emerald-700 flex items-center justify-center transition-colors cursor-pointer mb-1.5 shadow-2xs active:scale-95 shrink-0"
                 >
-                  <Plus className="w-5 h-5 stroke-[2.5]" />
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
                 </button>
 
                 {/* Nome do item abaixo (negrito) */}
-                <span className="text-xs font-bold text-zinc-900 leading-snug line-clamp-2 min-h-[32px] flex items-center justify-center">
+                <span className="text-[11px] font-bold text-zinc-900 leading-snug line-clamp-2 min-h-[28px] flex items-center justify-center">
                   {item.name}
                 </span>
 

@@ -27,7 +27,7 @@ export function ItemSearchBar({
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
-  const [isListening, setIsListening] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,7 +70,7 @@ export function ItemSearchBar({
     };
   }, []);
 
-  const toggleVoiceRecognition = () => {
+  const handleVoiceInput = () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
@@ -79,13 +79,13 @@ export function ItemSearchBar({
       return;
     }
 
-    if (isListening) {
+    if (isRecording) {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
         } catch {}
       }
-      setIsListening(false);
+      setIsRecording(false);
       return;
     }
 
@@ -93,39 +93,34 @@ export function ItemSearchBar({
       const recognition = new SpeechRecognition();
       recognition.lang = 'pt-BR';
       recognition.continuous = false;
-      recognition.interimResults = true;
+      recognition.interimResults = false;
       recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
-        setIsListening(true);
+        setIsRecording(true);
         setSpeechError(null);
       };
 
       recognition.onresult = (event: any) => {
-        const results = event.results;
-        if (results && results.length > 0) {
-          const transcript = results[0][0]?.transcript || '';
-          if (transcript) {
-            const cleanTranscript = transcript.replace(/[.,!?]+$/, '').trim();
-            setQuery(cleanTranscript);
-            setIsOpen(true);
-            setSelectedIndex(-1);
-          }
+        const transcript = event.results?.[0]?.[0]?.transcript || '';
+        if (transcript) {
+          const cleanTranscript = transcript.replace(/[.,!?]+$/, '').trim();
+          setQuery(cleanTranscript);
+          setIsOpen(true);
+          setSelectedIndex(-1);
         }
       };
 
       recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
-        setIsListening(false);
-        if (event.error === 'not-allowed') {
+        console.warn('Speech recognition error:', event?.error);
+        setIsRecording(false);
+        if (event?.error === 'not-allowed') {
           setSpeechError('Permissão do microfone negada no navegador.');
-        } else if (event.error === 'no-speech') {
-          setSpeechError(null);
         }
       };
 
       recognition.onend = () => {
-        setIsListening(false);
+        setIsRecording(false);
         inputRef.current?.focus();
       };
 
@@ -133,7 +128,7 @@ export function ItemSearchBar({
       recognition.start();
     } catch (err) {
       console.error('Erro ao iniciar reconhecimento de voz:', err);
-      setIsListening(false);
+      setIsRecording(false);
     }
   };
 
@@ -200,8 +195,8 @@ export function ItemSearchBar({
         <div className="relative flex-1 group">
           <div
             className={`w-full flex items-center bg-white rounded-2xl border-2 transition-all shadow-sm ${
-              isListening
-                ? 'border-rose-400 ring-4 ring-rose-400/20'
+              isRecording
+                ? 'border-red-400 ring-4 ring-red-400/20'
                 : 'border-emerald-500/40 hover:border-emerald-500/70 focus-within:border-emerald-600 focus-within:ring-4 focus-within:ring-emerald-500/15'
             } px-2.5 py-1.5`}
           >
@@ -223,38 +218,29 @@ export function ItemSearchBar({
               onFocus={() => setIsOpen(true)}
               onClick={() => setIsOpen(true)}
               onKeyDown={handleKeyDown}
-              placeholder={isListening ? 'Ouvindo... Fale o nome do item' : 'O que deseja adicionar hoje?'}
+              placeholder={isRecording ? 'Ouvindo... Dite o nome do item' : 'O que deseja adicionar hoje?'}
               className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal outline-none"
             />
 
             {/* Ações Integradas à Direita */}
             <div className="flex items-center space-x-1 shrink-0 ml-1.5">
-              {/* Indicador quando está ouvindo voz */}
-              {isListening ? (
-                <button
-                  type="button"
-                  onClick={toggleVoiceRecognition}
-                  className="flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold transition-all cursor-pointer shadow-2xs animate-pulse"
-                  title="Clique para parar de ouvir"
-                >
-                  <Mic className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
-                  <span className="text-[11px]">Ouvindo...</span>
-                </button>
-              ) : (
-                /* Botão de Microfone / Pesquisa por Voz */
-                <button
-                  type="button"
-                  onClick={toggleVoiceRecognition}
-                  className="w-8 h-8 rounded-xl hover:bg-emerald-50 active:bg-emerald-100 text-zinc-400 hover:text-emerald-700 active:text-emerald-800 flex items-center justify-center cursor-pointer transition-colors"
-                  title="Pesquisar ou adicionar por voz"
-                  aria-label="Pesquisar por voz"
-                >
-                  <Mic className="w-4 h-4" />
-                </button>
-              )}
+              {/* Botão de Microfone / Ditado por Voz */}
+              <button
+                type="button"
+                onClick={handleVoiceInput}
+                className={`w-9 h-9 sm:w-10 sm:h-10 min-h-[38px] min-w-[38px] rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                  isRecording
+                    ? 'bg-red-100 hover:bg-red-200 text-red-600 animate-pulse border border-red-200 shadow-2xs'
+                    : 'bg-transparent hover:bg-emerald-50 active:bg-emerald-100 text-zinc-500 hover:text-emerald-700 active:text-emerald-800'
+                }`}
+                title={isRecording ? 'Escutando... Clique para encerrar' : 'Ditar item por voz'}
+                aria-label={isRecording ? 'Parar gravação de voz' : 'Ditar item por voz'}
+              >
+                <Mic className={`w-5 h-5 ${isRecording ? 'text-red-600' : ''}`} />
+              </button>
 
               {/* Botão de Limpar */}
-              {query.trim().length > 0 && !isListening && (
+              {query.trim().length > 0 && !isRecording && (
                 <motion.button
                   initial={{ scale: 0.7, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}

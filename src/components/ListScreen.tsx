@@ -19,6 +19,7 @@ import { List, ListItem, ItemSuggestion, Purchase, PricingModeDefault } from '..
 import { ItemSearchBar } from './ItemSearchBar';
 import { ListItemCard } from './ListItemCard';
 import { BatchAddModal } from './BatchAddModal';
+import { StartPurchaseModal } from './StartPurchaseModal';
 import { useItemSuggestions } from '../hooks/useItemSuggestions';
 import {
   groupItemsByCategory,
@@ -138,6 +139,7 @@ export function ListScreen({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isStartPurchaseModalOpen, setIsStartPurchaseModalOpen] = useState(false);
 
   // Filtro por categorias e accordion
   const [activeCategoryFilters, setActiveCategoryFilters] = useState<string[]>([]);
@@ -714,44 +716,28 @@ export function ListScreen({
 
       {/* Rodapé Fixo com Botão de Ação: Iniciar Compra */}
       {totalItemsCount > 0 && (
-        <div className="sticky bottom-0 z-30 w-full bg-white/95 backdrop-blur-md border-t border-zinc-200/80 shadow-lg py-3 px-4 sm:px-6">
-          <div className="w-full max-w-md md:max-w-xl mx-auto flex items-center justify-between gap-3">
-            <div>
-              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
-                Planejamento
-              </span>
-              <span className="text-sm sm:text-base font-extrabold text-zinc-900">
-                {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'itens'}{' '}
-                <span className="text-xs font-normal text-zinc-500">
-                  em {totalCategoriesCount} {totalCategoriesCount === 1 ? 'categoria' : 'categorias'}
-                </span>
-              </span>
-            </div>
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-zinc-200 flex flex-row gap-3 w-full z-30">
+          <motion.button
+            whileTap={motionConfig.tap.button}
+            transition={motionConfig.pressSpring}
+            type="button"
+            onClick={handleSaveAndFinish}
+            className="flex-1 h-12 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+          >
+            <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+            <span>Salvar Lista</span>
+          </motion.button>
 
-            <div className="flex items-center space-x-2">
-              <motion.button
-                whileTap={motionConfig.tap.button}
-                transition={motionConfig.pressSpring}
-                type="button"
-                onClick={handleSaveAndFinish}
-                className="py-3 px-3.5 sm:px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 font-bold text-sm flex items-center space-x-1.5 cursor-pointer transition-all active:scale-[0.98] border border-zinc-200 shrink-0"
-              >
-                <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
-                <span>Salvar Lista</span>
-              </motion.button>
-
-              <motion.button
-                whileTap={motionConfig.tap.button}
-                transition={motionConfig.pressSpring}
-                type="button"
-                onClick={() => onStartPurchaseFromList(list)}
-                className="py-3 px-4 sm:px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md shadow-emerald-600/20 flex items-center space-x-2 cursor-pointer transition-all active:scale-[0.98] shrink-0"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                <span>Iniciar Compra</span>
-              </motion.button>
-            </div>
-          </div>
+          <motion.button
+            whileTap={motionConfig.tap.button}
+            transition={motionConfig.pressSpring}
+            type="button"
+            onClick={() => setIsStartPurchaseModalOpen(true)}
+            className="flex-1 h-12 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
+          >
+            <Play className="w-4 h-4 fill-current" />
+            <span>Iniciar Compra</span>
+          </motion.button>
         </div>
       )}
 
@@ -760,6 +746,24 @@ export function ListScreen({
         isOpen={isBatchModalOpen}
         onClose={() => setIsBatchModalOpen(false)}
         onSubmit={handleSubmitBatch}
+      />
+
+      {/* Modal de Inicialização de Compra */}
+      <StartPurchaseModal
+        isOpen={isStartPurchaseModalOpen}
+        lists={[list]}
+        selectedListId={list.id}
+        onClose={() => setIsStartPurchaseModalOpen(false)}
+        onStartPurchase={async (params) => {
+          if (onSaveList && list.items) {
+            await onSaveList(list);
+          }
+          setIsStartPurchaseModalOpen(false);
+          onStartPurchaseFromList({
+            ...list,
+            name: params.name || list.name,
+          });
+        }}
       />
 
       {/* Modal de Confirmação de Exclusão da Lista */}

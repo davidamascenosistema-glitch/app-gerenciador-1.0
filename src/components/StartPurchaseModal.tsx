@@ -21,12 +21,13 @@ export interface StartPurchaseModalProps {
   lists?: List[];
   selectedListId?: string | null;
   onClose: () => void;
-  onStartPurchase: (params: {
+  onStartPurchase?: (params: {
     budget?: number;
     storeName?: string;
     fromListId?: string;
     name?: string;
   }) => Promise<void> | void;
+  onStart?: (budget?: number, storeName?: string, listId?: string) => Promise<void> | void;
 }
 
 const COMMON_STORES = [
@@ -48,6 +49,7 @@ export function StartPurchaseModal({
   selectedListId: initialSelectedListId,
   onClose,
   onStartPurchase,
+  onStart,
 }: StartPurchaseModalProps) {
   const motionConfig = useMotionConfig();
 
@@ -123,12 +125,18 @@ export function StartPurchaseModal({
         purchaseName = selectedListObj.name;
       }
 
-      await onStartPurchase({
-        name: purchaseName,
-        budget: numericBudget,
-        storeName: cleanStore || undefined,
-        fromListId: cleanFromListId,
-      });
+      if (onStart) {
+        await onStart(numericBudget, cleanStore || undefined, cleanFromListId);
+      }
+
+      if (onStartPurchase) {
+        await onStartPurchase({
+          name: purchaseName,
+          budget: numericBudget,
+          storeName: cleanStore || undefined,
+          fromListId: cleanFromListId,
+        });
+      }
     } catch (err) {
       console.error('Erro ao submeter início da compra:', err);
     } finally {

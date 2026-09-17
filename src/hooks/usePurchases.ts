@@ -208,7 +208,7 @@ export function usePurchases(userId?: string | null) {
    * Cria e armazena uma nova compra a partir de um modelo existente (compra finalizada),
    * clonando todos os itens com bought=false na tabela purchase_items.
    */
-  const createPurchaseFromTemplate = async (originalPurchase: Purchase): Promise<Purchase> => {
+  const createPurchaseFromTemplate = (originalPurchase: Purchase): Purchase => {
     const clonedItems: Item[] = (originalPurchase.items || []).map((item) => ({
       id: crypto.randomUUID(),
       name: item.name,
@@ -221,7 +221,7 @@ export function usePurchases(userId?: string | null) {
       pricingModeSource: item.pricingModeSource ?? null,
     }));
 
-    return await createPurchase({
+    return createPurchase({
       name: originalPurchase.name || 'Planejamento de compra',
       status: 'pending',
       origin: 'list',
@@ -234,9 +234,9 @@ export function usePurchases(userId?: string | null) {
    * inserindo na tabela purchases com status 'pending' e copiando os itens de list_items
    * para purchase_items se from_list_id foi fornecido.
    */
-  const createPurchase = async (
+  const createPurchase = (
     purchaseData: Omit<Purchase, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
-  ): Promise<Purchase> => {
+  ): Purchase => {
     const origin = purchaseData.origin || (purchaseData.fromListId ? 'list' : 'manual');
     const newPurchaseId = purchaseData.id || crypto.randomUUID();
     const createdAt = purchaseData.createdAt || new Date().toISOString();
@@ -264,143 +264,145 @@ export function usePurchases(userId?: string | null) {
     // Atualiza estado local imediatamente para agilidade de navegação
     setPurchases((prev) => [newPurchase, ...prev.filter((p) => p.id !== newPurchaseId)]);
 
-    // Persistência com Supabase
+    // Persistência assíncrona com Supabase
     if (isSupabaseConfigured() && userId) {
-      try {
-        const isUUID = (str?: string) =>
-          Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+      (async () => {
+        try {
+          const isUUID = (str?: string) =>
+            Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
 
-        const validFromListId = isUUID(newPurchase.fromListId) ? newPurchase.fromListId : null;
+          const validFromListId = isUUID(newPurchase.fromListId) ? newPurchase.fromListId : null;
 
-        const purchasePayload: any = {
-          id: newPurchase.id,
-          user_id: userId,
-          name: newPurchase.name,
-          status: 'pending',
-          origin: newPurchase.origin,
-          created_at: newPurchase.createdAt,
-          finished_at: null,
-          budget: newPurchase.budget != null ? newPurchase.budget : null,
-          store_name: newPurchase.storeName || null,
-          from_list_id: validFromListId,
-        };
+          const purchasePayload: any = {
+            id: newPurchase.id,
+            user_id: userId,
+            name: newPurchase.name,
+            status: 'pending',
+            origin: newPurchase.origin,
+            created_at: newPurchase.createdAt,
+            finished_at: null,
+            budget: newPurchase.budget != null ? newPurchase.budget : null,
+            store_name: newPurchase.storeName || null,
+            from_list_id: validFromListId,
+          };
 
-        // 1. Aguarda a criação da compra na tabela purchases
-        let { error: pError } = await supabase.from('purchases').insert(purchasePayload);
+          // 1. Insere a compra na tabela purchases
+          let { error: pError } = await supabase.from('purchases').insert(purchasePayload);
 
-        // Se falhou por Foreign Key (ex: from_list_id não existe na tabela lists), retenta sem from_list_id
-        if (pError && pError.code === '23503' && purchasePayload.from_list_id) {
-          console.warn('Foreign key falhou para from_list_id, retentando sem o vínculo:', pError);
-          const retryPayload = { ...purchasePayload, from_list_id: null };
-          const { error: retryError } = await supabase.from('purchases').insert(retryPayload);
-          pError = retryError;
-        }
+          // Se falhou por Foreign Key (ex: from_list_id não existe na tabela lists), retenta sem from_list_id
+          if (pError && pError.code === '23503' && purchasePayload.from_list_id) {
+            console.warn('Foreign key falhou para from_list_id, retentando sem o vínculo:', pError);
+            const retryPayload = { ...purchasePayload, from_list_id: null };
+            const { error: retryError } = await supabase.from('purchases').insert(retryPayload);
+            pError = retryError;
+          }
 
-        if (pError) {
-          console.error('Erro ao inserir compra no Supabase:', pError);
-        } else {
-          console.log(`Compra ${newPurchase.id} inserida com sucesso em purchases.`);
-        }
+          if (pError) {
+            console.error('Erro ao inserir compra no Supabase:', pError);
+          } else {
+            console.log(`Compra ${newPurchase.id} inserida com sucesso em purchases.`);
+          }
 
-        // 2. O Passo Crucial (Cópia de Itens):
-        // Se um from_list_id foi fornecido, o código deve buscar todos os itens correspondentes
-        // na tabela list_items e fazer um bulk insert copiando esses itens para purchase_items
-        let itemsToCopy: any[] = [];
+          // 2. O Passo Crucial (Cópia de Itens):
+          // Se um from_list_id foi fornecido, busca todos os itens correspondentes na tabela list_items
+          // e realiza um bulk insert copiando esses itens para purchase_items
+          let itemsToCopy: any[] = [];
 
-        if (newPurchase.fromListId) {
-          const { data: listItemsData, error: fetchItemsErr } = await supabase
-            .from('list_items')
-            .select('*')
-            .eq('list_id', newPurchase.fromListId);
+          if (newPurchase.fromListId) {
+            const { data: listItemsData, error: fetchItemsErr } = await supabase
+              .from('list_items')
+              .select('*')
+              .eq('list_id', newPurchase.fromListId);
 
-          if (!fetchItemsErr && listItemsData && listItemsData.length > 0) {
-            itemsToCopy = listItemsData;
+            if (!fetchItemsErr && listItemsData && listItemsData.length > 0) {
+              itemsToCopy = listItemsData;
+            } else if (initialItems.length > 0) {
+              // Fallback caso itens tenham sido fornecidos em memória
+              itemsToCopy = initialItems;
+            }
           } else if (initialItems.length > 0) {
-            // Fallback caso itens tenham sido fornecidos em memória
+            // Compra criada sem molde mas com itens iniciais
             itemsToCopy = initialItems;
           }
-        } else if (initialItems.length > 0) {
-          // Compra criada sem molde mas com itens iniciais
-          itemsToCopy = initialItems;
-        }
 
-        if (itemsToCopy.length > 0) {
-          const finalCopiedItems: Item[] = [];
+          if (itemsToCopy.length > 0) {
+            const finalCopiedItems: Item[] = [];
 
-          const dbItemsToInsert = itemsToCopy.map((item) => {
-            const newItemId = crypto.randomUUID();
-            const isWeighted = Boolean(item.is_weighted ?? item.isWeighted ?? false);
-            const quantity = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
-            const weight =
-              item.weight != null && !isNaN(Number(item.weight))
-                ? Number(item.weight)
-                : isWeighted
-                ? quantity
-                : null;
-            const pricingModeSource = item.pricing_mode_source ?? item.pricingModeSource ?? null;
+            const dbItemsToInsert = itemsToCopy.map((item) => {
+              const newItemId = crypto.randomUUID();
+              const isWeighted = Boolean(item.is_weighted ?? item.isWeighted ?? false);
+              const quantity = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
+              const weight =
+                item.weight != null && !isNaN(Number(item.weight))
+                  ? Number(item.weight)
+                  : isWeighted
+                  ? quantity
+                  : null;
+              const pricingModeSource = item.pricing_mode_source ?? item.pricingModeSource ?? null;
 
-            finalCopiedItems.push({
-              id: newItemId,
-              name: item.name || 'Item sem nome',
-              category: item.category || 'Geral',
-              quantity,
-              weight: weight != null ? weight : undefined,
-              isWeighted,
-              bought: false,
-              price: undefined,
-              pricingModeSource,
+              finalCopiedItems.push({
+                id: newItemId,
+                name: item.name || 'Item sem nome',
+                category: item.category || 'Geral',
+                quantity,
+                weight: weight != null ? weight : undefined,
+                isWeighted,
+                bought: false,
+                price: undefined,
+                pricingModeSource,
+              });
+
+              const row: any = {
+                id: newItemId,
+                purchase_id: newPurchase.id,
+                user_id: userId,
+                name: item.name || 'Item sem nome',
+                category: item.category || 'Geral',
+                quantity,
+                weight: weight,
+                is_weighted: isWeighted,
+                price: null,
+                brand: null,
+                bought: false,
+                created_at: new Date().toISOString(),
+              };
+
+              if (pricingModeSource !== undefined && pricingModeSource !== null) {
+                row.pricing_mode_source = pricingModeSource;
+              }
+
+              return row;
             });
 
-            const row: any = {
-              id: newItemId,
-              purchase_id: newPurchase.id,
-              user_id: userId,
-              name: item.name || 'Item sem nome',
-              category: item.category || 'Geral',
-              quantity,
-              weight: weight,
-              is_weighted: isWeighted,
-              price: null,
-              brand: null,
-              bought: false,
-              created_at: new Date().toISOString(),
-            };
+            // Inserção em massa (bulk insert) resiliente
+            let { error: insertItemsErr } = await supabase
+              .from('purchase_items')
+              .insert(dbItemsToInsert);
 
-            if (pricingModeSource !== undefined && pricingModeSource !== null) {
-              row.pricing_mode_source = pricingModeSource;
+            // Se a tabela purchase_items não tiver a coluna 'brand' ou 'pricing_mode_source' (erro 42703), retenta removendo-as
+            if (insertItemsErr && insertItemsErr.code === '42703') {
+              console.warn('Retentando bulk insert em purchase_items sem colunas estendidas opcionais...');
+              const fallbackRows = dbItemsToInsert.map(({ brand, pricing_mode_source, ...safeCols }) => safeCols);
+              const { error: retryItemsErr } = await supabase.from('purchase_items').insert(fallbackRows);
+              insertItemsErr = retryItemsErr;
             }
 
-            return row;
-          });
+            if (insertItemsErr) {
+              console.error('Erro no bulk insert de purchase_items:', insertItemsErr);
+            } else {
+              console.log(`Sucesso: ${dbItemsToInsert.length} itens copiados para purchase_items.`);
+            }
 
-          // Inserção em massa (bulk insert) segura
-          let { error: insertItemsErr } = await supabase
-            .from('purchase_items')
-            .insert(dbItemsToInsert);
-
-          // Se a tabela purchase_items não tiver a coluna 'brand' ou 'pricing_mode_source' (erro 42703), retenta removendo-as
-          if (insertItemsErr && insertItemsErr.code === '42703') {
-            console.warn('Retentando bulk insert em purchase_items sem colunas estendidas opcionais...');
-            const fallbackRows = dbItemsToInsert.map(({ brand, pricing_mode_source, ...safeCols }) => safeCols);
-            const { error: retryItemsErr } = await supabase.from('purchase_items').insert(fallbackRows);
-            insertItemsErr = retryItemsErr;
+            // Atualiza lista em memória com os itens copiados
+            newPurchase.items = finalCopiedItems;
+            setPurchases((prev) =>
+              prev.map((p) => (p.id === newPurchase.id ? { ...p, items: finalCopiedItems } : p))
+            );
           }
-
-          if (insertItemsErr) {
-            console.error('Erro no bulk insert de purchase_items:', insertItemsErr);
-          } else {
-            console.log(`Sucesso: ${dbItemsToInsert.length} itens copiados para purchase_items.`);
-          }
-
-          // Atualiza lista em memória com os itens copiados
-          newPurchase.items = finalCopiedItems;
-          setPurchases((prev) =>
-            prev.map((p) => (p.id === newPurchase.id ? { ...p, items: finalCopiedItems } : p))
-          );
+        } catch (dbErr) {
+          console.error('Erro inesperado na criação de compra no Supabase:', dbErr);
         }
-      } catch (dbErr) {
-        console.error('Erro inesperado na criação de compra no Supabase:', dbErr);
-      }
+      })();
     }
 
     return newPurchase;
@@ -409,11 +411,11 @@ export function usePurchases(userId?: string | null) {
   /**
    * Cria uma nova compra a partir de um molde de lista existente (da tabela lists/list_items)
    */
-  const createPurchaseFromList = async (
+  const createPurchaseFromList = (
     list: { id: string; name: string; items: any[] },
     options?: { budget?: number; storeName?: string; name?: string }
-  ): Promise<Purchase> => {
-    return await createPurchase({
+  ): Purchase => {
+    return createPurchase({
       name: options?.name || list.name || 'Compra no Mercado',
       status: 'pending',
       origin: 'list',
