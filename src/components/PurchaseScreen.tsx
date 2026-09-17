@@ -40,6 +40,7 @@ import { ItemSearchBar } from './ItemSearchBar';
 import { PurchaseItemCard } from './PurchaseItemCard';
 import { BatchAddModal } from './BatchAddModal';
 import { EditItemModal } from './EditItemModal';
+import { VoiceActionButton } from './VoiceActionButton';
 import { AnimatedCurrency } from './AnimatedCurrency';
 import { MOTION_TOKENS, MOTION_VARIANTS, useMotionConfig } from '../styles/motionSystem';
 import {
@@ -154,6 +155,10 @@ export function PurchaseScreen({
 
   // Toast feedback hook
   const { showToast } = useToast();
+
+  const handleVoiceInput = (transcript: string) => {
+    showToast(`Você disse: "${transcript}"`);
+  };
 
   // Receipt Photo & Mode State
   const [receiptImage, setReceiptImage] = useState<string | null>(null);
@@ -1635,6 +1640,14 @@ export function PurchaseScreen({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Botão Flutuante de Ditado por Voz (FAB) */}
+      {purchase.status !== 'finished' && (
+        <VoiceActionButton
+          onTranscript={handleVoiceInput}
+          className={totalItemsCount > 0 ? 'bottom-24 sm:bottom-28' : 'bottom-6 sm:bottom-8'}
+        />
+      )}
 
       {/* Rodapé Fixo Inferior - Sempre à mostra na viewport quando há itens na lista */}
       <AnimatePresence>
