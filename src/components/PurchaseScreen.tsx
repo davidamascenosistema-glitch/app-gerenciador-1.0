@@ -6,6 +6,7 @@ import {
   Pencil,
   Trash2,
   ShoppingBag,
+  ShoppingCart,
   X,
   CheckCircle2,
   Clock,
@@ -103,15 +104,15 @@ const getCategoryAccentBarClass = (category: string) => {
 
 interface PurchaseScreenProps {
   userId?: string | null;
-  purchase: Purchase;
+  purchase?: Purchase | null;
   allPurchases?: Purchase[];
   onBack: (message?: string) => void;
   onDiscardPurchase?: (purchaseId: string) => void;
-  onUpdateName: (purchaseId: string, name: string) => void;
-  onAddItem: (purchaseId: string, itemData: Omit<Item, 'id' | 'bought'> & { bought?: boolean }) => void;
-  onEditItem: (purchaseId: string, itemId: string, updatedData: Partial<Omit<Item, 'id'>>) => void;
-  onRemoveItem: (purchaseId: string, itemId: string) => void;
-  onToggleBought: (purchaseId: string, itemId: string) => void;
+  onUpdateName?: (purchaseId: string, name: string) => void;
+  onAddItem?: (purchaseId: string, itemData: Omit<Item, 'id' | 'bought'> & { bought?: boolean }) => void;
+  onEditItem?: (purchaseId: string, itemId: string, updatedData: Partial<Omit<Item, 'id'>>) => void;
+  onRemoveItem?: (purchaseId: string, itemId: string) => void;
+  onToggleBought?: (purchaseId: string, itemId: string) => void;
   onFinishPurchase?: (purchaseId: string, customName?: string) => void;
 }
 
@@ -133,12 +134,14 @@ export function PurchaseScreen({
   const selectedFromSuggestionRef = useRef<boolean>(false);
 
   const [titleValue, setTitleValue] = useState(() =>
-    isDefaultPurchaseName(purchase.name) ? '' : (purchase.name || '')
+    purchase && !isDefaultPurchaseName(purchase.name) ? (purchase.name || '') : ''
   );
 
   useEffect(() => {
-    setTitleValue(isDefaultPurchaseName(purchase.name) ? '' : (purchase.name || ''));
-  }, [purchase.name, purchase.id]);
+    if (purchase) {
+      setTitleValue(isDefaultPurchaseName(purchase.name) ? '' : (purchase.name || ''));
+    }
+  }, [purchase?.name, purchase?.id]);
 
   // Modais de descarte
   const [isDiscardManualModalOpen, setIsDiscardManualModalOpen] = useState(false);
@@ -531,6 +534,10 @@ export function PurchaseScreen({
   };
 
   const handleBackClick = () => {
+    if (!purchase) {
+      onBack();
+      return;
+    }
     const itemsCount = purchase.items ? purchase.items.length : 0;
     if (purchase.status === 'finished' || itemsCount === 0) {
       if (itemsCount === 0 && purchase.status !== 'finished' && onDiscardPurchase) {
@@ -541,19 +548,14 @@ export function PurchaseScreen({
       return;
     }
 
-    // Sessão de "Registrar compra já feita" (origin === 'manual'):
-    if (purchase.origin === 'manual') {
-      setIsDiscardManualModalOpen(true);
-      return;
-    }
-
     // Na compra ativa (carrinho), voltar apenas retorna mantendo o estado salvo
     onBack();
   };
 
   const handleConfirmFinish = () => {
+    if (!purchase) return;
     const trimmed = finishNameInput.trim();
-    if (trimmed) {
+    if (trimmed && onUpdateName) {
       onUpdateName(purchase.id, trimmed);
     }
     setIsConfirmFinishOpen(false);
@@ -561,6 +563,20 @@ export function PurchaseScreen({
       onFinishPurchase(purchase.id, trimmed || undefined);
     }
   };
+
+  if (!purchase || !purchase.id) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 p-6 text-center h-full mt-20">
+        <div className="w-20 h-20 bg-zinc-100 rounded-full flex items-center justify-center mb-4">
+          <ShoppingCart className="w-10 h-10 text-zinc-400" />
+        </div>
+        <h2 className="text-xl font-bold text-zinc-900 mb-2">Nenhuma compra em andamento</h2>
+        <p className="text-zinc-500 max-w-[250px]">
+          Inicie uma nova sessão de compras a partir da tela de Início ou Listas para usar o carrinho.
+        </p>
+      </div>
+    );
+  }
 
   const totalValue = calculatePurchaseTotal(purchase);
   const totalItemsCount = purchase.items.length;
@@ -702,18 +718,17 @@ export function PurchaseScreen({
           </div>
         </header>
 
-        {/* Barra de Pesquisa Fixa integrada ao Header (visível durante planejamento ou digitação manual) */}
-        {purchase.status !== 'finished' &&
-          (purchase.origin !== 'manual' || registrationMode === 'manual') && (
-            <div className="w-full max-w-md md:max-w-xl mx-auto px-3 sm:px-6 pb-2 pt-0.5">
-              <ItemSearchBar
-                onAddItem={handleAddItemFromSearch}
-                onOpenBatchModal={() => setIsBatchModalOpen(true)}
-                getSuggestions={suggestionsHook.getCombinedSuggestions}
-                recordManualItem={suggestionsHook.recordManualItem}
-              />
-            </div>
-          )}
+        {/* Barra de Pesquisa Fixa integrada ao Header */}
+        {purchase.status !== 'finished' && (
+          <div className="w-full max-w-md md:max-w-xl mx-auto px-3 sm:px-6 pb-2 pt-0.5">
+            <ItemSearchBar
+              onAddItem={handleAddItemFromSearch}
+              onOpenBatchModal={() => setIsBatchModalOpen(true)}
+              getSuggestions={suggestionsHook.getCombinedSuggestions}
+              recordManualItem={suggestionsHook.recordManualItem}
+            />
+          </div>
+        )}
 
         {/* Barra de Progresso do Orçamento (Abaixo do subtotal no topo da tela) */}
         {numericBudget !== undefined && (
@@ -804,381 +819,7 @@ export function PurchaseScreen({
           totalItemsCount > 0 ? 'pb-32 sm:pb-36' : 'pb-4 sm:pb-6'
         }`}
       >
-        {/* Hidden Camera / File Input for Receipt Photo */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handleImageCapture}
-          className="hidden"
-          id="receipt-camera-input"
-        />
-
-        {/* Receipt Photo Section */}
-        {purchase.origin === 'manual' && registrationMode === 'photo' && (
-          <div className="w-full bg-white rounded-2xl border border-zinc-200/90 p-4 sm:p-5 shadow-2xs mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="px-2.5 py-0.5 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200/80 rounded-full flex items-center space-x-1">
-                <Camera className="w-3 h-3 text-amber-600" />
-                <span>Foto da Nota Fiscal</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setRegistrationMode('choose')}
-                className="text-xs text-zinc-500 hover:text-zinc-800 font-semibold px-2 py-1 rounded-lg hover:bg-zinc-100 cursor-pointer transition-colors min-h-[36px]"
-              >
-                Mudar modo
-              </button>
-            </div>
-
-            {!receiptImage ? (
-              /* Photo Capture Area */
-              <div>
-                <label
-                  htmlFor="receipt-camera-input"
-                  className="w-full flex flex-col items-center justify-center p-6 border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50 rounded-2xl cursor-pointer transition-all group my-1 min-h-[190px] text-center"
-                >
-                  <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform shadow-2xs">
-                    <Camera className="w-7 h-7" />
-                  </div>
-                  <h3 className="text-sm font-bold text-zinc-900 mb-1">
-                    Tirar foto da nota fiscal
-                  </h3>
-                  <p className="text-xs text-zinc-500 max-w-xs mb-3 leading-relaxed">
-                    Toque aqui para abrir a câmera do seu celular ou dispositivo.
-                  </p>
-                  <span className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow-2xs group-hover:bg-emerald-700 transition-colors min-h-[44px]">
-                    <Camera className="w-4 h-4" />
-                    <span>Abrir Câmera</span>
-                  </span>
-                </label>
-
-                <div className="mt-3 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setRegistrationMode('choose')}
-                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 font-bold text-xs transition-colors min-h-[44px] cursor-pointer active:scale-95 flex items-center justify-center space-x-1.5"
-                  >
-                    <X className="w-4 h-4" />
-                    <span>Cancelar</span>
-                  </button>
-                </div>
-              </div>
-            ) : isReviewingReceipt ? (
-              /* TELA DE CONFERÊNCIA DA LEITURA DA NOTA */
-              <div className="space-y-4">
-                <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-xl flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center space-x-1.5 text-xs font-bold text-emerald-800">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                      <span>Conferência de Itens Extraídos</span>
-                    </div>
-                    <p className="text-[11px] text-emerald-700 mt-0.5">
-                      Confira, desmarque ou ajuste os dados antes de adicionar à compra.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAddManualExtractedItem}
-                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center space-x-1 transition-colors cursor-pointer shrink-0 min-h-[36px]"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Novo Item</span>
-                  </button>
-                </div>
-
-                {/* Batch select and Summary bar */}
-                <div className="flex items-center justify-between px-1 text-xs">
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const allSelected = extractedItems.every((i) => i.selected);
-                        handleToggleAllExtractedItems(!allSelected);
-                      }}
-                      className="text-zinc-600 hover:text-zinc-900 font-semibold flex items-center space-x-1.5 cursor-pointer py-1"
-                    >
-                      {extractedItems.every((i) => i.selected) ? (
-                        <CheckSquare className="w-4 h-4 text-emerald-600" />
-                      ) : (
-                        <Square className="w-4 h-4 text-zinc-400" />
-                      )}
-                      <span>
-                        {extractedItems.filter((i) => i.selected).length} de {extractedItems.length} selecionado(s)
-                      </span>
-                    </button>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-zinc-500 text-[11px]">Subtotal: </span>
-                    <span className="font-bold text-emerald-700 text-sm">
-                      {formatCurrencyBRL(
-                        extractedItems
-                          .filter((i) => i.selected)
-                          .reduce((sum, item) => sum + item.quantity * item.price, 0)
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Items List */}
-                <div className="space-y-2.5 max-h-[360px] overflow-y-auto pr-1">
-                  {extractedItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`p-3 rounded-xl border transition-all ${
-                        item.selected
-                          ? 'bg-emerald-50/30 border-emerald-200'
-                          : 'bg-zinc-50/60 border-zinc-200 opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-2.5 mb-2">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleExtractedItem(item.id)}
-                          className="cursor-pointer text-emerald-600 shrink-0 p-0.5"
-                        >
-                          {item.selected ? (
-                            <CheckSquare className="w-5 h-5 text-emerald-600" />
-                          ) : (
-                            <Square className="w-5 h-5 text-zinc-400" />
-                          )}
-                        </button>
-
-                        <input
-                          type="text"
-                          value={item.name}
-                          onChange={(e) => handleUpdateExtractedItemName(item.id, e.target.value)}
-                          placeholder="Nome do produto"
-                          className="flex-1 text-xs sm:text-sm font-bold text-zinc-900 bg-white border border-zinc-200 rounded-lg px-2 py-1.5 focus:border-emerald-500 focus:outline-hidden"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveExtractedItem(item.id)}
-                          className="text-zinc-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors cursor-pointer shrink-0"
-                          title="Remover item"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 pl-7">
-                        {/* Quantity controls */}
-                        <div className="flex items-center space-x-1.5 bg-white border border-zinc-200 rounded-lg p-1">
-                          <span className="text-[11px] text-zinc-400 font-medium pl-1">Qtd:</span>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateExtractedItemQuantity(item.id, -1)}
-                            className="w-6 h-6 rounded bg-zinc-100 hover:bg-zinc-200 text-zinc-700 flex items-center justify-center font-bold text-xs cursor-pointer"
-                          >
-                            -
-                          </button>
-                          <span className="text-xs font-bold text-zinc-800 min-w-[20px] text-center">
-                            {item.quantity}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateExtractedItemQuantity(item.id, 1)}
-                            className="w-6 h-6 rounded bg-zinc-100 hover:bg-zinc-200 text-zinc-700 flex items-center justify-center font-bold text-xs cursor-pointer"
-                          >
-                            +
-                          </button>
-                        </div>
-
-                        {/* Price Input */}
-                        <div className="flex items-center space-x-1 bg-white border border-zinc-200 rounded-lg px-2 py-1">
-                          <span className="text-[11px] font-bold text-zinc-400">R$</span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={item.price === 0 ? '' : item.price}
-                            onChange={(e) =>
-                              handleUpdateExtractedItemPrice(
-                                item.id,
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            placeholder="0,00"
-                            className="w-full text-xs font-bold text-zinc-900 bg-transparent border-none focus:outline-hidden"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Review Action Buttons */}
-                <div className="pt-2 space-y-2">
-                  <button
-                    type="button"
-                    onClick={handleConfirmExtractedItems}
-                    disabled={extractedItems.filter((i) => i.selected).length === 0}
-                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-zinc-300 disabled:cursor-not-allowed text-white font-bold text-xs sm:text-sm shadow-2xs transition-all min-h-[48px] cursor-pointer flex items-center justify-center space-x-2"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>
-                      Confirmar e Adicionar {extractedItems.filter((i) => i.selected).length} Item(ns)
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCancelReceiptReview}
-                    className="w-full py-2.5 px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 font-bold text-xs transition-colors min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5"
-                  >
-                    <X className="w-4 h-4" />
-                    <span>Cancelar</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* Photo Preview & Analysis Area */
-              <div>
-                <div className="relative w-full rounded-xl overflow-hidden border border-zinc-200 bg-zinc-950/90 shadow-inner flex items-center justify-center min-h-[220px] max-h-[380px] p-2">
-                  <img
-                    src={receiptImage}
-                    alt="Prévia da Nota Fiscal"
-                    className="max-h-[360px] w-auto max-w-full object-contain rounded-lg shadow-md"
-                  />
-                  {/* Linha de Varredura Laser durante processamento OCR */}
-                  {isAnalyzingReceipt && (
-                    <motion.div
-                      initial={{ top: '0%' }}
-                      animate={motionConfig.shouldReduceMotion ? { top: '0%' } : { top: ['0%', '94%', '0%'] }}
-                      transition={
-                        motionConfig.shouldReduceMotion
-                          ? { duration: 0 }
-                          : { duration: 2, repeat: Infinity, ease: 'easeInOut' }
-                      }
-                      className="absolute left-0 right-0 h-1 bg-gradient-to-r from-emerald-500/10 via-emerald-400 to-emerald-500/10 shadow-[0_0_18px_3px_rgba(16,185,129,0.85)] z-10 pointer-events-none"
-                    />
-                  )}
-                </div>
-
-                {/* Loading State during AI parsing */}
-                {isAnalyzingReceipt && (
-                  <div className="mt-4 p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex flex-col items-center justify-center text-center space-y-2.5 animate-pulse">
-                    <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-emerald-900">Lendo nota fiscal...</h4>
-                      <p className="text-xs text-emerald-700 mt-0.5">
-                        O Gemini está identificando os produtos, quantidades e preços.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Error State if parsing fails */}
-                {receiptError && !isAnalyzingReceipt && (
-                  <div className="mt-4 p-4 rounded-2xl bg-amber-50 border border-amber-200/90 text-amber-950 space-y-3">
-                    <div className="flex items-start space-x-3">
-                      <div className="w-8 h-8 rounded-xl bg-amber-200/80 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
-                        <AlertTriangle className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-amber-900">Não foi possível ler a nota</h4>
-                        <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">{receiptError}</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={handleTriggerCamera}
-                        className="py-2 px-3 rounded-xl bg-amber-200/80 hover:bg-amber-300 active:bg-amber-400 text-amber-900 font-bold text-xs transition-colors min-h-[40px] flex items-center justify-center space-x-1.5 cursor-pointer"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Tirar outra foto</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReceiptError(null);
-                          setRegistrationMode('manual');
-                        }}
-                        className="py-2 px-3 rounded-xl bg-white hover:bg-zinc-100 active:bg-zinc-200 text-zinc-800 font-bold text-xs transition-colors border border-amber-300 min-h-[40px] flex items-center justify-center space-x-1.5 cursor-pointer"
-                      >
-                        <FileText className="w-3.5 h-3.5 text-zinc-600" />
-                        <span>Digitar manualmente</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Standard Photo Actions when not loading */}
-                {!isAnalyzingReceipt && !receiptError && (
-                  <div className="mt-4 space-y-2">
-                    {/* Analisar Nota Button */}
-                    <button
-                      type="button"
-                      onClick={handleAnalyzeReceipt}
-                      className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition-all min-h-[48px] cursor-pointer active:scale-95 flex items-center justify-center space-x-2"
-                    >
-                      <Sparkles className="w-4 h-4 text-amber-300 fill-amber-300" />
-                      <span>Analisar Nota</span>
-                    </button>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      {/* Tirar outra foto Button */}
-                      <button
-                        type="button"
-                        onClick={handleTriggerCamera}
-                        className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 font-bold text-xs transition-colors min-h-[44px] cursor-pointer active:scale-95 flex items-center justify-center space-x-1.5 border border-zinc-200/80"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5 text-zinc-600" />
-                        <span>Tirar outra foto</span>
-                      </button>
-
-                      {/* Cancelar Button */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReceiptImage(null);
-                          setRegistrationMode('choose');
-                        }}
-                        className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-red-50 active:bg-red-100 text-red-600 hover:text-red-700 font-bold text-xs transition-colors min-h-[44px] cursor-pointer active:scale-95 flex items-center justify-center space-x-1.5 border border-zinc-200/80"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        <span>Cancelar</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Manual Mode Switcher Banner */}
-        {purchase.origin === 'manual' && registrationMode === 'manual' && (
-          <div className="mb-3.5 flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-zinc-100 border border-zinc-200/80 text-xs">
-            <span className="font-semibold text-zinc-700 flex items-center space-x-1.5">
-              <FileText className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Modo: Digitação Manual</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setRegistrationMode('photo');
-                if (!receiptImage) {
-                  setTimeout(() => handleTriggerCamera(), 100);
-                }
-              }}
-              className="text-emerald-700 hover:text-emerald-800 font-bold flex items-center space-x-1 cursor-pointer active:scale-95 transition-all min-h-[36px]"
-            >
-              <Camera className="w-3.5 h-3.5" />
-              <span>Anexar Nota</span>
-            </button>
-          </div>
-        )}
-
-        {/* Items List or Empty State (Hidden when choosing registration mode or taking photo) */}
-        {purchase.origin === 'manual' && (registrationMode === 'choose' || registrationMode === 'photo') ? null : (
-          <div className="space-y-3">
+        <div className="space-y-3">
             {/* Lista de Cards de Itens ou Estado Vazio com Animação Fluida desde o 1º item */}
             <div className="space-y-2.5">
               {totalItemsCount > 0 && allSections.length > 1 && (
@@ -1313,7 +954,6 @@ export function PurchaseScreen({
               </div>
             )}
           </div>
-        )}
       </main>
 
       {/* Modal de Adicionar em Lote */}
