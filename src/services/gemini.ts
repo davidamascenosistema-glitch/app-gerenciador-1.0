@@ -5,6 +5,7 @@ export interface ParsedVoiceItem {
   quantity: number;
   price: number | null;
   is_weighted: boolean;
+  weight: number | null;
   category: string;
 }
 
@@ -26,12 +27,17 @@ function getGeminiApiKey(): string {
 }
 
 /**
- * Remove blocos de Markdown residuais (como ```json ... ```)
+ * Remove blocos de Markdown residuais (como ```json ... ```) e extrai o bloco JSON
  */
 function cleanJsonOutput(raw: string): string {
   let cleaned = raw.trim();
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  }
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
   }
   return cleaned.trim();
 }
@@ -45,7 +51,7 @@ function fallbackParseVoiceCommand(transcript: string): ParsedVoiceItem {
   // Detecção de peso
   const isWeighted = /(?:quilo|quilos|kg|grama|gramas|\bg\b|pesado|pesada)/i.test(text);
 
-  // Detecção de preço (ex: "por 15 reais", "a 5,90", "custou 10 reais", "R$ 12.50", "8 reais")
+  // Detecção de preço (ex: "por 15 reais", "1 real", "a 5,90", "custou 10 reais", "R$ 12.50", "cinco e trinta")
   let price: number | null = null;
   const priceRegex = /(?:r\$\s*|custou\s*|a\s*|por\s*|de\s*)?(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real|pila)?/i;
   const priceMatch = text.match(priceRegex);
@@ -95,14 +101,14 @@ function fallbackParseVoiceCommand(transcript: string): ParsedVoiceItem {
 
   // Categoria básica por palavras-chave
   let category = 'Geral';
-  if (/(?:maçã|banana|tomate|alface|cebola|alho|laranja|limão|batata|cenoura|fruta|legume|verdura)/i.test(cleanName)) {
-    category = 'Hortifrúti';
+  if (/(?:pão|pães|bolo|torta|biscoito|croissant|padaria)/i.test(cleanName)) {
+    category = 'Padaria';
+  } else if (/(?:carne|frango|peixe|alcatra|contrafilé|bife|costela|moída|linguiça|salsicha|açougue)/i.test(cleanName)) {
+    category = 'Açougue';
   } else if (/(?:leite|queijo|iogurte|manteiga|requeijão|nata)/i.test(cleanName)) {
     category = 'Laticínios';
-  } else if (/(?:pão|bolo|torta|biscoito|croissant|padaria)/i.test(cleanName)) {
-    category = 'Padaria';
-  } else if (/(?:carne|frango|peixe|alcatra|contrafilé|bife|costela|moída|linguiça|salsicha)/i.test(cleanName)) {
-    category = 'Carnes & Aves';
+  } else if (/(?:maçã|banana|tomate|alface|cebola|alho|laranja|limão|batata|cenoura|fruta|legume|verdura)/i.test(cleanName)) {
+    category = 'Hortifrúti';
   } else if (/(?:detergente|sabão|amaciante|desinfetante|esponja|água sanitária|limpeza)/i.test(cleanName)) {
     category = 'Limpeza';
   } else if (/(?:cerveja|refrigerante|suco|água|vinho|energético|vodka)/i.test(cleanName)) {
@@ -113,11 +119,14 @@ function fallbackParseVoiceCommand(transcript: string): ParsedVoiceItem {
     category = 'Mercearia';
   }
 
+  const weight = isWeighted ? (quantity > 0 ? quantity : 1) : null;
+
   return {
     name: cleanName,
-    quantity,
+    quantity: isWeighted ? 1 : quantity,
     price,
     is_weighted: isWeighted,
+    weight,
     category,
   };
 }
@@ -125,8 +134,8 @@ function fallbackParseVoiceCommand(transcript: string): ParsedVoiceItem {
 /**
  * Transforma a transcrição de voz em um item de compra estruturado usando o Google Gemini.
  *
- * @param transcript Frase capturada pelo microfone (ex: "Dois quilos de tomate a 8 reais")
- * @returns Item estruturado com nome, quantidade, preço (se houver), is_weighted e categoria.
+ * @param transcript Frase capturada pelo microfone (ex: "10 pães 1 real", "dois leites de cinco e trinta")
+ * @returns Item estruturado com nome, quantidade, preço (se houver), is_weighted, weight e categoria.
  */
 export async function parseVoiceCommand(transcript: string): Promise<ParsedVoiceItem> {
   if (!transcript || !transcript.trim()) {
@@ -143,17 +152,22 @@ export async function parseVoiceCommand(transcript: string): Promise<ParsedVoice
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const systemInstruction = `Você é um assistente especialista de supermercado e compras domésticas.
-Sua única responsabilidade é analisar a transcrição de áudio ditada pelo usuário e extrair exatamente um produto estruturado em formato JSON.
+  const systemInstruction = `Você é um assistente de compras de supermercado inteligente. Sua única função é extrair dados de uma frase ditada pelo usuário e retornar estritamente um objeto JSON com as chaves: 'name' (string, nome do produto limpo no singular/plural correto), 'quantity' (number, padrão 1), 'price' (number ou null, converter centavos/reais para decimal), 'is_weighted' (boolean, true se for peso como kg/g), 'weight' (number ou null, ex: 0.5 para meio quilo), e 'category' (string).
 
-Regras de extração:
-1. name (string): Nome limpo e padronizado do produto em português (ex: "Tomate", "Leite Integral", "Detergente Neutro"). Remova comandos verbais como "adicionar", "comprei", "coloque", bem como unidades de medida e preços do nome.
-2. quantity (number): Quantidade numérica deduzida da fala. Se disser "dois leites", quantity = 2. Se disser "meio quilo", quantity = 0.5. Se não especificar quantidade, o padrão é 1.
-3. price (number ou null): Preço em Reais se o usuário ditou um valor monetário (ex: "custou 6 reais", "a 4,50" -> 6 ou 4.5). Se não houver menção a valor ou preço, defina como null.
-4. is_weighted (boolean): true se o usuário disser "quilo", "kg", "gramas", "pesado" ou se for produto vendido a peso; caso contrário, false.
-5. category (string): Categoria lógica deduzida em português (ex: "Hortifrúti", "Laticínios", "Padaria", "Carnes & Aves", "Bebidas", "Limpeza", "Higiene", "Mercearia", "Congelados", "Snacks & Doces", "Geral").`;
+Regras cruciais:
 
-  const prompt = `Analise o seguinte comando de voz de compras e extraia o produto estruturado:
+Se o usuário disser 'X reais' ou 'X e Y', isso é SEMPRE o preço ('price').
+
+Remova o preço e a quantidade do nome do produto.
+
+Retorne APENAS o JSON válido, sem blocos de código markdown ou explicações.
+
+Exemplos de como você deve interpretar:
+Frase: '10 pães 1 real' -> JSON: {"name": "Pão Francês", "quantity": 10, "price": 1.00, "is_weighted": false, "weight": null, "category": "Padaria"}
+Frase: 'dois leites de cinco e trinta' -> JSON: {"name": "Leite", "quantity": 2, "price": 5.30, "is_weighted": false, "weight": null, "category": "Laticínios"}
+Frase: 'meio quilo de carne moída' -> JSON: {"name": "Carne Moída", "quantity": 1, "price": null, "is_weighted": true, "weight": 0.5, "category": "Açougue"}`;
+
+  const prompt = `Analise a seguinte frase ditada e extraia o item estruturado em JSON:
 "${transcript}"`;
 
   try {
@@ -169,24 +183,29 @@ Regras de extração:
           properties: {
             name: {
               type: Type.STRING,
-              description: 'Nome padronizado do produto',
+              description: 'Nome limpo do produto no singular/plural correto',
             },
             quantity: {
               type: Type.NUMBER,
-              description: 'Quantidade ou peso deduzido da frase',
+              description: 'Quantidade numérica deduzida da frase, padrão 1',
             },
             price: {
               type: Type.NUMBER,
-              description: 'Preço numérico se informado na frase, caso contrário null',
+              description: 'Preço numérico em decimal ou null se não informado',
               nullable: true,
             },
             is_weighted: {
               type: Type.BOOLEAN,
-              description: 'true se vendido por peso (kg ou gramas)',
+              description: 'true se for peso como kg/g',
+            },
+            weight: {
+              type: Type.NUMBER,
+              description: 'Peso em número (ex: 0.5 para meio quilo) ou null',
+              nullable: true,
             },
             category: {
               type: Type.STRING,
-              description: 'Categoria do produto no supermercado',
+              description: 'Categoria do produto',
             },
           },
           required: ['name', 'quantity', 'is_weighted', 'category'],
@@ -201,6 +220,8 @@ Regras de extração:
 
     const cleanedText = cleanJsonOutput(rawText);
     const parsed = JSON.parse(cleanedText);
+
+    const is_weighted = Boolean(parsed.is_weighted);
 
     const name =
       typeof parsed.name === 'string' && parsed.name.trim().length > 0
@@ -217,7 +238,12 @@ Regras de extração:
         ? Number(parsed.price)
         : null;
 
-    const is_weighted = Boolean(parsed.is_weighted);
+    const weight =
+      typeof parsed.weight === 'number' && !isNaN(parsed.weight) && parsed.weight > 0
+        ? Number(parsed.weight)
+        : is_weighted && quantity > 0
+          ? quantity
+          : null;
 
     const category =
       typeof parsed.category === 'string' && parsed.category.trim().length > 0
@@ -229,11 +255,11 @@ Regras de extração:
       quantity,
       price,
       is_weighted,
+      weight,
       category,
     };
   } catch (err: any) {
     console.error('Erro ao chamar Gemini API para interpretação de voz:', err);
-    // Em caso de falha de conexão ou erro da API, usa o interpretador heurístico
     return fallbackParseVoiceCommand(transcript);
   }
 }
