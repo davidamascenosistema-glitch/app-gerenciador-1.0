@@ -35,6 +35,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Item, Purchase, ItemSuggestion, PricingModeDefault } from '../types';
 import { parseReceiptImage, ExtractedReceiptItem } from '../services/geminiService';
+import { parseVoiceCommand } from '../services/gemini';
 import { normalizeText } from '../services/suggestionsService';
 import { useItemSuggestions } from '../hooks/useItemSuggestions';
 import { ItemSearchBar } from './ItemSearchBar';
@@ -159,8 +160,53 @@ export function PurchaseScreen({
   // Toast feedback hook
   const { showToast } = useToast();
 
-  const handleVoiceInput = (transcript: string) => {
-    showToast(`Você disse: "${transcript}"`);
+  // Voice processing loading state
+  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
+
+  const handleVoiceInput = async (transcript: string) => {
+    if (!transcript || !transcript.trim()) return;
+
+    if (!purchase || !purchase.id) {
+      showToast('Nenhuma compra ativa para adicionar o item');
+      return;
+    }
+
+    try {
+      setIsProcessingVoice(true);
+      showToast('Analisando voz...', 2500);
+
+      const itemData = await parseVoiceCommand(transcript);
+
+      if (!itemData || !itemData.name) {
+        showToast('Não foi possível identificar o item da sua fala');
+        return;
+      }
+
+      if (onAddItem) {
+        const hasPrice = typeof itemData.price === 'number' && itemData.price > 0;
+        const isWeighted = Boolean(itemData.is_weighted);
+        const qty = typeof itemData.quantity === 'number' && itemData.quantity > 0 ? itemData.quantity : 1;
+
+        onAddItem(purchase.id, {
+          name: itemData.name,
+          category: itemData.category || 'Geral',
+          quantity: isWeighted ? 1 : qty,
+          weight: isWeighted ? qty : undefined,
+          isWeighted: isWeighted,
+          price: hasPrice ? (itemData.price as number) : undefined,
+          bought: hasPrice ? true : false,
+        });
+
+        const formattedQty = isWeighted ? `${qty.toString().replace('.', ',')} kg` : `${qty} un`;
+        const formattedPrice = hasPrice ? ` por ${formatCurrencyBRL(itemData.price as number)}` : '';
+        showToast(`"${itemData.name}" (${formattedQty}${formattedPrice}) adicionado!`, 3500);
+      }
+    } catch (err: any) {
+      console.error('Erro ao processar comando de voz:', err);
+      showToast('Erro ao processar áudio. Tente novamente.');
+    } finally {
+      setIsProcessingVoice(false);
+    }
   };
 
   // Receipt Photo & Mode State
@@ -1283,10 +1329,22 @@ export function PurchaseScreen({
 
       {/* Botão Flutuante de Ditado por Voz (FAB) */}
       {purchase.status !== 'finished' && (
-        <VoiceActionButton
-          onTranscript={handleVoiceInput}
-          className={totalItemsCount > 0 ? 'bottom-24 sm:bottom-28' : 'bottom-6 sm:bottom-8'}
-        />
+        <div className="relative">
+          <VoiceActionButton
+            onTranscript={handleVoiceInput}
+            className={totalItemsCount > 0 ? 'bottom-24 sm:bottom-28' : 'bottom-6 sm:bottom-8'}
+          />
+          {isProcessingVoice && (
+            <div
+              className={`fixed z-50 pointer-events-none w-16 h-16 rounded-full flex items-center justify-center bg-emerald-700/90 text-white shadow-xl ${
+                totalItemsCount > 0 ? 'bottom-24 sm:bottom-28' : 'bottom-6 sm:bottom-8'
+              } right-5 sm:right-6`}
+              title="Processando voz com Gemini..."
+            >
+              <Loader2 className="w-7 h-7 animate-spin text-white" />
+            </div>
+          )}
+        </div>
       )}
 
       {/* Rodapé Fixo Inferior - Sempre à mostra na viewport quando há itens na lista */}
