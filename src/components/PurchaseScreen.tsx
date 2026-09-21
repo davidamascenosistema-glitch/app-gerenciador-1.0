@@ -60,8 +60,6 @@ import {
   CategorySection,
 } from '../utils/purchaseHelpers';
 import { useToast } from './Toast';
-import { supabase } from '../services/supabaseClient';
-import { fireCelebrationConfetti } from './PurchaseCelebrationModal';
 
 const getCategoryBadgeStyle = (category: string) => {
   switch (category) {
@@ -614,73 +612,6 @@ export function PurchaseScreen({
     }
   };
 
-  const handleConcluirCompra = async () => {
-    const items = purchase?.items || [];
-    if (items.length === 0) {
-      alert('Adicione itens à lista antes de finalizar a compra.');
-      return;
-    }
-
-    try {
-      const totalCompra = calculatePurchaseTotal(purchase);
-
-      // Criação do Recibo (Tabela purchases)
-      const { data: purchaseData, error: purchaseError } = await supabase
-        .from('purchases')
-        .insert({
-          total_amount: totalCompra,
-          status: 'concluida',
-        })
-        .select()
-        .single();
-
-      if (purchaseError || !purchaseData) {
-        console.error('Erro ao criar registro de compra no Supabase:', purchaseError);
-        alert('Erro ao finalizar compra no servidor. Verifique sua conexão e tente novamente.');
-        return;
-      }
-
-      // Criação dos Itens (Tabela purchase_items)
-      const itemsToInsert = items.map((item) => ({
-        purchase_id: purchaseData.id,
-        name: item.name,
-        category: item.category || 'Geral',
-        quantity: item.quantity,
-        weight: item.weight,
-        price: item.price || 0,
-        is_weighted: item.isWeighted || false,
-        bought: item.bought || true,
-      }));
-
-      const { error: itemsError } = await supabase
-        .from('purchase_items')
-        .insert(itemsToInsert);
-
-      if (itemsError) {
-        console.error('Erro ao inserir itens da compra no Supabase:', itemsError);
-        alert('Erro ao salvar os itens da compra no servidor.');
-        return;
-      }
-
-      console.log('Compra salva com sucesso!');
-      fireCelebrationConfetti();
-
-      // Limpa o carrinho atual resetando os itens da compra ativa
-      items.forEach((item) => {
-        if (onRemoveItem) {
-          onRemoveItem(purchase.id, item.id);
-        }
-      });
-
-      if (onFinishPurchase) {
-        onFinishPurchase(purchase.id);
-      }
-    } catch (err) {
-      console.error('Erro inesperado ao concluir compra:', err);
-      alert('Ocorreu um erro inesperado ao salvar a compra.');
-    }
-  };
-
   if (!purchase || !purchase.id) {
     return (
       <div className="flex flex-col items-center justify-center flex-1 p-6 text-center h-full mt-20">
@@ -1039,20 +970,6 @@ export function PurchaseScreen({
                     ))
                   )}
                 </AnimatePresence>
-
-                {/* Botão Concluir Compra Supabase */}
-                {purchase.status !== 'finished' && (
-                  <div className="mt-4 pt-2">
-                    <button
-                      type="button"
-                      onClick={handleConcluirCompra}
-                      className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-colors flex items-center justify-center space-x-2 cursor-pointer"
-                    >
-                      <Check className="w-5 h-5 text-white" />
-                      <span>Finalizar Compra</span>
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
 
