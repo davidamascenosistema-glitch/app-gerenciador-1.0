@@ -254,7 +254,7 @@ export function HomeScreen({
               {/* Botão Branco: Assinar Premium > */}
               <button
                 type="button"
-                onClick={() => setIsPremiumModalOpen(true)}
+                onClick={() => showToast('EM BREVE')}
                 className="bg-white hover:bg-zinc-100 active:scale-95 text-emerald-950 font-bold text-xs px-4 py-1.5 rounded-full shadow-sm flex items-center space-x-1.5 transition-all cursor-pointer min-h-[32px]"
               >
                 <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
@@ -264,7 +264,7 @@ export function HomeScreen({
               {/* Botão Fantasma: Enviar Feedback */}
               <button
                 type="button"
-                onClick={() => setIsFeedbackModalOpen(true)}
+                onClick={() => showToast('EM BREVE')}
                 className="text-emerald-100/90 hover:text-white hover:bg-emerald-800/60 active:scale-95 font-semibold text-xs px-3 py-1 rounded-full transition-all flex items-center space-x-1.5 cursor-pointer min-h-[28px]"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
