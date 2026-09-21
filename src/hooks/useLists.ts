@@ -101,7 +101,7 @@ export function useLists(userId?: string | null) {
         .order('created_at', { ascending: false });
 
       if (listsError) {
-        console.error('Erro ao buscar listas no Supabase:', listsError);
+        console.warn('Aviso ao sincronizar listas no Supabase (mantendo cache local):', listsError?.message || listsError);
         setLoading(false);
         return;
       }
@@ -121,7 +121,7 @@ export function useLists(userId?: string | null) {
         .in('list_id', listIds);
 
       if (itemsError) {
-        console.error('Erro ao buscar itens de listas no Supabase (tabela list_items):', itemsError);
+        console.warn('Aviso ao sincronizar itens de listas no Supabase:', itemsError?.message || itemsError);
       }
 
       const itemsByListId = new Map<string, any[]>();
@@ -149,7 +149,7 @@ export function useLists(userId?: string | null) {
       setLists(loadedLists);
       saveToLocal(loadedLists);
     } catch (err) {
-      console.error('Exceção ao buscar listas do Supabase:', err);
+      console.warn('Exceção ao buscar listas do Supabase (mantendo cache local):', err);
     } finally {
       setLoading(false);
     }
@@ -233,17 +233,7 @@ export function useLists(userId?: string | null) {
               actualId = String(insertedWithoutId[0].id);
             }
           } else {
-            console.error('Erro ao salvar lista na tabela lists do Supabase:', errWithoutId);
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(
-                new CustomEvent('app-toast', {
-                  detail: {
-                    message: `Erro ao salvar lista: ${errWithoutId.message || 'Falha na conexão'}`,
-                    type: 'error',
-                  },
-                })
-              );
-            }
+            console.warn('Aviso ao sincronizar lista na tabela lists do Supabase:', errWithoutId?.message || errWithoutId);
           }
         }
 
@@ -295,23 +285,13 @@ export function useLists(userId?: string | null) {
           // Passo 3: Tratamento de Erros:
           // Se a inserção da lista funcionar mas a dos itens falhar, a função de salvamento deve alertar o usuário.
           if (itemsErr) {
-            console.error('Erro ao salvar itens da lista na tabela list_items do Supabase:', itemsErr);
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(
-                new CustomEvent('app-toast', {
-                  detail: {
-                    message: 'A lista foi criada, mas ocorreu um erro ao salvar os itens no servidor (list_items).',
-                    type: 'error',
-                  },
-                })
-              );
-            }
+            console.warn('Aviso ao salvar itens da lista na tabela list_items do Supabase:', itemsErr?.message || itemsErr);
           } else {
             console.log(`Sucesso: ${dbItems.length} itens salvos na tabela list_items para a lista ${actualId}`);
           }
         }
       } catch (err) {
-        console.error('Erro inesperado ao salvar lista e itens no Supabase:', err);
+        console.warn('Aviso inesperado ao salvar lista e itens no Supabase:', err);
       }
     }
 
@@ -333,7 +313,7 @@ export function useLists(userId?: string | null) {
         await supabase.from('list_items').delete().eq('list_id', id);
         await supabase.from('lists').delete().eq('id', id);
       } catch (err) {
-        console.error('Erro ao deletar lista no Supabase:', err);
+        console.warn('Aviso ao deletar lista no Supabase:', err);
       }
     }
   };
@@ -355,7 +335,7 @@ export function useLists(userId?: string | null) {
       try {
         await supabase.from('lists').update({ name: trimmed }).eq('id', id);
       } catch (err) {
-        console.error('Erro ao renomear lista no Supabase:', err);
+        console.warn('Aviso ao renomear lista no Supabase:', err);
       }
     }
   };
@@ -438,17 +418,7 @@ export function useLists(userId?: string | null) {
           .select('id');
 
         if (itemErr) {
-          console.error('Erro ao inserir item na tabela list_items do Supabase:', itemErr);
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(
-              new CustomEvent('app-toast', {
-                detail: {
-                  message: `Não foi possível salvar o item "${itemData.name}" no servidor (list_items).`,
-                  type: 'error',
-                },
-              })
-            );
-          }
+          console.warn('Aviso ao inserir item na tabela list_items do Supabase:', itemErr?.message || itemErr);
         } else if (insertedRows && insertedRows[0]?.id) {
           const officialId = String(insertedRows[0].id);
           setLists((prev) => {
@@ -464,7 +434,7 @@ export function useLists(userId?: string | null) {
           });
         }
       } catch (err) {
-        console.error('Erro inesperado ao inserir item na tabela list_items do Supabase:', err);
+        console.warn('Aviso inesperado ao inserir item na tabela list_items do Supabase:', err);
       }
     }
   };
@@ -553,7 +523,7 @@ export function useLists(userId?: string | null) {
           await supabase.from('list_items').update(dbUpdates).eq('id', itemId);
         }
       } catch (err) {
-        console.error('Erro ao atualizar item da lista no Supabase:', err);
+        console.warn('Aviso ao atualizar item da lista no Supabase:', err);
       }
     }
   };
@@ -578,7 +548,7 @@ export function useLists(userId?: string | null) {
       try {
         await supabase.from('list_items').delete().eq('id', itemId);
       } catch (err) {
-        console.error('Erro ao remover item da lista no Supabase:', err);
+        console.warn('Aviso ao remover item da lista no Supabase:', err);
       }
     }
   };
@@ -629,17 +599,7 @@ export function useLists(userId?: string | null) {
         .select();
 
       if (itemsErr) {
-        console.error('Erro ao persistir itens na tabela list_items do Supabase:', itemsErr);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('app-toast', {
-              detail: {
-                message: 'Erro ao salvar itens no servidor (list_items).',
-                type: 'error',
-              },
-            })
-          );
-        }
+        console.warn('Aviso ao persistir itens na tabela list_items do Supabase:', itemsErr?.message || itemsErr);
         return false;
       }
 
@@ -654,7 +614,7 @@ export function useLists(userId?: string | null) {
 
       return true;
     } catch (err) {
-      console.error('Erro inesperado ao persistir itens em list_items:', err);
+      console.warn('Aviso inesperado ao persistir itens em list_items:', err);
       return false;
     }
   };

@@ -1,5 +1,3 @@
-import { GoogleGenAI, Type } from '@google/genai';
-
 export interface ParsedVoiceItem {
   name: string;
   quantity: number;
@@ -11,36 +9,6 @@ export interface ParsedVoiceItem {
 
 // Re-exporta itens de suporte do geminiService caso necessário
 export { parseReceiptImage, type ExtractedReceiptItem } from './geminiService';
-
-/**
- * Recupera a chave de API do Gemini a partir do ambiente do cliente ou build
- */
-function getGeminiApiKey(): string {
-  if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-    return process.env.GEMINI_API_KEY;
-  }
-  if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
-    const env = (import.meta as any).env;
-    return env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || '';
-  }
-  return '';
-}
-
-/**
- * Remove blocos de Markdown residuais (como ```json ... ```) e extrai o bloco JSON
- */
-function cleanJsonOutput(raw: string): string {
-  let cleaned = raw.trim();
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  }
-  const firstBrace = cleaned.indexOf('{');
-  const lastBrace = cleaned.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
-  }
-  return cleaned.trim();
-}
 
 /**
  * Heurística de fallback em português caso a API do Gemini esteja temporariamente indisponível ou sem chave
@@ -142,124 +110,92 @@ export async function parseVoiceCommand(transcript: string): Promise<ParsedVoice
     throw new Error('Transcrição de voz vazia.');
   }
 
-  const apiKey = getGeminiApiKey();
+  const prompt = `
+Você é um extrator de dados de compras. Leia a frase do usuário e retorne APENAS um objeto JSON válido.
 
-  // Se não houver chave configurada, usa o fallback heurístico local
-  if (!apiKey) {
-    console.warn('GEMINI_API_KEY não encontrada. Utilizando fallback local para interpretar comando de voz.');
-    return fallbackParseVoiceCommand(transcript);
-  }
+REGRAS:
+1. Limpe o nome do produto. Remova quantidades, pesos, preços e conectivos. Coloque no singular.
+2. Preço (price) é sempre um número decimal. Se disser "X reais", "por X", price = X.
+3. Se a frase contiver "kg", "quilo", "gramas" ou "g", is_weighted DEVE ser true. O valor numérico do peso vai para a chave 'weight' (ex: 2kg -> 2, 500g -> 0.5). A quantidade (quantity) nesses casos geralmente é 1.
+4. Não adicione crases, markdown, nem a palavra json no retorno.
 
-  const ai = new GoogleGenAI({ apiKey });
+EXEMPLOS REAIS:
+Frase: "2kg de Alcatra por 20 reais"
+JSON: {"name": "Alcatra", "quantity": 1, "price": 20.00, "is_weighted": true, "weight": 2, "category": "Açougue"}
 
-  const systemInstruction = `Você é um assistente de compras de supermercado inteligente. Sua única função é extrair dados de uma frase ditada pelo usuário e retornar estritamente um objeto JSON com as chaves: 'name' (string, nome do produto limpo no singular/plural correto), 'quantity' (number, padrão 1), 'price' (number ou null, converter centavos/reais para decimal), 'is_weighted' (boolean, true se for peso como kg/g), 'weight' (number ou null, ex: 0.5 para meio quilo), e 'category' (string).
+Frase: "10 pães 1 real"
+JSON: {"name": "Pão Francês", "quantity": 10, "price": 1.00, "is_weighted": false, "weight": null, "category": "Padaria"}
 
-Regras cruciais:
+Frase: "dois leites de cinco e trinta"
+JSON: {"name": "Leite", "quantity": 2, "price": 5.30, "is_weighted": false, "weight": null, "category": "Laticínios"}
 
-Se o usuário disser 'X reais' ou 'X e Y', isso é SEMPRE o preço ('price').
+AGORA É A SUA VEZ:
+Frase: "${transcript}"
+JSON:
+`;
 
-Remova o preço e a quantidade do nome do produto.
-
-Retorne APENAS o JSON válido, sem blocos de código markdown ou explicações.
-
-Exemplos de como você deve interpretar:
-Frase: '10 pães 1 real' -> JSON: {"name": "Pão Francês", "quantity": 10, "price": 1.00, "is_weighted": false, "weight": null, "category": "Padaria"}
-Frase: 'dois leites de cinco e trinta' -> JSON: {"name": "Leite", "quantity": 2, "price": 5.30, "is_weighted": false, "weight": null, "category": "Laticínios"}
-Frase: 'meio quilo de carne moída' -> JSON: {"name": "Carne Moída", "quantity": 1, "price": null, "is_weighted": true, "weight": 0.5, "category": "Açougue"}`;
-
-  const prompt = `Analise a seguinte frase ditada e extraia o item estruturado em JSON:
-"${transcript}"`;
-
+  // Envia essa string prompt diretamente para a função de geração (rota backend /api/voice-parse)
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          description: 'Objeto estruturado do item de compras',
-          properties: {
-            name: {
-              type: Type.STRING,
-              description: 'Nome limpo do produto no singular/plural correto',
-            },
-            quantity: {
-              type: Type.NUMBER,
-              description: 'Quantidade numérica deduzida da frase, padrão 1',
-            },
-            price: {
-              type: Type.NUMBER,
-              description: 'Preço numérico em decimal ou null se não informado',
-              nullable: true,
-            },
-            is_weighted: {
-              type: Type.BOOLEAN,
-              description: 'true se for peso como kg/g',
-            },
-            weight: {
-              type: Type.NUMBER,
-              description: 'Peso em número (ex: 0.5 para meio quilo) ou null',
-              nullable: true,
-            },
-            category: {
-              type: Type.STRING,
-              description: 'Categoria do produto',
-            },
-          },
-          required: ['name', 'quantity', 'is_weighted', 'category'],
-        },
+    const endpoint = typeof window !== 'undefined' ? '/api/voice-parse' : 'http://localhost:3000/api/voice-parse';
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ transcript: transcript.trim(), prompt }),
     });
 
-    const rawText = response.text;
-    if (!rawText) {
-      return fallbackParseVoiceCommand(transcript);
+    if (res.ok) {
+      const data = await res.json();
+      const text = typeof data.text === 'string' ? data.text : (data.name ? JSON.stringify(data) : '');
+
+      if (text) {
+        const parsed = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
+
+        const is_weighted = Boolean(parsed.is_weighted);
+        const name =
+          typeof parsed.name === 'string' && parsed.name.trim().length > 0
+            ? parsed.name.trim()
+            : fallbackParseVoiceCommand(transcript).name;
+
+        const quantity =
+          typeof parsed.quantity === 'number' && !isNaN(parsed.quantity) && parsed.quantity > 0
+            ? Number(parsed.quantity)
+            : 1;
+
+        const price =
+          typeof parsed.price === 'number' && !isNaN(parsed.price) && parsed.price >= 0
+            ? Number(parsed.price)
+            : null;
+
+        const weight =
+          typeof parsed.weight === 'number' && !isNaN(parsed.weight) && parsed.weight > 0
+            ? Number(parsed.weight)
+            : is_weighted
+              ? (quantity > 0 ? quantity : 1)
+              : null;
+
+        const category =
+          typeof parsed.category === 'string' && parsed.category.trim().length > 0
+            ? parsed.category.trim()
+            : 'Geral';
+
+        return {
+          name,
+          quantity: is_weighted ? 1 : quantity,
+          price,
+          is_weighted,
+          weight,
+          category,
+        };
+      }
+    } else {
+      console.warn('Endpoint /api/voice-parse retornou status:', res.status);
     }
-
-    const cleanedText = cleanJsonOutput(rawText);
-    const parsed = JSON.parse(cleanedText);
-
-    const is_weighted = Boolean(parsed.is_weighted);
-
-    const name =
-      typeof parsed.name === 'string' && parsed.name.trim().length > 0
-        ? parsed.name.trim()
-        : fallbackParseVoiceCommand(transcript).name;
-
-    const quantity =
-      typeof parsed.quantity === 'number' && !isNaN(parsed.quantity) && parsed.quantity > 0
-        ? Number(parsed.quantity)
-        : 1;
-
-    const price =
-      typeof parsed.price === 'number' && !isNaN(parsed.price) && parsed.price >= 0
-        ? Number(parsed.price)
-        : null;
-
-    const weight =
-      typeof parsed.weight === 'number' && !isNaN(parsed.weight) && parsed.weight > 0
-        ? Number(parsed.weight)
-        : is_weighted && quantity > 0
-          ? quantity
-          : null;
-
-    const category =
-      typeof parsed.category === 'string' && parsed.category.trim().length > 0
-        ? parsed.category.trim()
-        : 'Geral';
-
-    return {
-      name,
-      quantity,
-      price,
-      is_weighted,
-      weight,
-      category,
-    };
-  } catch (err: any) {
-    console.error('Erro ao chamar Gemini API para interpretação de voz:', err);
-    return fallbackParseVoiceCommand(transcript);
+  } catch (apiErr) {
+    console.warn('Erro de rede ao chamar /api/voice-parse, utilizando heurística local:', apiErr);
   }
+
+  // Fallback heurístico inteligente em português caso o backend esteja inacessível
+  return fallbackParseVoiceCommand(transcript);
 }

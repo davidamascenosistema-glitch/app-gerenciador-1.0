@@ -2,11 +2,40 @@ import { useState, useEffect, useCallback } from 'react';
 import { Item, Purchase } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
-const INITIAL_PURCHASES: Purchase[] = [];
+const STORAGE_KEY_PURCHASES = 'lista_e_compra_purchases_cache';
+
+const loadLocalPurchases = (): Purchase[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PURCHASES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn('Aviso ao ler compras do cache local:', e);
+  }
+  return [];
+};
+
+const saveLocalPurchases = (items: Purchase[]) => {
+  try {
+    localStorage.setItem(STORAGE_KEY_PURCHASES, JSON.stringify(items));
+  } catch (e) {
+    console.warn('Aviso ao salvar compras no cache local:', e);
+  }
+};
 
 export function usePurchases(userId?: string | null) {
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [purchases, setPurchasesState] = useState<Purchase[]>(loadLocalPurchases);
   const [loading, setLoading] = useState<boolean>(false);
+
+  const setPurchases = useCallback((action: Purchase[] | ((prev: Purchase[]) => Purchase[])) => {
+    setPurchasesState((prev) => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      saveLocalPurchases(next);
+      return next;
+    });
+  }, []);
 
   /**
    * Converte o item da tabela purchase_items do Supabase para a interface TypeScript Item
@@ -59,13 +88,12 @@ export function usePurchases(userId?: string | null) {
         .order('created_at', { ascending: false });
 
       if (purchasesError) {
-        console.error('Erro ao carregar compras do Supabase:', purchasesError);
+        console.warn('Aviso ao carregar compras do Supabase (mantendo cache local):', purchasesError?.message || purchasesError);
         setLoading(false);
         return;
       }
 
       if (!purchasesData || purchasesData.length === 0) {
-        setPurchases([]);
         setLoading(false);
         return;
       }
@@ -80,7 +108,7 @@ export function usePurchases(userId?: string | null) {
         .order('created_at', { ascending: true });
 
       if (itemsError) {
-        console.error('Erro ao carregar itens de compras do Supabase:', itemsError);
+        console.warn('Aviso ao carregar itens de compras do Supabase:', itemsError?.message || itemsError);
       }
 
       const itemsByPurchaseId = new Map<string, any[]>();
@@ -100,7 +128,7 @@ export function usePurchases(userId?: string | null) {
 
       setPurchases(loadedPurchases);
     } catch (err) {
-      console.error('Exceção ao buscar compras do Supabase:', err);
+      console.warn('Exceção ao buscar compras do Supabase (mantendo cache local):', err);
     } finally {
       setLoading(false);
     }
@@ -298,7 +326,7 @@ export function usePurchases(userId?: string | null) {
           }
 
           if (pError) {
-            console.error('Erro ao inserir compra no Supabase:', pError);
+            console.warn('Aviso ao inserir compra no Supabase:', pError?.message || pError);
           } else {
             console.log(`Compra ${newPurchase.id} inserida com sucesso em purchases.`);
           }
@@ -388,7 +416,7 @@ export function usePurchases(userId?: string | null) {
             }
 
             if (insertItemsErr) {
-              console.error('Erro no bulk insert de purchase_items:', insertItemsErr);
+              console.warn('Aviso no bulk insert de purchase_items:', insertItemsErr?.message || insertItemsErr);
             } else {
               console.log(`Sucesso: ${dbItemsToInsert.length} itens copiados para purchase_items.`);
             }
@@ -400,7 +428,7 @@ export function usePurchases(userId?: string | null) {
             );
           }
         } catch (dbErr) {
-          console.error('Erro inesperado na criação de compra no Supabase:', dbErr);
+          console.warn('Aviso inesperado na sincronização de compra no Supabase:', dbErr);
         }
       })();
     }
@@ -453,7 +481,7 @@ export function usePurchases(userId?: string | null) {
 
     if (isSupabaseConfigured() && userId) {
       supabase.from('purchases').update({ name: trimmed }).eq('id', purchaseId).then(({ error }) => {
-        if (error) console.error('Erro ao atualizar nome da compra:', error);
+        if (error) console.warn('Aviso ao atualizar nome da compra:', error?.message || error);
       });
     }
   };
@@ -508,7 +536,7 @@ export function usePurchases(userId?: string | null) {
           created_at: new Date().toISOString(),
         })
         .then(({ error }) => {
-          if (error) console.error('Erro ao inserir item na compra:', error);
+          if (error) console.warn('Aviso ao inserir item na compra:', error?.message || error);
         });
     }
   };
@@ -545,7 +573,7 @@ export function usePurchases(userId?: string | null) {
       if (updatedData.pricingModeSource !== undefined) dbUpdate.pricing_mode_source = updatedData.pricingModeSource;
 
       supabase.from('purchase_items').update(dbUpdate).eq('id', itemId).then(({ error }) => {
-        if (error) console.error('Erro ao atualizar item:', error);
+        if (error) console.warn('Aviso ao atualizar item:', error?.message || error);
       });
     }
   };
@@ -569,7 +597,7 @@ export function usePurchases(userId?: string | null) {
 
     if (isSupabaseConfigured()) {
       supabase.from('purchase_items').delete().eq('id', itemId).then(({ error }) => {
-        if (error) console.error('Erro ao remover item:', error);
+        if (error) console.warn('Aviso ao remover item:', error?.message || error);
       });
     }
   };
@@ -605,7 +633,7 @@ export function usePurchases(userId?: string | null) {
         .update({ bought: newBoughtVal })
         .eq('id', itemId)
         .then(({ error }) => {
-          if (error) console.error('Erro ao alternar status do item:', error);
+          if (error) console.warn('Aviso ao alternar status do item:', error?.message || error);
         });
     }
   };
@@ -638,7 +666,7 @@ export function usePurchases(userId?: string | null) {
         })
         .eq('id', purchaseId)
         .then(({ error }) => {
-          if (error) console.error('Erro ao finalizar compra no Supabase:', error);
+          if (error) console.warn('Aviso ao finalizar compra no Supabase:', error?.message || error);
         });
     }
   };

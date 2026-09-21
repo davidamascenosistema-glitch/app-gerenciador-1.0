@@ -11,7 +11,6 @@ import {
   Clock,
   Trash2,
   Play,
-  Plus,
   X,
   Check,
   Sparkles
@@ -39,20 +38,6 @@ interface HomeScreenProps {
   initialToastMessage?: string;
 }
 
-// Catálogo base de itens frequentemente comprados em supermercados
-const DEFAULT_FREQUENT_ITEMS = [
-  { name: 'Leite Integral 1L', category: 'Bebidas' },
-  { name: 'Arroz Branco 5kg', category: 'Alimentos' },
-  { name: 'Feijão Carioca 1kg', category: 'Alimentos' },
-  { name: 'Café Tradicional 500g', category: 'Alimentos' },
-  { name: 'Pão Francês', category: 'Padaria' },
-  { name: 'Banana Prata', category: 'Hortifruti' },
-  { name: 'Ovos Brancos 12un', category: 'Alimentos' },
-  { name: 'Azeite de Oliva 500ml', category: 'Alimentos' },
-  { name: 'Detergente Neutro', category: 'Limpeza' },
-  { name: 'Sabonete Líquido', category: 'Higiene' },
-];
-
 export function HomeScreen({
   user,
   purchasesHook: externalPurchasesHook,
@@ -73,11 +58,10 @@ export function HomeScreen({
     getPendingPurchases, 
     getFinishedPurchases, 
     discardPurchase, 
-    createPurchase,
-    addItemToPurchase 
+    createPurchase 
   } = purchasesHook;
 
-  const { lists, createList, addItemToList } = listsHook;
+  const { lists, createList } = listsHook;
   const { showToast } = useToast();
 
   // Estados locais
@@ -139,39 +123,6 @@ export function HomeScreen({
 
     return { total, count, avg };
   }, [finishedPurchases, timeFilter]);
-
-  // Itens comprados com frequência: mescla os itens do histórico com os defaults
-  const frequentItems = useMemo(() => {
-    const counts = new Map<string, { name: string; category: string; count: number }>();
-
-    finishedPurchases.forEach((p) => {
-      (p.items || []).forEach((item) => {
-        if (!item.name || !item.name.trim()) return;
-        const key = item.name.trim().toLowerCase();
-        const existing = counts.get(key);
-        if (existing) {
-          existing.count += 1;
-        } else {
-          counts.set(key, {
-            name: item.name.trim(),
-            category: item.category || 'Geral',
-            count: 1,
-          });
-        }
-      });
-    });
-
-    const fromHistory = Array.from(counts.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-
-    const historyNames = new Set(fromHistory.map((item) => item.name.toLowerCase()));
-    const fallbacks = DEFAULT_FREQUENT_ITEMS.filter(
-      (item) => !historyNames.has(item.name.toLowerCase())
-    );
-
-    return [...fromHistory, ...fallbacks].slice(0, 10);
-  }, [finishedPurchases]);
 
   // Navegação para criar nova lista
   const handleCreateNewListTemplate = async () => {
@@ -255,52 +206,6 @@ export function HomeScreen({
     discardPurchase(pendingId);
     setPurchaseToDiscard(null);
     showToast(`Compra "${name}" descartada com sucesso.`);
-  };
-
-  // Ação ao clicar no "+" do item frequente
-  const handleAddFrequentItem = (item: { name: string; category: string }) => {
-    if (activePendingPurchase) {
-      // Se houver compra pendente, adiciona diretamente a ela
-      addItemToPurchase(activePendingPurchase.id, {
-        name: item.name,
-        category: item.category,
-        quantity: 1,
-        isWeighted: false,
-        bought: false,
-      });
-      showToast(`"${item.name}" adicionado à compra em andamento!`);
-    } else if (lists.length > 0) {
-      // Se houver listas, adiciona à lista principal/recente
-      addItemToList(lists[0].id, {
-        name: item.name,
-        category: item.category,
-        quantity: 1,
-        isWeighted: false,
-      });
-      showToast(`"${item.name}" adicionado à lista "${lists[0].name}"!`);
-    } else {
-      // Se não houver nada aberto, cria uma compra rápida ou lista
-      const newPurchase = createPurchase({
-        name: 'Compra Rápida',
-        status: 'pending',
-        origin: 'manual',
-        items: [
-          {
-            id: crypto.randomUUID(),
-            name: item.name,
-            category: item.category,
-            quantity: 1,
-            isWeighted: false,
-            bought: false,
-          },
-        ],
-      });
-      if (onNavigateToPurchase) {
-        onNavigateToPurchase(newPurchase.id);
-      } else {
-        showToast(`Compra criada com "${item.name}"!`);
-      }
-    }
   };
 
   const handleSendFeedback = (e: React.FormEvent) => {
@@ -579,47 +484,6 @@ export function HomeScreen({
             </div>
           </section>
         )}
-
-        {/* ========================================================================= */}
-        {/* 5. SEÇÃO "COMPRADOS COM FREQUÊNCIA" (SUGESTÕES)                           */}
-        {/* ========================================================================= */}
-        <section aria-label="Comprados com Frequência">
-          <h3 className="text-sm sm:text-base font-bold text-zinc-900 mb-2.5 tracking-tight">
-            Comprados com frequência
-          </h3>
-
-          <div 
-            className="overflow-x-auto flex gap-3 pb-2 pt-0.5 scroll-smooth"
-            style={{ scrollbarWidth: 'none' }}
-          >
-            {frequentItems.map((item, index) => (
-              <div
-                key={`${item.name}-${index}`}
-                className="w-24 min-w-[96px] p-2.5 rounded-2xl bg-white border border-zinc-200/90 shadow-2xs flex flex-col items-center text-center justify-between transition-all hover:border-emerald-300 hover:shadow-xs group shrink-0"
-              >
-                {/* Botão circular verde claro com ícone "+" grande no topo */}
-                <button
-                  type="button"
-                  onClick={() => handleAddFrequentItem(item)}
-                  aria-label={`Adicionar ${item.name}`}
-                  className="w-9 h-9 rounded-full bg-emerald-100 group-hover:bg-emerald-200 active:bg-emerald-300 text-emerald-700 flex items-center justify-center transition-colors cursor-pointer mb-1.5 shadow-2xs active:scale-95 shrink-0"
-                >
-                  <Plus className="w-4 h-4 stroke-[2.5]" />
-                </button>
-
-                {/* Nome do item abaixo (negrito) */}
-                <span className="text-[11px] font-bold text-zinc-900 leading-snug line-clamp-2 min-h-[28px] flex items-center justify-center">
-                  {item.name}
-                </span>
-
-                {/* Categoria (cinza e menor) */}
-                <span className="text-[10.5px] font-medium text-zinc-500 mt-1 truncate max-w-full block">
-                  {item.category}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
 
       </main>
 
