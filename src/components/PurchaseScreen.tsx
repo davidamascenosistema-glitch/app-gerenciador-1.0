@@ -45,6 +45,8 @@ import { EditItemModal } from './EditItemModal';
 import { VoiceActionButton } from './VoiceActionButton';
 import { AnimatedCurrency } from './AnimatedCurrency';
 import { MOTION_TOKENS, MOTION_VARIANTS, useMotionConfig } from '../styles/motionSystem';
+import { supabase } from '../services/supabaseClient';
+import { fireCelebrationConfetti } from './PurchaseCelebrationModal';
 import {
   calculateItemSubtotal,
   calculatePurchaseTotal,
@@ -630,6 +632,77 @@ export function PurchaseScreen({
   const totalItemsCount = purchase.items.length;
   const boughtItemsCount = purchase.items.filter((i) => i.bought).length;
   const comparisonInsight = calculateComparisonInsight(purchase, allPurchases);
+
+  const handleConcluirCompra = async () => {
+    if (!purchase.items || purchase.items.length === 0) {
+      alert('Adicione itens à lista!');
+      return;
+    }
+
+    try {
+     // 1. Inserir na tabela purchases e capturar o ID
+      const { data: purchaseData, error: purchaseError } = await supabase
+        .from('purchases')
+        .insert([
+          {
+            user_id: userId, // <- Esta é a linha que resolve o bloqueio
+            total_amount: totalValue,
+            status: 'concluida',
+          },
+        ])
+        .select()
+        .single();
+
+      if (purchaseError) {
+        throw purchaseError;
+      }
+
+      const newPurchaseId = purchaseData?.id;
+
+      // 2. Mapear e inserir itens na tabela purchase_items em lote
+      const itemsPayload = purchase.items.map((item) => ({
+        purchase_id: newPurchaseId,
+        name: item.name,
+        category: item.category || 'Geral',
+        quantity: item.quantity ?? 1,
+        weight: item.weight ?? null,
+        price: item.price ?? null,
+        is_weighted: Boolean(item.isWeighted),
+        bought: Boolean(item.bought),
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('purchase_items')
+        .insert(itemsPayload);
+
+      if (itemsError) {
+        throw itemsError;
+      }
+
+      console.log('Compra concluída e salva com sucesso no Supabase!', {
+        purchaseId: newPurchaseId,
+        total: totalValue,
+        itemsCount: itemsPayload.length,
+      });
+
+      // Disparar celebração
+      fireCelebrationConfetti();
+
+      // Limpar todos os itens da lista
+      if (onRemoveItem) {
+        [...purchase.items].forEach((item) => {
+          onRemoveItem(purchase.id, item.id);
+        });
+      }
+
+      if (onFinishPurchase) {
+        onFinishPurchase(purchase.id, purchase.name);
+      }
+    } catch (err: any) {
+      console.error('Erro ao concluir compra no Supabase:', err);
+      alert(`Erro ao concluir compra: ${err?.message || 'Falha na comunicação com o banco de dados.'}`);
+    }
+  };
 
   // Orçamento (Budget) da compra
   const numericBudget = purchase.budget != null && Number(purchase.budget) > 0 ? Number(purchase.budget) : undefined;
@@ -1402,10 +1475,7 @@ export function PurchaseScreen({
                 <motion.button
                   whileTap={motionConfig.tap.button}
                   transition={motionConfig.pressSpring}
-                  onClick={() => {
-                    setFinishNameInput('');
-                    setIsConfirmFinishOpen(true);
-                  }}
+                  onClick={handleConcluirCompra}
                   type="button"
                   className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-colors min-h-[48px] cursor-pointer"
                 >
