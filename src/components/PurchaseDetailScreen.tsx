@@ -1,15 +1,11 @@
 import { 
   ArrowLeft, 
   RotateCcw, 
-  Receipt, 
   Calendar, 
   CheckCircle2, 
   Package, 
   Download,
-  Share2,
-  FileText,
-  ClipboardList,
-  ShoppingCart
+  Share2
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useMotionConfig } from '../styles/motionSystem';
@@ -58,27 +54,6 @@ const getCategoryBadgeClass = (category: string) => {
   }
 };
 
-const ORIGIN_CONFIG: Record<
-  string,
-  { label: string; icon: typeof ShoppingCart | typeof ClipboardList | typeof Receipt | typeof FileText; style: string }
-> = {
-  list: {
-    label: 'Lista planejada',
-    icon: ClipboardList,
-    style: 'bg-blue-50 text-blue-700 border-blue-200/80',
-  },
-  manual: {
-    label: 'Registro manual',
-    icon: Receipt,
-    style: 'bg-amber-50 text-amber-800 border-amber-200/80',
-  },
-  invoice: {
-    label: 'Nota fiscal',
-    icon: FileText,
-    style: 'bg-purple-50 text-purple-700 border-purple-200/80',
-  },
-};
-
 export function PurchaseDetailScreen({
   purchase,
   onBack,
@@ -90,8 +65,6 @@ export function PurchaseDetailScreen({
   const items = purchase.items || [];
   const totalItemsCount = items.length;
   const formattedDate = formatDateBRL(purchase.finishedAt || purchase.createdAt);
-  const originInfo = ORIGIN_CONFIG[purchase.origin] || ORIGIN_CONFIG.manual;
-  const OriginIcon = originInfo.icon;
 
   const handleExport = () => {
     if (items.length === 0) {
@@ -208,12 +181,6 @@ export function PurchaseDetailScreen({
               <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200">
                 <CheckCircle2 className="w-3 h-3" />
                 <span>Finalizada</span>
-              </span>
-
-              {/* Badge de Origem */}
-              <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${originInfo.style}`}>
-                <OriginIcon className="w-3 h-3" />
-                <span>{originInfo.label}</span>
               </span>
             </div>
 

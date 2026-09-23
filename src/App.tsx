@@ -131,16 +131,6 @@ function MainApp() {
     setActivePurchaseId(newPurchase.id);
   };
 
-  const handleRegisterManual = () => {
-    const newPurchase = purchasesHook.createPurchase({
-      name: 'Registro de compra',
-      status: 'pending',
-      origin: 'manual',
-      items: [],
-    });
-    setActivePurchaseId(newPurchase.id);
-  };
-
   const handleStartRepeatPurchase = () => {
     setActiveScreen('history_select');
   };
@@ -305,7 +295,7 @@ function MainApp() {
           const newPurchase = purchasesHook.createPurchase({
             name: params.name || 'Nova Compra',
             status: 'pending',
-            origin: params.fromListId ? 'list' : 'manual',
+            origin: 'list',
             budget: params.budget,
             storeName: params.storeName,
             fromListId: params.fromListId,
@@ -338,7 +328,6 @@ function MainApp() {
         onSelectPurchase={(purchase) => setSelectedDetailPurchaseId(purchase.id)}
         onNavigateToProfile={() => setActiveScreen('profile')}
         onCreateNewList={handleCreateNewList}
-        onRegisterManual={handleRegisterManual}
         onRepeatPurchase={handleStartRepeatPurchase}
       />
     );
@@ -352,7 +341,6 @@ function MainApp() {
         onNavigateToHome={() => setActiveScreen('home')}
         onNavigateToHistory={() => setActiveScreen('history')}
         onCreateNewList={handleCreateNewList}
-        onRegisterManual={handleRegisterManual}
         onRepeatPurchase={handleStartRepeatPurchase}
       />
     );

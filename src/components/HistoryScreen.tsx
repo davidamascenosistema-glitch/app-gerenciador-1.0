@@ -1,9 +1,6 @@
 import { 
   ArrowLeft, 
-  Receipt, 
   ShoppingCart, 
-  ClipboardList, 
-  FileText, 
   Calendar, 
   ChevronRight, 
   ShoppingBag,
@@ -23,34 +20,8 @@ interface HistoryScreenProps {
   onNavigateToHome?: () => void;
   onNavigateToProfile?: () => void;
   onCreateNewList?: () => void;
-  onRegisterManual?: () => void;
   onRepeatPurchase?: () => void;
 }
-
-// Origin badge configuration corresponding to HomeScreen intent options
-const ORIGIN_CONFIG: Record<
-  string,
-  { label: string; icon: typeof ShoppingCart | typeof ClipboardList | typeof Receipt | typeof FileText; style: string; iconBg: string }
-> = {
-  list: {
-    label: 'Planejada',
-    icon: ClipboardList,
-    style: 'bg-blue-50 text-blue-700 border-blue-200/80',
-    iconBg: 'bg-blue-100 text-blue-700',
-  },
-  manual: {
-    label: 'Registro manual',
-    icon: Receipt,
-    style: 'bg-amber-50 text-amber-800 border-amber-200/80',
-    iconBg: 'bg-amber-100 text-amber-800',
-  },
-  invoice: {
-    label: 'Nota fiscal',
-    icon: FileText,
-    style: 'bg-purple-50 text-purple-700 border-purple-200/80',
-    iconBg: 'bg-purple-100 text-purple-700',
-  },
-};
 
 export function HistoryScreen({
   finishedPurchases,
@@ -60,7 +31,6 @@ export function HistoryScreen({
   onNavigateToHome,
   onNavigateToProfile,
   onCreateNewList,
-  onRegisterManual,
   onRepeatPurchase,
 }: HistoryScreenProps) {
   const motionConfig = useMotionConfig();
@@ -106,8 +76,8 @@ export function HistoryScreen({
               Cancelar
             </button>
           ) : (
-            <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/80 text-xs font-semibold text-purple-800 shrink-0 ml-2">
-              <Receipt className="w-3.5 h-3.5 text-purple-600" />
+            <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-xs font-semibold text-emerald-800 shrink-0 ml-2">
+              <ShoppingCart className="w-3.5 h-3.5 text-emerald-600" />
               <span>{formatCurrencyBRL(totalSpentAllTime)}</span>
             </div>
           )}
@@ -165,9 +135,6 @@ export function HistoryScreen({
             </div>
 
             {finishedPurchases.map((purchase) => {
-              const originInfo =
-                ORIGIN_CONFIG[purchase.origin] || ORIGIN_CONFIG.manual;
-              const OriginIcon = originInfo.icon;
               const total = calculatePurchaseTotal(purchase);
               const formattedDate = formatDateBRL(
                 purchase.finishedAt || purchase.createdAt
@@ -191,13 +158,13 @@ export function HistoryScreen({
                       {/* Icon */}
                       <div
                         className={`w-10 h-10 rounded-xl ${
-                          selectionMode ? 'bg-blue-100 text-blue-700' : originInfo.iconBg
+                          selectionMode ? 'bg-blue-100 text-blue-700' : 'bg-emerald-50 text-emerald-700'
                         } flex items-center justify-center shrink-0 mt-0.5`}
                       >
                         {selectionMode ? (
                           <RotateCcw className="w-5 h-5" />
                         ) : (
-                          <OriginIcon className="w-5 h-5" />
+                          <ShoppingCart className="w-5 h-5" />
                         )}
                       </div>
 
@@ -206,16 +173,10 @@ export function HistoryScreen({
                           <h3 className="text-sm font-bold text-zinc-900 line-clamp-2 break-words leading-snug">
                             {purchase.name || 'Compra Finalizada'}
                           </h3>
-                          {/* Badge de Origem ou de Repetição */}
-                          {selectionMode ? (
+                          {/* Badge apenas em modo repetição */}
+                          {selectionMode && (
                             <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border bg-blue-50 text-blue-700 border-blue-200/80">
                               <span>Toque para repetir</span>
-                            </span>
-                          ) : (
-                            <span
-                              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${originInfo.style}`}
-                            >
-                              <span>{originInfo.label}</span>
                             </span>
                           )}
                         </div>

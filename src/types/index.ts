@@ -25,7 +25,7 @@ export interface Purchase {
   id: string;
   name?: string;
   status: 'pending' | 'finished';
-  origin: 'list' | 'invoice' | 'manual';
+  origin?: 'list';
   createdAt: string;
   finishedAt?: string;
   items: Item[];
@@ -58,7 +58,7 @@ export interface CreatePurchaseParams {
   id?: string;
   name?: string;
   status?: 'pending' | 'finished';
-  origin?: 'list' | 'invoice' | 'manual';
+  origin?: 'list';
   createdAt?: string;
   finishedAt?: string;
   items?: Item[];

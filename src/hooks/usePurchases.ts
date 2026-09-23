@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Item, Purchase } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { calculatePurchaseTotal } from '../utils/purchaseHelpers';
 
 const STORAGE_KEY_PURCHASES = 'lista_e_compra_purchases_cache';
 
@@ -58,13 +59,18 @@ export function usePurchases(userId?: string | null) {
    * Converte a compra da tabela purchases do Supabase para a interface TypeScript Purchase
    */
   const mapDbPurchaseToAppPurchase = (dbPurchase: any, dbItems: any[] = []): Purchase => {
+    const rawStatus = String(dbPurchase.status || '').toLowerCase().trim();
+    const status: 'pending' | 'finished' =
+      rawStatus === 'finished' || rawStatus === 'concluida' ? 'finished' : 'pending';
+    const finishedAt = dbPurchase.finished_at || dbPurchase.completed_at || dbPurchase.finishedAt || undefined;
+
     return {
       id: String(dbPurchase.id),
       name: dbPurchase.name || 'Nova Compra',
-      status: (dbPurchase.status as 'pending' | 'finished') || 'pending',
-      origin: (dbPurchase.origin as 'list' | 'invoice' | 'manual') || 'list',
+      status,
+      origin: 'list',
       createdAt: dbPurchase.created_at || dbPurchase.createdAt || new Date().toISOString(),
-      finishedAt: dbPurchase.finished_at || dbPurchase.finishedAt || undefined,
+      finishedAt,
       budget: dbPurchase.budget != null ? Number(dbPurchase.budget) : undefined,
       storeName: dbPurchase.store_name ?? dbPurchase.storeName ?? undefined,
       fromListId: dbPurchase.from_list_id ?? dbPurchase.fromListId ?? undefined,
@@ -107,6 +113,15 @@ export function usePurchases(userId?: string | null) {
         .in('purchase_id', purchaseIds)
         .order('created_at', { ascending: true });
 
+      console.log('DEBUG FETCH PURCHASES - RAW DATA:', {
+        userId,
+        purchasesDataCount: purchasesData.length,
+        purchaseIds,
+        itemsDataCount: itemsData ? itemsData.length : 0,
+        itemsError,
+        itemsData,
+      });
+
       if (itemsError) {
         console.warn('Aviso ao carregar itens de compras do Supabase:', itemsError?.message || itemsError);
       }
@@ -121,10 +136,21 @@ export function usePurchases(userId?: string | null) {
         });
       }
 
+      console.log('DEBUG FETCH PURCHASES - GROUPED MAP:', {
+        itemsByPurchaseIdEntries: Array.from(itemsByPurchaseId.entries()),
+      });
+
       // 3. Monta a lista completa de compras
-      const loadedPurchases: Purchase[] = purchasesData.map((p) =>
-        mapDbPurchaseToAppPurchase(p, itemsByPurchaseId.get(String(p.id)) || [])
-      );
+      const loadedPurchases: Purchase[] = purchasesData.map((p) => {
+        const pIdStr = String(p.id);
+        const matchedItems = itemsByPurchaseId.get(pIdStr) || [];
+        console.log(`DEBUG PURCHASE [${pIdStr}] (${p.name}):`, {
+          purchaseId: p.id,
+          matchedItemsCount: matchedItems.length,
+          matchedItems,
+        });
+        return mapDbPurchaseToAppPurchase(p, matchedItems);
+      });
 
       setPurchases(loadedPurchases);
     } catch (err) {
@@ -149,7 +175,6 @@ export function usePurchases(userId?: string | null) {
       .filter(
         (p) =>
           p.status === 'pending' &&
-          p.origin === 'list' &&
           p.items &&
           p.items.length > 0
       )
@@ -191,7 +216,7 @@ export function usePurchases(userId?: string | null) {
         return prev.filter((p) => p.id !== purchaseId);
       }
       return prev.filter(
-        (p) => !(p.status === 'pending' && p.origin === 'list')
+        (p) => p.status !== 'pending'
       );
     });
 
@@ -206,7 +231,6 @@ export function usePurchases(userId?: string | null) {
           .select('id')
           .eq('user_id', userId)
           .eq('status', 'pending')
-          .eq('origin', 'list')
           .then(({ data }) => {
             if (data && data.length > 0) {
               const ids = data.map((p) => p.id);
@@ -265,7 +289,7 @@ export function usePurchases(userId?: string | null) {
   const createPurchase = (
     purchaseData: Omit<Purchase, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
   ): Purchase => {
-    const origin = purchaseData.origin || (purchaseData.fromListId ? 'list' : 'manual');
+    const origin = 'list';
     const newPurchaseId = purchaseData.id || crypto.randomUUID();
     const createdAt = purchaseData.createdAt || new Date().toISOString();
 
@@ -317,6 +341,22 @@ export function usePurchases(userId?: string | null) {
           // 1. Insere a compra na tabela purchases
           let { error: pError } = await supabase.from('purchases').insert(purchasePayload);
 
+          // Se falhou por colunas ausentes (PGRST204 ou 42703), retenta com payload mínimo
+          if (pError && (pError.code === 'PGRST204' || pError.code === '42703')) {
+            console.warn('Retentando inserir compra com payload reduzido...');
+            const minimalPayload: any = {
+              id: newPurchase.id,
+              user_id: userId,
+            };
+            const { error: minError } = await supabase.from('purchases').insert(minimalPayload);
+            pError = minError;
+
+            if (pError && (pError.code === 'PGRST204' || pError.code === '42703')) {
+              const { error: ultraMinError } = await supabase.from('purchases').insert({ id: newPurchase.id });
+              pError = ultraMinError;
+            }
+          }
+
           // Se falhou por Foreign Key (ex: from_list_id não existe na tabela lists), retenta sem from_list_id
           if (pError && pError.code === '23503' && purchasePayload.from_list_id) {
             console.warn('Foreign key falhou para from_list_id, retentando sem o vínculo:', pError);
@@ -326,7 +366,9 @@ export function usePurchases(userId?: string | null) {
           }
 
           if (pError) {
+            console.error('DEBUG SUPABASE PURCHASE ERROR:', pError);
             console.warn('Aviso ao inserir compra no Supabase:', pError?.message || pError);
+            return;
           } else {
             console.log(`Compra ${newPurchase.id} inserida com sucesso em purchases.`);
           }
@@ -390,7 +432,6 @@ export function usePurchases(userId?: string | null) {
                 weight: weight,
                 is_weighted: isWeighted,
                 price: null,
-                brand: null,
                 bought: false,
                 created_at: new Date().toISOString(),
               };
@@ -407,15 +448,16 @@ export function usePurchases(userId?: string | null) {
               .from('purchase_items')
               .insert(dbItemsToInsert);
 
-            // Se a tabela purchase_items não tiver a coluna 'brand' ou 'pricing_mode_source' (erro 42703), retenta removendo-as
-            if (insertItemsErr && insertItemsErr.code === '42703') {
-              console.warn('Retentando bulk insert em purchase_items sem colunas estendidas opcionais...');
-              const fallbackRows = dbItemsToInsert.map(({ brand, pricing_mode_source, ...safeCols }) => safeCols);
+            // Se a tabela purchase_items não tiver a coluna 'pricing_mode_source' (erro PGRST204 ou 42703), retenta removendo-a
+            if (insertItemsErr && (insertItemsErr.code === 'PGRST204' || insertItemsErr.code === '42703')) {
+              console.warn('Retentando bulk insert em purchase_items sem pricing_mode_source...');
+              const fallbackRows = dbItemsToInsert.map(({ pricing_mode_source, ...safeCols }) => safeCols);
               const { error: retryItemsErr } = await supabase.from('purchase_items').insert(fallbackRows);
               insertItemsErr = retryItemsErr;
             }
 
             if (insertItemsErr) {
+              console.error('DEBUG SUPABASE BULK:', insertItemsErr);
               console.warn('Aviso no bulk insert de purchase_items:', insertItemsErr?.message || insertItemsErr);
             } else {
               console.log(`Sucesso: ${dbItemsToInsert.length} itens copiados para purchase_items.`);
@@ -519,24 +561,36 @@ export function usePurchases(userId?: string | null) {
     );
 
     if (isSupabaseConfigured() && userId) {
+      const payload: any = {
+        id: newItemId,
+        purchase_id: purchaseId,
+        user_id: userId,
+        name: itemData.name,
+        category: itemData.category || 'Geral',
+        quantity: itemData.quantity || 1,
+        weight: itemData.weight != null ? itemData.weight : null,
+        is_weighted: Boolean(itemData.isWeighted),
+        price: itemData.price != null ? itemData.price : null,
+        bought: defaultBought,
+        pricing_mode_source: itemData.pricingModeSource ?? null,
+        created_at: new Date().toISOString(),
+      };
+
       supabase
         .from('purchase_items')
-        .insert({
-          id: newItemId,
-          purchase_id: purchaseId,
-          user_id: userId,
-          name: itemData.name,
-          category: itemData.category || 'Geral',
-          quantity: itemData.quantity || 1,
-          weight: itemData.weight != null ? itemData.weight : null,
-          is_weighted: Boolean(itemData.isWeighted),
-          price: itemData.price != null ? itemData.price : null,
-          bought: defaultBought,
-          pricing_mode_source: itemData.pricingModeSource ?? null,
-          created_at: new Date().toISOString(),
-        })
-        .then(({ error }) => {
-          if (error) console.warn('Aviso ao inserir item na compra:', error?.message || error);
+        .insert(payload)
+        .then(async ({ error }) => {
+          if (error && (error.code === 'PGRST204' || error.code === '42703')) {
+            const { pricing_mode_source, ...safePayload } = payload;
+            const { error: retryErr } = await supabase.from('purchase_items').insert(safePayload);
+            if (retryErr) {
+              console.error('DEBUG SUPABASE:', retryErr);
+              console.warn('Aviso ao inserir item na compra:', retryErr?.message || retryErr);
+            }
+          } else if (error) {
+            console.error('DEBUG SUPABASE:', error);
+            console.warn('Aviso ao inserir item na compra:', error?.message || error);
+          }
         });
     }
   };
@@ -572,8 +626,16 @@ export function usePurchases(userId?: string | null) {
       if (updatedData.bought !== undefined) dbUpdate.bought = Boolean(updatedData.bought);
       if (updatedData.pricingModeSource !== undefined) dbUpdate.pricing_mode_source = updatedData.pricingModeSource;
 
-      supabase.from('purchase_items').update(dbUpdate).eq('id', itemId).then(({ error }) => {
-        if (error) console.warn('Aviso ao atualizar item:', error?.message || error);
+      supabase.from('purchase_items').update(dbUpdate).eq('id', itemId).then(async ({ error }) => {
+        if (error && (error.code === 'PGRST204' || error.code === '42703')) {
+          const { pricing_mode_source, ...safeUpdate } = dbUpdate;
+          const { error: retryErr } = await supabase.from('purchase_items').update(safeUpdate).eq('id', itemId);
+          if (retryErr) {
+            console.warn('Aviso ao atualizar item (retry):', retryErr?.message || retryErr);
+          }
+        } else if (error) {
+          console.warn('Aviso ao atualizar item:', error?.message || error);
+        }
       });
     }
   };
@@ -639,34 +701,89 @@ export function usePurchases(userId?: string | null) {
   };
 
   /**
-   * Finaliza uma compra: altera status para 'finished', registra a data de finalização (finishedAt),
-   * e persiste na tabela purchases.
+   * Finaliza uma compra: altera status para 'finished', registra a data de finalização (finished_at/completed_at),
+   * grava total_amount e persiste exclusivamente via UPDATE no purchaseId original existente (NUNCA INSERT).
    */
   const finishPurchase = (purchaseId: string): void => {
     const finishedAt = new Date().toISOString();
+    let calculatedTotal = 0;
 
     setPurchases((prev) =>
       prev.map((p) => {
         if (p.id !== purchaseId) return p;
-        if (p.status === 'finished') return p;
-        return {
+        if (p.status === 'finished') {
+          calculatedTotal = calculatePurchaseTotal(p);
+          return p;
+        }
+        const updated = {
           ...p,
-          status: 'finished',
+          status: 'finished' as const,
           finishedAt: p.finishedAt || finishedAt,
         };
+        calculatedTotal = calculatePurchaseTotal(updated);
+        return updated;
       })
     );
 
     if (isSupabaseConfigured()) {
+      // 1. Prepara payload estritamente com UPDATE no ID da compra existente
+      // Status unificado estritamente como 'finished' (sem 'concluida')
+      const updatePayload: any = {
+        status: 'finished',
+        finished_at: finishedAt,
+        total_amount: calculatedTotal,
+      };
+
+      // Realiza estritamente um UPDATE na linha existente através do purchaseId original (NUNCA INSERT)
       supabase
         .from('purchases')
-        .update({
-          status: 'finished',
-          finished_at: finishedAt,
-        })
+        .update(updatePayload)
         .eq('id', purchaseId)
-        .then(({ error }) => {
-          if (error) console.warn('Aviso ao finalizar compra no Supabase:', error?.message || error);
+        .then(async ({ error }) => {
+          if (error) {
+            console.warn('Tentativa com finished_at/total_amount retornou erro, tentando com completed_at ou payload alternativo:', error?.message || error);
+
+            // Tenta com completed_at caso o banco utilize completed_at em vez de finished_at
+            const { error: errCompletedAt } = await supabase
+              .from('purchases')
+              .update({
+                status: 'finished',
+                completed_at: finishedAt,
+                total_amount: calculatedTotal,
+              })
+              .eq('id', purchaseId);
+
+            if (errCompletedAt) {
+              // Tenta apenas com finished_at sem total_amount (se total_amount não existir)
+              const { error: errNoTotal } = await supabase
+                .from('purchases')
+                .update({
+                  status: 'finished',
+                  finished_at: finishedAt,
+                })
+                .eq('id', purchaseId);
+
+              if (errNoTotal) {
+                // Último fallback: apenas status 'finished'
+                const { error: errOnlyStatus } = await supabase
+                  .from('purchases')
+                  .update({ status: 'finished' })
+                  .eq('id', purchaseId);
+
+                if (errOnlyStatus) {
+                  console.error('DEBUG SUPABASE FINISH PURCHASE ERROR:', errOnlyStatus);
+                } else {
+                  console.log(`Compra ${purchaseId} finalizada com sucesso (apenas status 'finished').`);
+                }
+              } else {
+                console.log(`Compra ${purchaseId} finalizada com sucesso (status: 'finished', finished_at).`);
+              }
+            } else {
+              console.log(`Compra ${purchaseId} finalizada com sucesso (status: 'finished', completed_at, total_amount: ${calculatedTotal}).`);
+            }
+          } else {
+            console.log(`Compra ${purchaseId} finalizada com sucesso (UPDATE no ID existente, status: 'finished', total_amount: ${calculatedTotal}).`);
+          }
         });
     }
   };

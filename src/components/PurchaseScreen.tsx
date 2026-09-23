@@ -14,19 +14,13 @@ import {
   DollarSign,
   Package,
   Layers,
-  FileText,
   AlertTriangle,
   TrendingUp,
   TrendingDown,
   Minus,
   Download,
-  Camera,
   RotateCcw,
-  Upload,
-  Receipt,
   Loader2,
-  CheckSquare,
-  Square,
   MoreVertical,
   Share2,
   Filter,
@@ -34,7 +28,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Item, Purchase, ItemSuggestion, PricingModeDefault } from '../types';
-import { parseReceiptImage, ExtractedReceiptItem } from '../services/geminiService';
 import { parseVoiceCommand } from '../services/gemini';
 import { normalizeText } from '../services/suggestionsService';
 import { useItemSuggestions } from '../hooks/useItemSuggestions';
@@ -45,7 +38,6 @@ import { EditItemModal } from './EditItemModal';
 import { VoiceActionButton } from './VoiceActionButton';
 import { AnimatedCurrency } from './AnimatedCurrency';
 import { MOTION_TOKENS, MOTION_VARIANTS, useMotionConfig } from '../styles/motionSystem';
-import { supabase } from '../services/supabaseClient';
 import { fireCelebrationConfetti } from './PurchaseCelebrationModal';
 import {
   calculateItemSubtotal,
@@ -147,7 +139,6 @@ export function PurchaseScreen({
   }, [purchase?.name, purchase?.id]);
 
   // Modais de descarte
-  const [isDiscardManualModalOpen, setIsDiscardManualModalOpen] = useState(false);
   const [isDiscardModalOpen, setIsDiscardModalOpen] = useState(false);
 
   // Finish purchase modal states
@@ -213,11 +204,6 @@ export function PurchaseScreen({
     }
   };
 
-  // Receipt Photo & Mode State
-  const [receiptImage, setReceiptImage] = useState<string | null>(null);
-  const [registrationMode, setRegistrationMode] = useState<'choose' | 'manual' | 'photo'>('manual');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   // Category Multi-Selection Filter State
   const [activeCategoryFilters, setActiveCategoryFilters] = useState<string[]>([]);
 
@@ -234,12 +220,6 @@ export function PurchaseScreen({
       prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
     );
   };
-
-  // Receipt AI Analysis State
-  const [isAnalyzingReceipt, setIsAnalyzingReceipt] = useState(false);
-  const [extractedItems, setExtractedItems] = useState<ExtractedReceiptItem[]>([]);
-  const [receiptError, setReceiptError] = useState<string | null>(null);
-  const [isReviewingReceipt, setIsReviewingReceipt] = useState(false);
 
   // Header 3-dots Menu State
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -339,135 +319,6 @@ export function PurchaseScreen({
     }
   };
 
-  const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setReceiptImage(reader.result as string);
-        setReceiptError(null);
-        showFeedbackToast('Foto da nota fiscal capturada com sucesso!');
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleTriggerCamera = () => {
-    setReceiptError(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-      fileInputRef.current.click();
-    }
-  };
-
-  const handleAnalyzeReceipt = async () => {
-    if (!receiptImage) return;
-
-    setIsAnalyzingReceipt(true);
-    setReceiptError(null);
-
-    try {
-      const items = await parseReceiptImage(receiptImage);
-      if (items.length === 0) {
-        setReceiptError(
-          'Não foi possível identificar nenhum item na foto. A nota fiscal pode estar borrada, pouco iluminada ou ilegível.'
-        );
-      } else {
-        setExtractedItems(items);
-        setIsReviewingReceipt(true);
-      }
-    } catch (err: any) {
-      console.error('Erro na análise da nota:', err);
-      setReceiptError(
-        err.message || 'Ocorreu uma falha ao tentar ler a nota fiscal. Tente tirar outra foto ou prossiga manualmente.'
-      );
-    } finally {
-      setIsAnalyzingReceipt(false);
-    }
-  };
-
-  const handleToggleExtractedItem = (id: string) => {
-    setExtractedItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, selected: !item.selected } : item))
-    );
-  };
-
-  const handleToggleAllExtractedItems = (selectAll: boolean) => {
-    setExtractedItems((prev) => prev.map((item) => ({ ...item, selected: selectAll })));
-  };
-
-  const handleUpdateExtractedItemName = (id: string, newName: string) => {
-    setExtractedItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, name: newName } : item))
-    );
-  };
-
-  const handleUpdateExtractedItemQuantity = (id: string, delta: number) => {
-    setExtractedItems((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          const newQty = Math.max(1, item.quantity + delta);
-          return { ...item, quantity: newQty };
-        }
-        return item;
-      })
-    );
-  };
-
-  const handleUpdateExtractedItemPrice = (id: string, newPrice: number) => {
-    setExtractedItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, price: Math.max(0, newPrice) } : item))
-    );
-  };
-
-  const handleRemoveExtractedItem = (id: string) => {
-    setExtractedItems((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const handleAddManualExtractedItem = () => {
-    const newItem: ExtractedReceiptItem = {
-      id: `extracted-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      name: '',
-      quantity: 1,
-      price: 0,
-      selected: true,
-    };
-    setExtractedItems((prev) => [...prev, newItem]);
-  };
-
-  const handleConfirmExtractedItems = () => {
-    const selectedItems = extractedItems.filter(
-      (item) => item.selected && item.name.trim().length > 0
-    );
-
-    if (selectedItems.length === 0) {
-      showFeedbackToast('Marque pelo menos 1 item válido para adicionar.');
-      return;
-    }
-
-    selectedItems.forEach((item) => {
-      onAddItem(purchase.id, {
-        name: item.name.trim(),
-        category: 'Geral',
-        quantity: item.quantity,
-        price: item.price,
-        isWeighted: false,
-        bought: true,
-      });
-    });
-
-    showFeedbackToast(`${selectedItems.length} item(ns) importado(s) da nota fiscal com sucesso!`);
-    setIsReviewingReceipt(false);
-    setExtractedItems([]);
-    setReceiptImage(null);
-    setRegistrationMode('manual');
-  };
-
-  const handleCancelReceiptReview = () => {
-    setIsReviewingReceipt(false);
-    setExtractedItems([]);
-  };
-
   // Save Title Handle
   const handleSaveTitle = () => {
     const trimmed = titleValue.trim();
@@ -513,7 +364,7 @@ export function PurchaseScreen({
       pricingModeSource,
       quantity: 1,
       price: undefined,
-      bought: purchase.origin === 'manual' ? true : false,
+      bought: false,
     });
     showFeedbackToast(`"${name}" adicionado à lista`);
   };
@@ -538,7 +389,7 @@ export function PurchaseScreen({
     parsed.forEach((item) => {
       onAddItem(purchase.id, {
         ...item,
-        bought: purchase.origin === 'manual' ? true : false,
+        bought: false,
       });
     });
 
@@ -578,7 +429,7 @@ export function PurchaseScreen({
       quantity: 1,
       isWeighted,
       pricingModeSource,
-      bought: purchase.origin === 'manual' ? true : false,
+      bought: false,
     });
     showFeedbackToast(`"${suggestion.name}" adicionado à lista`);
   };
@@ -633,74 +484,23 @@ export function PurchaseScreen({
   const boughtItemsCount = purchase.items.filter((i) => i.bought).length;
   const comparisonInsight = calculateComparisonInsight(purchase, allPurchases);
 
-  const handleConcluirCompra = async () => {
+  const handleConcluirCompra = () => {
     if (!purchase.items || purchase.items.length === 0) {
-      alert('Adicione itens à lista!');
+      showToast('Adicione itens à lista antes de finalizar!');
       return;
     }
 
-    try {
-     // 1. Inserir na tabela purchases e capturar o ID
-      const { data: purchaseData, error: purchaseError } = await supabase
-        .from('purchases')
-        .insert([
-          {
-            user_id: userId, // <- Esta é a linha que resolve o bloqueio
-            total_amount: totalValue,
-            status: 'concluida',
-          },
-        ])
-        .select()
-        .single();
+    const trimmed = titleValue.trim();
+    if (trimmed && onUpdateName && trimmed !== purchase.name) {
+      onUpdateName(purchase.id, trimmed);
+    }
 
-      if (purchaseError) {
-        throw purchaseError;
-      }
+    // Disparar animação de celebração
+    fireCelebrationConfetti();
 
-      const newPurchaseId = purchaseData?.id;
-
-      // 2. Mapear e inserir itens na tabela purchase_items em lote
-      const itemsPayload = purchase.items.map((item) => ({
-        purchase_id: newPurchaseId,
-        name: item.name,
-        category: item.category || 'Geral',
-        quantity: item.quantity ?? 1,
-        weight: item.weight ?? null,
-        price: item.price ?? null,
-        is_weighted: Boolean(item.isWeighted),
-        bought: Boolean(item.bought),
-      }));
-
-      const { error: itemsError } = await supabase
-        .from('purchase_items')
-        .insert(itemsPayload);
-
-      if (itemsError) {
-        throw itemsError;
-      }
-
-      console.log('Compra concluída e salva com sucesso no Supabase!', {
-        purchaseId: newPurchaseId,
-        total: totalValue,
-        itemsCount: itemsPayload.length,
-      });
-
-      // Disparar celebração
-      fireCelebrationConfetti();
-
-      // Limpar todos os itens da lista
-      if (onRemoveItem) {
-        [...purchase.items].forEach((item) => {
-          onRemoveItem(purchase.id, item.id);
-        });
-      }
-
-      if (onFinishPurchase) {
-        onFinishPurchase(purchase.id, purchase.name);
-      }
-    } catch (err: any) {
-      console.error('Erro ao concluir compra no Supabase:', err);
-      alert(`Erro ao concluir compra: ${err?.message || 'Falha na comunicação com o banco de dados.'}`);
+    // Finalizar a compra chamando o hook que faz UPDATE no registro existente (NUNCA INSERT)
+    if (onFinishPurchase) {
+      onFinishPurchase(purchase.id, trimmed || purchase.name);
     }
   };
 
@@ -828,7 +628,7 @@ export function PurchaseScreen({
                           className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
                         >
                           <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
-                          <span>{purchase.origin === 'manual' ? 'Descartar registro' : 'Descartar lista'}</span>
+                          <span>Descartar lista</span>
                         </button>
                       </motion.div>
                     </>
@@ -1133,12 +933,10 @@ export function PurchaseScreen({
                 </div>
 
                 <h3 className="text-base sm:text-lg font-extrabold text-zinc-900 text-center tracking-tight">
-                  {purchase.origin === 'manual' ? 'Confirmar Registro?' : 'Finalizar Compra?'}
+                  Finalizar Compra?
                 </h3>
                 <p className="text-[11px] sm:text-xs text-zinc-500 text-center mt-0.5">
-                  {purchase.origin === 'manual'
-                    ? 'Confira os dados antes de salvar o registro no histórico:'
-                    : 'Confira os dados antes de concluir e arquivar esta compra:'}
+                  Confira os dados antes de concluir e arquivar esta compra:
                 </p>
 
                 {/* Resumo financeiro e contagem */}
@@ -1166,8 +964,8 @@ export function PurchaseScreen({
                   )}
                 </div>
 
-                {/* Aviso se houver itens não comprados (Apenas para compras normais/não manuais) */}
-                {purchase.origin !== 'manual' && totalItemsCount - boughtItemsCount > 0 && (
+                {/* Aviso se houver itens não comprados */}
+                {totalItemsCount - boughtItemsCount > 0 && (
                   <div className="mt-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-900 text-xs leading-relaxed flex items-start space-x-2">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <div>
@@ -1220,7 +1018,7 @@ export function PurchaseScreen({
                     onClick={handleConfirmFinish}
                     className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md shadow-emerald-700/20 transition-colors min-h-[44px] cursor-pointer"
                   >
-                    {purchase.origin === 'manual' ? 'Confirmar Registro' : 'Confirmar e Finalizar'}
+                    Confirmar e Finalizar
                   </motion.button>
                 </div>
               </div>
@@ -1229,88 +1027,7 @@ export function PurchaseScreen({
         )}
       </AnimatePresence>
 
-
-
-      {/* Modal Customizado para Registrar Compra Já Feita (ao clicar em Voltar com 1+ itens) */}
-      <AnimatePresence>
-        {isDiscardManualModalOpen && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setIsDiscardManualModalOpen(false);
-            }}
-          >
-            <motion.div
-              {...MOTION_VARIANTS.modalContent}
-              className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-zinc-200 overflow-hidden relative"
-            >
-              {/* Botão Fechar (X) no canto superior direito: apenas fecha o modal e continua no registro */}
-              <button
-                type="button"
-                onClick={() => setIsDiscardManualModalOpen(false)}
-                aria-label="Fechar e continuar com o registro"
-                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <div className="p-5 pt-6">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3 mx-auto bg-amber-100 border border-amber-200 text-amber-700">
-                  <AlertTriangle className="w-6 h-6" />
-                </div>
-
-                <h3 className="text-lg font-bold text-zinc-900 text-center tracking-tight">
-                  Descartar registro?
-                </h3>
-                <p className="text-xs text-zinc-500 text-center mt-1.5 leading-relaxed">
-                  Você já adicionou {totalItemsCount} {totalItemsCount === 1 ? 'item' : 'itens'}. Deseja descartar este registro ou continuar registrando a compra?
-                </p>
-
-                <div className="mt-4 bg-zinc-50 border border-zinc-200/80 rounded-xl p-3 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between text-zinc-600">
-                    <span>Itens no registro:</span>
-                    <span className="font-bold text-zinc-800">{totalItemsCount}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-zinc-600">
-                    <span>Valor total registrado:</span>
-                    <span className="font-bold text-zinc-800">{formatCurrencyBRL(totalValue)}</span>
-                  </div>
-                </div>
-
-                <div className="mt-5 space-y-2">
-                  {/* Continuar com o registro (Ação Primária / Segura) */}
-                  <button
-                    type="button"
-                    onClick={() => setIsDiscardManualModalOpen(false)}
-                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
-                  >
-                    <span>Continuar com o registro</span>
-                  </button>
-
-                  {/* Descartar registro (Ação Destrutiva) */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsDiscardManualModalOpen(false);
-                      if (onDiscardPurchase) {
-                        onDiscardPurchase(purchase.id);
-                      } else {
-                        onBack();
-                      }
-                    }}
-                    className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-red-50 active:bg-red-100 text-red-600 border border-red-200 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Descartar o registro</span>
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Modal de Confirmação para Descartar Lista / Registro do Menu */}
+      {/* Modal de Confirmação para Descartar Lista do Menu */}
       <AnimatePresence>
         {isDiscardModalOpen && (
           <div
@@ -1339,7 +1056,7 @@ export function PurchaseScreen({
                 </div>
 
                 <h3 className="text-lg font-bold text-zinc-900 text-center tracking-tight">
-                  {purchase.origin === 'manual' ? 'Descartar registro?' : 'Descartar lista?'}
+                  Descartar lista?
                 </h3>
                 <p className="text-xs text-zinc-500 text-center mt-1.5 leading-relaxed">
                   {totalItemsCount > 0
@@ -1372,11 +1089,7 @@ export function PurchaseScreen({
                       setIsDiscardModalOpen(false);
                       if (onDiscardPurchase) {
                         onDiscardPurchase(purchase.id);
-                        showFeedbackToast(
-                          purchase.origin === 'manual'
-                            ? 'Registro de compra descartado'
-                            : 'Lista de compras descartada'
-                        );
+                        showFeedbackToast('Lista de compras descartada');
                       } else {
                         onBack();
                       }
@@ -1384,7 +1097,7 @@ export function PurchaseScreen({
                     className="w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
                   >
                     <Trash2 className="w-4 h-4 stroke-[2.5]" />
-                    <span>{purchase.origin === 'manual' ? 'Descartar Registro' : 'Descartar Lista'}</span>
+                    <span>Descartar Lista</span>
                   </button>
 
                   {/* Ação Segura de Cancelar */}
@@ -1480,7 +1193,7 @@ export function PurchaseScreen({
                   className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-colors min-h-[48px] cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>{purchase.origin === 'manual' ? 'Registrar Compra' : 'Finalizar Compra'}</span>
+                  <span>Finalizar Compra</span>
                 </motion.button>
               )}
             </div>

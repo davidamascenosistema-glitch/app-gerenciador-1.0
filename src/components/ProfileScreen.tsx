@@ -11,7 +11,6 @@ interface ProfileScreenProps {
   onNavigateToHome?: () => void;
   onNavigateToHistory?: () => void;
   onCreateNewList?: () => void;
-  onRegisterManual?: () => void;
   onRepeatPurchase?: () => void;
 }
 
@@ -22,7 +21,6 @@ export function ProfileScreen({
   onNavigateToHome,
   onNavigateToHistory,
   onCreateNewList,
-  onRegisterManual,
   onRepeatPurchase,
 }: ProfileScreenProps) {
   const motionConfig = useMotionConfig();

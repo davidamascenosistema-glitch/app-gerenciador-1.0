@@ -325,15 +325,13 @@ export function PurchaseCelebrationModal({
             transition={{ delay: 0.15 }}
           >
             <div className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-emerald-100/80 border border-emerald-300 text-emerald-800 text-[10px] font-bold uppercase tracking-wider mb-1">
-              <span>{purchase.origin === 'manual' ? 'Registro Concluído' : 'Compra Finalizada'}</span>
+              <span>Compra Finalizada</span>
             </div>
             <h2 className="text-base sm:text-lg font-black text-zinc-900 tracking-tight leading-tight truncate px-4">
               {purchase.name || 'Nova Compra'}
             </h2>
             <p className="text-[11px] text-zinc-500 mt-0.5 line-clamp-1">
-              {purchase.origin === 'manual'
-                ? 'Sua compra já realizada foi salva no histórico!'
-                : 'Sua lista foi concluída e salva com sucesso no histórico.'}
+              Sua lista foi concluída e salva com sucesso no histórico.
             </p>
           </motion.div>
         </div>

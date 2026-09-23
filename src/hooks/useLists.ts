@@ -4,32 +4,7 @@ import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
 const LOCAL_STORAGE_KEY = 'lista_e_compra_template_lists';
 
-const INITIAL_STARTER_LISTS: List[] = [
-  {
-    id: 'template-basico-mes',
-    name: 'Básicos do Mês',
-    createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-    items: [
-      { id: 'item-1', name: 'Arroz Tipo 1 (5kg)', category: 'Alimentos', quantity: 1, isWeighted: false, price: 28.90 },
-      { id: 'item-2', name: 'Feijão Carioca (1kg)', category: 'Alimentos', quantity: 2, isWeighted: false, price: 7.50 },
-      { id: 'item-3', name: 'Óleo de Soja (900ml)', category: 'Alimentos', quantity: 2, isWeighted: false, price: 6.90 },
-      { id: 'item-4', name: 'Açúcar Refinado (1kg)', category: 'Alimentos', quantity: 1, isWeighted: false, price: 4.80 },
-      { id: 'item-5', name: 'Café Torrado e Moído (500g)', category: 'Alimentos', quantity: 2, isWeighted: false, price: 18.90 },
-      { id: 'item-6', name: 'Detergente Líquido', category: 'Limpeza', quantity: 3, isWeighted: false, price: 2.50 },
-    ],
-  },
-  {
-    id: 'template-feira-semanal',
-    name: 'Feira Semanal',
-    createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-    items: [
-      { id: 'item-f1', name: 'Banana Prata', category: 'Hortifruti', quantity: 1, weight: 1.2, isWeighted: true, price: 6.99 },
-      { id: 'item-f2', name: 'Maçã Gala', category: 'Hortifruti', quantity: 1, weight: 0.8, isWeighted: true, price: 9.90 },
-      { id: 'item-f3', name: 'Tomate Italiano', category: 'Hortifruti', quantity: 1, weight: 1.0, isWeighted: true, price: 7.90 },
-      { id: 'item-f4', name: 'Alface Crespa', category: 'Hortifruti', quantity: 1, isWeighted: false, price: 3.50 },
-    ],
-  },
-];
+const INITIAL_STARTER_LISTS: List[] = [];
 
 export function useLists(userId?: string | null) {
   const [lists, setLists] = useState<List[]>(() => {
@@ -37,7 +12,13 @@ export function useLists(userId?: string | null) {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          // Filtra moldes antigos caso tenham ficado em cache
+          const filtered = parsed.filter(
+            (l: List) => l.id !== 'template-basico-mes' && l.id !== 'template-feira-semanal'
+          );
+          return filtered;
+        }
       }
     } catch {
       // Fallback
@@ -107,7 +88,8 @@ export function useLists(userId?: string | null) {
       }
 
       if (!listsData || listsData.length === 0) {
-        // Se o usuário ainda não tem listas no Supabase, mantém as listas locais existentes ou vazias
+        setLists([]);
+        saveToLocal([]);
         setLoading(false);
         return;
       }
