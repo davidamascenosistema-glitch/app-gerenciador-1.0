@@ -15,6 +15,7 @@ interface ItemSearchBarProps {
   onOpenBatchModal: () => void;
   getSuggestions: (query: string) => ItemSuggestion[];
   recordManualItem: (name: string, category?: string) => void;
+  dropdownDirection?: 'up' | 'down';
 }
 
 export function ItemSearchBar({
@@ -22,6 +23,7 @@ export function ItemSearchBar({
   onOpenBatchModal,
   getSuggestions,
   recordManualItem,
+  dropdownDirection = 'down',
 }: ItemSearchBarProps) {
   const motionConfig = useMotionConfig();
   const [query, setQuery] = useState('');
@@ -281,11 +283,15 @@ export function ItemSearchBar({
       <AnimatePresence>
         {isOpen && (allFilteredSuggestions.length > 0 || query.trim().length > 0) && (
           <motion.div
-            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            initial={{ opacity: 0, y: dropdownDirection === 'up' ? 6 : -6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            exit={{ opacity: 0, y: dropdownDirection === 'up' ? 4 : -4, scale: 0.98 }}
             transition={motionConfig.pressSpring}
-            className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-zinc-200 rounded-2xl shadow-xl overflow-hidden max-h-72 overflow-y-auto z-50 divide-y divide-zinc-100"
+            className={`absolute left-0 right-0 bg-white border border-zinc-200 rounded-2xl shadow-xl overflow-hidden max-h-72 overflow-y-auto z-50 divide-y divide-zinc-100 ${
+              dropdownDirection === 'up'
+                ? 'bottom-full mb-2 shadow-[0_-8px_24px_rgba(0,0,0,0.14)]'
+                : 'top-full mt-1.5'
+            }`}
           >
             {/* Opção rápida de adicionar texto livre caso digitado */}
             {query.trim().length > 0 && (

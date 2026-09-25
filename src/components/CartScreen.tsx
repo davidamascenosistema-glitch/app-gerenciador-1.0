@@ -92,7 +92,7 @@ export function CartScreen({
             {onNavigateToLists && (
               <button
                 type="button"
-                onClick={onNavigateToLists}
+                onClick={() => onNavigateToLists()}
                 className="mt-4 text-xs font-semibold text-emerald-700 hover:text-emerald-800 transition-colors cursor-pointer py-1"
               >
                 Ou usar um molde de lista &rarr;

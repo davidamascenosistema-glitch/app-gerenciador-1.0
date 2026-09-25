@@ -37,11 +37,13 @@ export const calculateItemSubtotal = (item: Item): number => {
 };
 
 /**
- * Calcula o valor total de uma compra (Purchase) a partir dos seus itens
+ * Calcula o valor total de uma compra (Purchase) ou lista de itens a partir dos seus itens
  */
-export const calculatePurchaseTotal = (purchase: Purchase): number => {
-  if (!purchase || !purchase.items || purchase.items.length === 0) return 0;
-  return purchase.items.reduce((total, item) => total + calculateItemSubtotal(item), 0);
+export const calculatePurchaseTotal = (purchaseOrItems?: Purchase | Item[] | null): number => {
+  if (!purchaseOrItems) return 0;
+  const items = Array.isArray(purchaseOrItems) ? purchaseOrItems : purchaseOrItems.items;
+  if (!items || !Array.isArray(items) || items.length === 0) return 0;
+  return items.reduce((total, item) => total + (item ? calculateItemSubtotal(item) : 0), 0);
 };
 
 export const ITEM_CATEGORIES = [

@@ -455,8 +455,8 @@ export function HomeScreen({
                 <p className="text-xs text-zinc-500 font-medium mt-1">
                   {activePendingPurchase.items.length}{' '}
                   {activePendingPurchase.items.length === 1 ? 'item' : 'itens'} •{' '}
-                  {calculatePurchaseTotal(activePendingPurchase) > 0
-                    ? formatCurrencyBRL(calculatePurchaseTotal(activePendingPurchase))
+                  {calculatePurchaseTotal(activePendingPurchase.items || []) > 0
+                    ? formatCurrencyBRL(calculatePurchaseTotal(activePendingPurchase.items || []))
                     : 'aguardando preços'}
                 </p>
               </div>
@@ -549,7 +549,7 @@ export function HomeScreen({
                   <div className="flex items-center justify-between text-zinc-600">
                     <span>Valor estimado:</span>
                     <span className="font-bold text-zinc-800">
-                      {formatCurrencyBRL(calculatePurchaseTotal(purchaseToDiscard))}
+                      {formatCurrencyBRL(calculatePurchaseTotal(purchaseToDiscard.items || []))}
                     </span>
                   </div>
                 </div>

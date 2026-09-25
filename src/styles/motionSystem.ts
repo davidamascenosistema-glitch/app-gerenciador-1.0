@@ -14,12 +14,12 @@ export const MOTION_TOKENS = {
     accelerate: [0.3, 0.0, 1.0, 1.0] as const,
   },
   spring: {
-    snappy: { type: 'spring', stiffness: 500, damping: 35, mass: 0.8 },
-    press: { type: 'spring', stiffness: 600, damping: 25, mass: 0.5 },
-    modal: { type: 'spring', stiffness: 420, damping: 30, mass: 0.9 },
-    sheet: { type: 'spring', stiffness: 360, damping: 32, mass: 1.0 },
-    layout: { type: 'spring', stiffness: 450, damping: 35, mass: 0.9 },
-    gentle: { type: 'spring', stiffness: 320, damping: 28, mass: 1.0 },
+    snappy: { type: 'spring' as const, stiffness: 500, damping: 35, mass: 0.8 },
+    press: { type: 'spring' as const, stiffness: 600, damping: 25, mass: 0.5 },
+    modal: { type: 'spring' as const, stiffness: 420, damping: 30, mass: 0.9 },
+    sheet: { type: 'spring' as const, stiffness: 360, damping: 32, mass: 1.0 },
+    layout: { type: 'spring' as const, stiffness: 450, damping: 35, mass: 0.9 },
+    gentle: { type: 'spring' as const, stiffness: 320, damping: 28, mass: 1.0 },
   },
   tap: {
     button: { scale: 0.96 },
@@ -52,7 +52,7 @@ export const MOTION_VARIANTS = {
     initial: { opacity: 0, scale: 0.95, y: 10 },
     animate: { opacity: 1, scale: 1, y: 0 },
     exit: { opacity: 0, scale: 0.95, y: 10 },
-    transition: { type: 'spring', stiffness: 420, damping: 30 },
+    transition: { type: 'spring' as const, stiffness: 420, damping: 30 },
   },
   dropdownMenu: {
     initial: { opacity: 0, y: -6, scale: 0.98 },

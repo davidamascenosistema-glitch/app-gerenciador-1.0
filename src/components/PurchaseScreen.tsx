@@ -25,9 +25,13 @@ import {
   Share2,
   Filter,
   ChevronDown,
+  Keyboard,
+  FolderPlus,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Item, Purchase, ItemSuggestion, PricingModeDefault } from '../types';
+import { Item, Purchase, ItemSuggestion, PricingModeDefault, List } from '../types';
 import { parseVoiceCommand } from '../services/gemini';
 import { normalizeText } from '../services/suggestionsService';
 import { useItemSuggestions } from '../hooks/useItemSuggestions';
@@ -35,7 +39,7 @@ import { ItemSearchBar } from './ItemSearchBar';
 import { PurchaseItemCard } from './PurchaseItemCard';
 import { BatchAddModal } from './BatchAddModal';
 import { EditItemModal } from './EditItemModal';
-import { VoiceActionButton } from './VoiceActionButton';
+import { ImportListModal } from './ImportListModal';
 import { AnimatedCurrency } from './AnimatedCurrency';
 import { MOTION_TOKENS, MOTION_VARIANTS, useMotionConfig } from '../styles/motionSystem';
 import { fireCelebrationConfetti } from './PurchaseCelebrationModal';
@@ -101,6 +105,7 @@ interface PurchaseScreenProps {
   userId?: string | null;
   purchase?: Purchase | null;
   allPurchases?: Purchase[];
+  lists?: List[];
   onBack: (message?: string) => void;
   onDiscardPurchase?: (purchaseId: string) => void;
   onUpdateName?: (purchaseId: string, name: string) => void;
@@ -115,6 +120,7 @@ export function PurchaseScreen({
   userId,
   purchase,
   allPurchases = [],
+  lists = [],
   onBack,
   onDiscardPurchase,
   onUpdateName,
@@ -141,6 +147,9 @@ export function PurchaseScreen({
   // Modais de descarte
   const [isDiscardModalOpen, setIsDiscardModalOpen] = useState(false);
 
+  // Modal de Importação de Molde
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
   // Finish purchase modal states
   const [isConfirmFinishOpen, setIsConfirmFinishOpen] = useState(false);
   const [finishNameInput, setFinishNameInput] = useState('');
@@ -153,8 +162,23 @@ export function PurchaseScreen({
   // Toast feedback hook
   const { showToast } = useToast();
 
-  // Voice processing loading state
+  // Voice processing & recording states for Voice-First bar
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
 
   const handleVoiceInput = async (transcript: string) => {
     if (!transcript || !transcript.trim()) return;
@@ -201,6 +225,62 @@ export function PurchaseScreen({
       showToast('Erro ao processar áudio. Tente novamente.');
     } finally {
       setIsProcessingVoice(false);
+    }
+  };
+
+  const handleToggleVoice = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      showToast('Reconhecimento de voz não suportado pelo navegador.');
+      return;
+    }
+
+    if (isRecording) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript || '';
+        if (transcript.trim()) {
+          handleVoiceInput(transcript.trim());
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event?.error);
+        setIsRecording(false);
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Erro ao iniciar reconhecimento de voz:', err);
+      setIsRecording(false);
     }
   };
 
@@ -257,6 +337,33 @@ export function PurchaseScreen({
 
   const showFeedbackToast = (msg: string) => {
     showToast(msg);
+  };
+
+  const handleImportList = (list: List) => {
+    if (!purchase || !onAddItem) return;
+    const itemsToImport = list.items || [];
+    if (itemsToImport.length === 0) {
+      showToast(`O molde "${list.name}" não possui itens cadastrados.`);
+      setIsImportModalOpen(false);
+      return;
+    }
+
+    itemsToImport.forEach((item) => {
+      onAddItem(purchase.id, {
+        name: item.name,
+        category: item.category || 'Geral',
+        quantity: item.quantity ?? (item.isWeighted ? 1 : 1),
+        weight: item.weight,
+        isWeighted: Boolean(item.isWeighted),
+        price: item.price,
+        bought: false,
+        pricingModeSource: item.pricingModeSource ?? null,
+      });
+    });
+
+    setIsImportModalOpen(false);
+    const count = itemsToImport.length;
+    showToast(`${count} ${count === 1 ? 'item importado' : 'itens importados'} do molde "${list.name}"!`);
   };
 
   const copyToClipboard = async (text: string) => {
@@ -562,8 +669,23 @@ export function PurchaseScreen({
               </div>
             </div>
 
-            {/* Lado Direito: Menu de 3 Pontinhos (⋮) para Ações Secundárias */}
-            <div className="flex items-center shrink-0 relative">
+            {/* Lado Direito: Botão Importar (+ Molde) e Menu de 3 Pontinhos (⋮) */}
+            <div className="flex items-center space-x-1.5 shrink-0 relative">
+              {/* Botão de Importar Lista (Merge) */}
+              {purchase.status !== 'finished' && (
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(true)}
+                  title="Importar de um Molde"
+                  aria-label="Importar molde de lista"
+                  className="flex items-center space-x-1 px-2.5 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200/80 active:bg-zinc-300 text-zinc-700 hover:text-emerald-800 border border-zinc-200/80 font-bold text-xs transition-colors shrink-0 cursor-pointer min-h-[44px] active:scale-95"
+                >
+                  <FolderPlus className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="text-[11px] font-bold">+ Molde</span>
+                </button>
+              )}
+
+              {/* Menu de 3 Pontinhos (⋮) para Ações Secundárias */}
               <div className="relative">
                 <button
                   type="button"
@@ -638,18 +760,6 @@ export function PurchaseScreen({
             </div>
           </div>
         </header>
-
-        {/* Barra de Pesquisa Fixa integrada ao Header */}
-        {purchase.status !== 'finished' && (
-          <div className="w-full max-w-md md:max-w-xl mx-auto px-3 sm:px-6 pb-2 pt-0.5">
-            <ItemSearchBar
-              onAddItem={handleAddItemFromSearch}
-              onOpenBatchModal={() => setIsBatchModalOpen(true)}
-              getSuggestions={suggestionsHook.getCombinedSuggestions}
-              recordManualItem={suggestionsHook.recordManualItem}
-            />
-          </div>
-        )}
 
         {/* Barra de Progresso do Orçamento (Abaixo do subtotal no topo da tela) */}
         {numericBudget !== undefined && (
@@ -736,9 +846,7 @@ export function PurchaseScreen({
 
       {/* Main Content (Rolagem Livre com padding inferior dinâmico para não sobrepor o rodapé fixo) */}
       <main
-        className={`flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-3 sm:py-4 flex flex-col ${
-          totalItemsCount > 0 ? 'pb-32 sm:pb-36' : 'pb-4 sm:pb-6'
-        }`}
+        className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-3 sm:py-4 flex flex-col pb-36 sm:pb-40"
       >
         <div className="space-y-3">
             {/* Lista de Cards de Itens ou Estado Vazio com Animação Fluida desde o 1º item */}
@@ -882,6 +990,14 @@ export function PurchaseScreen({
         isOpen={isBatchModalOpen}
         onClose={() => setIsBatchModalOpen(false)}
         onSubmit={handleSubmitBatch}
+      />
+
+      {/* Modal de Importação de Molde */}
+      <ImportListModal
+        isOpen={isImportModalOpen}
+        lists={lists}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportList={handleImportList}
       />
 
       {/* Modal de Edição Completa */}
@@ -1115,91 +1231,207 @@ export function PurchaseScreen({
         )}
       </AnimatePresence>
 
-      {/* Botão Flutuante de Ditado por Voz (FAB) */}
-      {purchase.status !== 'finished' && (
-        <div className="relative">
-          <VoiceActionButton
-            onTranscript={handleVoiceInput}
-            className={totalItemsCount > 0 ? 'bottom-24 sm:bottom-28' : 'bottom-6 sm:bottom-8'}
-          />
-          {isProcessingVoice && (
-            <div
-              className={`fixed z-50 pointer-events-none w-16 h-16 rounded-full flex items-center justify-center bg-emerald-700/90 text-white shadow-xl ${
-                totalItemsCount > 0 ? 'bottom-24 sm:bottom-28' : 'bottom-6 sm:bottom-8'
-              } right-5 sm:right-6`}
-              title="Processando voz com Gemini..."
-            >
-              <Loader2 className="w-7 h-7 animate-spin text-white" />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Rodapé Fixo Inferior - Sempre à mostra na viewport quando há itens na lista */}
-      <AnimatePresence>
-        {totalItemsCount > 0 && (
-          <motion.footer
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed bottom-0 left-0 right-0 z-30 w-full bg-white/95 backdrop-blur-md border-t border-zinc-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] py-3 px-3.5 sm:px-6"
-          >
-            <div className="w-full max-w-md md:max-w-xl mx-auto space-y-2">
-              {/* Resumo compacto em uma linha: valor total com odômetro animado e contagem tátil */}
-              <div className="flex items-center justify-between text-xs px-0.5">
-                <div className="flex items-center space-x-1.5">
-                  <span className="text-zinc-500 font-medium">Total:</span>
-                  <span className="text-base sm:text-lg font-black text-zinc-900 tracking-tight">
-                    <AnimatedCurrency value={totalValue} />
-                  </span>
-                </div>
-                <div className="text-zinc-600 font-semibold text-xs flex items-center space-x-1">
-                  <motion.span
-                    key={boughtItemsCount}
-                    initial={{ scale: 1.28, color: '#059669' }}
-                    animate={{ scale: 1, color: '#047857' }}
-                    transition={motionConfig.pressSpring}
-                    className="inline-block font-bold"
-                  >
-                    {boughtItemsCount}
-                  </motion.span>
-                  <span>
-                    /{totalItemsCount}{' '}
-                    {totalItemsCount === 1 ? 'item' : 'itens'}{' '}
-                    {boughtItemsCount === totalItemsCount ? '✓' : 'comprados'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Botão de Ação Principal do Rodapé */}
-              {purchase.status === 'finished' ? (
-                <motion.button
-                  whileTap={motionConfig.tap.button}
-                  transition={motionConfig.pressSpring}
-                  onClick={() => onBack()}
-                  type="button"
-                  className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-colors min-h-[48px] cursor-pointer"
+      {/* Voice-First Bottom Dock - Barra Inferior de Adição por Voz com Digitação Discreta */}
+      {purchase.status !== 'finished' ? (
+        <div className="fixed bottom-0 left-0 right-0 z-40 pb-safe pointer-events-none">
+          {/* Banner flutuante com instrução de fala durante a gravação */}
+          <div className="w-full max-w-md md:max-w-xl mx-auto px-4">
+            <AnimatePresence>
+              {isRecording && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                  className="pointer-events-auto mb-2 px-4 py-2 rounded-2xl bg-zinc-900/90 backdrop-blur-md text-white text-xs font-medium shadow-xl flex items-center justify-center space-x-2 border border-white/10"
                 >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Voltar para o Início</span>
-                </motion.button>
-              ) : (
-                <motion.button
-                  whileTap={motionConfig.tap.button}
-                  transition={motionConfig.pressSpring}
-                  onClick={handleConcluirCompra}
-                  type="button"
-                  className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-700/20 transition-colors min-h-[48px] cursor-pointer"
-                >
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>Finalizar Compra</span>
-                </motion.button>
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+                  <span>Ouvindo... Diga ex: &ldquo;2 caixas de leite por 5 reais&rdquo;</span>
+                </motion.div>
               )}
+            </AnimatePresence>
+          </div>
+
+          {/* Painel Expansível de Digitação Discreta */}
+          <AnimatePresence>
+            {isKeyboardOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                transition={{ duration: 0.18 }}
+                className="pointer-events-auto bg-white/98 backdrop-blur-md border-t border-zinc-200 shadow-2xl px-3.5 sm:px-6 pt-3 pb-2"
+              >
+                <div className="w-full max-w-md md:max-w-xl mx-auto">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-zinc-700 flex items-center space-x-1.5">
+                      <Keyboard className="w-4 h-4 text-emerald-600" />
+                      <span>Digitar Item Manualmente</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsKeyboardOpen(false)}
+                      className="w-7 h-7 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-500 hover:text-zinc-800 flex items-center justify-center transition-colors cursor-pointer"
+                      aria-label="Fechar digitação"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <ItemSearchBar
+                    dropdownDirection="up"
+                    onAddItem={(name, category, isWeighted, pricingModeSource) => {
+                      handleAddItemFromSearch(name, category, isWeighted, pricingModeSource);
+                    }}
+                    onOpenBatchModal={() => setIsBatchModalOpen(true)}
+                    getSuggestions={suggestionsHook.getCombinedSuggestions}
+                    recordManualItem={suggestionsHook.recordManualItem}
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Barra Principal Inferior Voice-First */}
+          <div className="pointer-events-auto bg-white/95 backdrop-blur-md border-t border-zinc-200/80 shadow-[0_-6px_24px_rgba(0,0,0,0.08)] px-4 py-2.5">
+            <div className="w-full max-w-md md:max-w-xl mx-auto">
+              {/* Resumo Financeiro / Itens quando há itens na lista */}
+              {totalItemsCount > 0 && (
+                <div className="flex items-center justify-between text-xs pb-2 border-b border-zinc-100 mb-2">
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-zinc-500 font-medium">Total:</span>
+                    <span className="text-sm sm:text-base font-black text-zinc-900 tracking-tight">
+                      <AnimatedCurrency value={totalValue} />
+                    </span>
+                  </div>
+                  <div className="text-zinc-600 font-semibold text-xs flex items-center space-x-1">
+                    <span className="font-bold text-emerald-700">{boughtItemsCount}</span>
+                    <span>
+                      /{totalItemsCount} {totalItemsCount === 1 ? 'item' : 'itens'}{' '}
+                      ({boughtItemsCount === totalItemsCount ? '✓ concluído' : 'no carrinho'})
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Grid de Ações: Esquerda (Teclado), Centro (Microfone Hero), Direita (Finalizar) */}
+              <div className="flex items-center justify-between gap-2.5">
+                {/* 1. Botão Teclado (Digitação Discreta) */}
+                <motion.button
+                  whileTap={motionConfig.tap.button}
+                  transition={motionConfig.pressSpring}
+                  type="button"
+                  onClick={() => setIsKeyboardOpen((prev) => !prev)}
+                  aria-label={isKeyboardOpen ? 'Fechar digitação' : 'Abrir digitação por teclado'}
+                  title="Digitação manual"
+                  className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl border transition-all cursor-pointer min-w-[64px] min-h-[50px] active:scale-95 ${
+                    isKeyboardOpen
+                      ? 'bg-emerald-50 border-emerald-400 text-emerald-700 shadow-2xs font-bold'
+                      : 'bg-zinc-100 hover:bg-zinc-200/80 text-zinc-600 border-zinc-200/70 hover:text-zinc-900'
+                  }`}
+                >
+                  <Keyboard className="w-5 h-5 mb-0.5" />
+                  <span className="text-[10px] font-bold leading-none">Teclado</span>
+                </motion.button>
+
+                {/* 2. Hero Botão de Microfone (Voice-First Central em Grande Destaque) */}
+                <div className="flex-1 flex flex-col items-center">
+                  <motion.button
+                    whileTap={{ scale: 0.94 }}
+                    transition={motionConfig.pressSpring}
+                    type="button"
+                    onClick={handleToggleVoice}
+                    disabled={isProcessingVoice}
+                    aria-label={
+                      isRecording
+                        ? 'Ouvindo áudio... Toque para parar'
+                        : isProcessingVoice
+                        ? 'Processando áudio...'
+                        : 'Ditar item por voz'
+                    }
+                    title={isRecording ? 'Gravando... Toque para parar' : 'Ditar item por voz'}
+                    className={`relative w-full max-w-[210px] h-13 sm:h-14 rounded-full flex items-center justify-center space-x-2 px-4 font-black text-sm text-white shadow-lg transition-all cursor-pointer ${
+                      isRecording
+                        ? 'bg-red-600 shadow-red-600/40 ring-4 ring-red-300 animate-pulse'
+                        : isProcessingVoice
+                        ? 'bg-emerald-700 shadow-emerald-700/30 cursor-wait'
+                        : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-emerald-600/30'
+                    }`}
+                  >
+                    {isRecording && (
+                      <span className="absolute -inset-1 rounded-full bg-red-500/30 animate-ping pointer-events-none" />
+                    )}
+
+                    {isProcessingVoice ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin text-white" />
+                        <span className="tracking-wide">Processando...</span>
+                      </>
+                    ) : isRecording ? (
+                      <>
+                        <Mic className="w-5 h-5 animate-bounce stroke-[2.5]" />
+                        <span className="tracking-wide">Ouvindo...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="w-5 h-5 stroke-[2.5]" />
+                        <span className="tracking-wide">Falar Item</span>
+                      </>
+                    )}
+                  </motion.button>
+                </div>
+
+                {/* 3. Botão Finalizar Compra */}
+                <motion.button
+                  whileTap={motionConfig.tap.button}
+                  transition={motionConfig.pressSpring}
+                  type="button"
+                  onClick={handleConcluirCompra}
+                  disabled={totalItemsCount === 0}
+                  aria-label="Finalizar Compra"
+                  title="Finalizar Compra"
+                  className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl border transition-all cursor-pointer min-w-[64px] min-h-[50px] active:scale-95 ${
+                    totalItemsCount > 0
+                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 font-bold shadow-2xs'
+                      : 'bg-zinc-100 text-zinc-400 border-zinc-200/50 cursor-not-allowed opacity-60'
+                  }`}
+                >
+                  <CheckCircle2 className="w-5 h-5 mb-0.5 text-emerald-600" />
+                  <span className="text-[10px] font-bold leading-none">Finalizar</span>
+                </motion.button>
+              </div>
             </div>
-          </motion.footer>
-        )}
-      </AnimatePresence>
+          </div>
+        </div>
+      ) : (
+        /* Rodapé de Compra Finalizada (Modo Visualização) */
+        <footer className="fixed bottom-0 left-0 right-0 z-30 w-full bg-white/95 backdrop-blur-md border-t border-zinc-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] py-3 px-3.5 sm:px-6 pb-safe">
+          <div className="w-full max-w-md md:max-w-xl mx-auto space-y-2">
+            <div className="flex items-center justify-between text-xs px-0.5">
+              <div className="flex items-center space-x-1.5">
+                <span className="text-zinc-500 font-medium">Total:</span>
+                <span className="text-base sm:text-lg font-black text-zinc-900 tracking-tight">
+                  <AnimatedCurrency value={totalValue} />
+                </span>
+              </div>
+              <div className="text-zinc-600 font-semibold text-xs flex items-center space-x-1">
+                <span>
+                  {boughtItemsCount}/{totalItemsCount}{' '}
+                  {totalItemsCount === 1 ? 'item' : 'itens'} comprados
+                </span>
+              </div>
+            </div>
+            <motion.button
+              whileTap={motionConfig.tap.button}
+              transition={motionConfig.pressSpring}
+              onClick={() => onBack()}
+              type="button"
+              className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-colors min-h-[48px] cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Voltar para o Início</span>
+            </motion.button>
+          </div>
+        </footer>
+      )}
     </div>
   );
 }
