@@ -6,44 +6,40 @@ import {
   TrendingUp,
   ShoppingCart,
   DollarSign,
-  Bookmark,
-  ChevronRight,
   Clock,
   Trash2,
   Play,
   X,
   Check,
-  Sparkles
+  Sparkles,
+  BarChart2,
+  ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { useMotionConfig } from '../styles/motionSystem';
 import { usePurchases } from '../hooks/usePurchases';
-import { useLists } from '../hooks/useLists';
 import { calculatePurchaseTotal, formatCurrencyBRL } from '../utils/purchaseHelpers';
-import { Purchase, Item } from '../types';
+import { Purchase } from '../types';
 import { useToast } from './Toast';
-import { NewPurchaseModal } from './NewPurchaseModal';
 import { User } from '@supabase/supabase-js';
 
 interface HomeScreenProps {
   user?: User | null;
   purchasesHook?: ReturnType<typeof usePurchases>;
-  listsHook?: ReturnType<typeof useLists>;
+  finishedPurchases?: Purchase[];
   onNavigateToPurchase?: (purchaseId: string) => void;
-  onNavigateToList?: (listId: string) => void;
-  onNavigateToHistory?: () => void;
+  onNavigateToAnalytics?: () => void;
   onNavigateToProfile?: () => void;
-  onRepeatPurchase?: () => void;
-  onSelectFinishedPurchase?: (purchase: Purchase) => void;
   initialToastMessage?: string;
 }
 
 export function HomeScreen({
   user,
   purchasesHook: externalPurchasesHook,
-  listsHook: externalListsHook,
+  finishedPurchases: externalFinishedPurchases,
   onNavigateToPurchase,
-  onNavigateToList,
+  onNavigateToAnalytics,
   onNavigateToProfile,
   initialToastMessage,
 }: HomeScreenProps) {
@@ -51,23 +47,18 @@ export function HomeScreen({
   const localPurchasesHook = usePurchases();
   const purchasesHook = externalPurchasesHook || localPurchasesHook;
 
-  const localListsHook = useLists();
-  const listsHook = externalListsHook || localListsHook;
-
   const { 
     getPendingPurchases, 
     getFinishedPurchases, 
-    discardPurchase, 
-    createPurchase 
+    discardPurchase 
   } = purchasesHook;
 
-  const { lists, createList } = listsHook;
   const { showToast } = useToast();
 
   // Estados locais
   const [timeFilter, setTimeFilter] = useState<'ano' | 'mes' | 'semana'>('mes');
-  const [isNewPurchaseModalOpen, setIsNewPurchaseModalOpen] = useState(false);
   const [purchaseToDiscard, setPurchaseToDiscard] = useState<Purchase | null>(null);
+  const [isDiscarding, setIsDiscarding] = useState(false);
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
@@ -95,7 +86,34 @@ export function HomeScreen({
   });
 
   const activePendingPurchase = pendingPurchases.length > 0 ? pendingPurchases[0] : null;
-  const finishedPurchases = getFinishedPurchases() || [];
+  const finishedPurchases = externalFinishedPurchases || getFinishedPurchases() || [];
+
+  // Dados para o Mini Dashboard (Sparkline de Gastos Recentes)
+  const sparklineData = useMemo(() => {
+    if (!finishedPurchases || finishedPurchases.length === 0) return [];
+    
+    // Ordenar compras por data mais antiga para mais recente para desenhar a linha do tempo cronológica
+    const sorted = [...finishedPurchases].sort((a, b) => {
+      const dateA = a.finishedAt || a.createdAt ? new Date(a.finishedAt || a.createdAt || '').getTime() : 0;
+      const dateB = b.finishedAt || b.createdAt ? new Date(b.finishedAt || b.createdAt || '').getTime() : 0;
+      return dateA - dateB;
+    });
+
+    // Pegar até as últimas 8 compras finalizadas
+    const recent = sorted.slice(-8);
+
+    return recent.map((p, idx) => ({
+      index: idx + 1,
+      total: calculatePurchaseTotal(p),
+      name: p.name || `Compra ${idx + 1}`,
+    }));
+  }, [finishedPurchases]);
+
+  // Somatório das compras recentes (ou do mês atual se houver)
+  const recentPurchasesTotal = useMemo(() => {
+    if (sparklineData.length === 0) return 0;
+    return sparklineData.reduce((acc, item) => acc + item.total, 0);
+  }, [sparklineData]);
 
   // Cálculo das estatísticas com base no filtro de período
   const stats = useMemo(() => {
@@ -124,61 +142,6 @@ export function HomeScreen({
     return { total, count, avg };
   }, [finishedPurchases, timeFilter]);
 
-  // Navegação para criar nova lista
-  const handleCreateNewListTemplate = async () => {
-    const created = await createList({ name: 'Nova Lista' });
-    if (onNavigateToList) {
-      onNavigateToList(created.id);
-    } else {
-      showToast(`Molde "${created.name}" criado!`);
-    }
-  };
-
-  // Iniciar compra pelo modal
-  const handleStartPurchaseSession = (params: {
-    name?: string;
-    storeName?: string;
-    budget?: number;
-    fromListId?: string;
-  }) => {
-    let initialItems: Item[] = [];
-
-    if (params.fromListId) {
-      const foundList = listsHook.getListById(params.fromListId);
-      if (foundList && foundList.items) {
-        initialItems = foundList.items.map((item) => ({
-          id: crypto.randomUUID(),
-          name: item.name,
-          category: item.category || 'Geral',
-          quantity: item.quantity || 1,
-          weight: item.weight,
-          isWeighted: item.isWeighted || false,
-          price: item.price,
-          bought: false,
-          pricingModeSource: item.pricingModeSource ?? null,
-        }));
-      }
-    }
-
-    const newPurchase = createPurchase({
-      name: params.name || 'Nova Compra',
-      status: 'pending',
-      origin: 'list',
-      items: initialItems,
-      budget: params.budget,
-      storeName: params.storeName,
-      fromListId: params.fromListId,
-    });
-
-    setIsNewPurchaseModalOpen(false);
-
-    if (onNavigateToPurchase) {
-      onNavigateToPurchase(newPurchase.id);
-    } else {
-      showToast(`Compra iniciada: "${newPurchase.name}"`);
-    }
-  };
-
   // Continuar compra pendente
   const handleContinuePending = (purchase: Purchase) => {
     if (onNavigateToPurchase) {
@@ -198,14 +161,19 @@ export function HomeScreen({
     setPurchaseToDiscard(purchase);
   };
 
-  const handleConfirmDiscard = () => {
-    if (!purchaseToDiscard) return;
-    const name = purchaseToDiscard.name || 'Compra sem nome';
-    const pendingId = purchaseToDiscard.id;
+  const handleConfirmDiscard = async () => {
+    if (!purchaseToDiscard || isDiscarding) return;
+    try {
+      setIsDiscarding(true);
+      const name = purchaseToDiscard.name || 'Compra sem nome';
+      const pendingId = purchaseToDiscard.id;
 
-    discardPurchase(pendingId);
-    setPurchaseToDiscard(null);
-    showToast(`Compra "${name}" descartada com sucesso.`);
+      await discardPurchase(pendingId);
+      setPurchaseToDiscard(null);
+      showToast(`Compra "${name}" descartada com sucesso.`);
+    } finally {
+      setIsDiscarding(false);
+    }
   };
 
   const handleSendFeedback = (e: React.FormEvent) => {
@@ -241,11 +209,11 @@ export function HomeScreen({
           </div>
 
           {/* Centro: Avatar Circular e Nome */}
-          <div className="flex flex-col items-center text-center">
+          <div className="flex flex-col items-center text-center min-w-0 max-w-full">
             <div className="w-16 h-16 rounded-full bg-white text-emerald-900 font-extrabold text-2xl flex items-center justify-center shadow-lg border-2 border-emerald-400/40 select-none">
               {userInitial}
             </div>
-            <h1 className="text-lg sm:text-xl font-bold text-white mt-2.5 tracking-tight leading-snug">
+            <h1 className="text-lg sm:text-xl font-bold text-white mt-2.5 tracking-tight leading-snug truncate max-w-full px-2">
               {userName}
             </h1>
 
@@ -278,7 +246,99 @@ export function HomeScreen({
       {/* ========================================================================= */}
       {/* CONTEÚDO PRINCIPAL DO DASHBOARD                                            */}
       {/* ========================================================================= */}
-      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-4 pt-5 pb-28 sm:pb-32 flex flex-col space-y-6">
+      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-4 pt-4 pb-28 sm:pb-32 flex flex-col space-y-5">
+
+        {/* ========================================================================= */}
+        {/* MINI DASHBOARD / SPARKLINE (GASTOS RECENTES - ACESSO ÀS ANÁLISES)         */}
+        {/* ========================================================================= */}
+        <motion.div
+          whileTap={motionConfig.shouldReduceMotion ? {} : { scale: 0.985 }}
+          onClick={() => {
+            if (onNavigateToAnalytics) {
+              onNavigateToAnalytics();
+            } else {
+              showToast('Acesse a aba Gerenciador para ver as Análises completas');
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onNavigateToAnalytics?.();
+            }
+          }}
+          className="w-full bg-gradient-to-br from-white to-emerald-50/50 hover:to-emerald-100/50 border border-emerald-100/90 rounded-2xl p-4 shadow-sm transition-all cursor-pointer relative overflow-hidden group focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+        >
+          {/* Fundo decorativo sutil */}
+          <div className="absolute top-0 right-0 -mt-3 -mr-3 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-emerald-500/10 transition-colors" />
+
+          <div className="flex items-start justify-between relative z-10">
+            <div className="flex-1 min-w-0 pr-3">
+              <div className="flex items-center space-x-1.5 text-zinc-500">
+                <BarChart2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">
+                  Gastos Recentes
+                </span>
+                <span className="inline-flex items-center text-[10px] font-semibold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded-full">
+                  Análises
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline space-x-2">
+                <span className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
+                  {formatCurrencyBRL(recentPurchasesTotal)}
+                </span>
+                {sparklineData.length > 0 && (
+                  <span className="text-[11px] font-medium text-zinc-400">
+                    últimas {sparklineData.length} {sparklineData.length === 1 ? 'compra' : 'compras'}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-1 text-emerald-600 group-hover:text-emerald-700 font-semibold text-xs transition-colors shrink-0 pt-0.5">
+              <span>Ver painel</span>
+              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+            </div>
+          </div>
+
+          {/* Minigráfico de Tendência (Sparkline) */}
+          <div className="mt-2.5 h-[60px] w-full relative">
+            {sparklineData.length > 1 ? (
+              <ResponsiveContainer width="100%" height={60}>
+                <AreaChart data={sparklineData} margin={{ top: 4, right: 2, left: 2, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="homeSparklineGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#059669" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#059669" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#059669"
+                    strokeWidth={2.5}
+                    fill="url(#homeSparklineGradient)"
+                    dot={false}
+                    activeDot={false}
+                    isAnimationActive={!motionConfig.shouldReduceMotion}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full w-full flex items-center justify-between text-zinc-400 text-xs px-1">
+                <div className="flex items-center space-x-1.5">
+                  <TrendingUp className="w-4 h-4 text-emerald-500/70" />
+                  <span className="text-[11px]">
+                    {sparklineData.length === 1
+                      ? 'Finalize mais compras para ver a curva de tendência'
+                      : 'Finalize compras para visualizar seus gráficos de gastos'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </motion.div>
 
         {/* ========================================================================= */}
         {/* 2. SEÇÃO DE ESTATÍSTICAS (FILTRO E CARDS)                                 */}
@@ -376,60 +436,6 @@ export function HomeScreen({
           </div>
         </section>
 
-        {/* ========================================================================= */}
-        {/* 3. BOTÕES DE AÇÃO PRINCIPAIS (EMPILHADOS)                                   */}
-        {/* ========================================================================= */}
-        <section aria-label="Ações Rápidas" className="space-y-3">
-          {/* Botão 1: Nova Lista (Fundo Claro com destaque verde no ícone) */}
-          <motion.button
-            whileTap={motionConfig.shouldReduceMotion ? {} : { scale: 0.985 }}
-            type="button"
-            onClick={handleCreateNewListTemplate}
-            className="w-full bg-white hover:bg-zinc-50 active:bg-zinc-100 border border-zinc-200 text-zinc-900 rounded-2xl p-3.5 flex items-center justify-between text-left transition-all shadow-2xs cursor-pointer min-h-[64px] group"
-          >
-            <div className="flex items-center space-x-3.5">
-              <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-200/70 text-emerald-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                <Bookmark className="w-5 h-5 fill-emerald-600/20" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-zinc-900 leading-tight">
-                  Nova Lista
-                </h3>
-                <p className="text-xs text-zinc-500 mt-0.5 leading-snug">
-                  Planejar produtos e quantidades
-                </p>
-              </div>
-            </div>
-            <div className="text-zinc-400 group-hover:text-zinc-600 transition-colors ml-2 shrink-0">
-              <ChevronRight className="w-5 h-5" />
-            </div>
-          </motion.button>
-
-          {/* Botão 2: Ir às Compras (Fundo Verde) */}
-          <motion.button
-            whileTap={motionConfig.shouldReduceMotion ? {} : { scale: 0.985 }}
-            type="button"
-            onClick={() => setIsNewPurchaseModalOpen(true)}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl p-3.5 flex items-center justify-between text-left transition-all shadow-md shadow-emerald-600/20 cursor-pointer min-h-[64px] group"
-          >
-            <div className="flex items-center space-x-3.5">
-              <div className="w-11 h-11 rounded-xl bg-emerald-700/80 border border-emerald-400/30 text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                <ShoppingCart className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-white leading-tight">
-                  Ir às Compras
-                </h3>
-                <p className="text-xs text-emerald-100 mt-0.5 leading-snug">
-                  Comprar com orçamento e lista
-                </p>
-              </div>
-            </div>
-            <div className="text-emerald-200 group-hover:text-white transition-colors ml-2 shrink-0">
-              <ChevronRight className="w-5 h-5" />
-            </div>
-          </motion.button>
-        </section>
 
         {/* ========================================================================= */}
         {/* 4. SEÇÃO "CONTINUAR COMPRANDO" (SESSÃO ATIVA CONDICIONAL)                  */}
@@ -449,7 +455,7 @@ export function HomeScreen({
                 className="flex-1 min-w-0 overflow-hidden pr-3 cursor-pointer"
                 onClick={() => handleContinuePending(activePendingPurchase)}
               >
-                <h4 className="text-sm font-semibold text-zinc-900 truncate break-all pr-2 leading-tight hover:text-emerald-700 transition-colors">
+                <h4 className="text-sm font-semibold text-zinc-900 truncate pr-2 leading-tight hover:text-emerald-700 transition-colors">
                   {activePendingPurchase.name || 'Compra em andamento'}
                 </h4>
                 <p className="text-xs text-zinc-500 font-medium mt-1">
@@ -491,17 +497,6 @@ export function HomeScreen({
       {/* MODAIS: NOVA COMPRA, DESCARTE, PREMIUM E FEEDBACK                         */}
       {/* ========================================================================= */}
 
-      {/* Modal: Iniciar Nova Compra */}
-      <AnimatePresence>
-        {isNewPurchaseModalOpen && (
-          <NewPurchaseModal
-            isOpen={isNewPurchaseModalOpen}
-            lists={lists}
-            onClose={() => setIsNewPurchaseModalOpen(false)}
-            onStartPurchase={handleStartPurchaseSession}
-          />
-        )}
-      </AnimatePresence>
 
       {/* Modal: Confirmar Descarte de Compra Pendente */}
       <AnimatePresence>
@@ -533,7 +528,7 @@ export function HomeScreen({
                 </h3>
                 <p className="text-xs text-zinc-500 text-center mt-1.5 leading-relaxed">
                   Deseja realmente descartar a compra{' '}
-                  <strong className="text-zinc-800">
+                  <strong className="text-zinc-800 line-clamp-2 break-words">
                     "{purchaseToDiscard.name || 'Compra sem nome'}"
                   </strong>
                   ?
@@ -557,6 +552,7 @@ export function HomeScreen({
                 <div className="mt-5 flex items-center space-x-2">
                   <button
                     type="button"
+                    disabled={isDiscarding}
                     onClick={() => setPurchaseToDiscard(null)}
                     className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
                   >
@@ -564,11 +560,14 @@ export function HomeScreen({
                   </button>
                   <button
                     type="button"
+                    disabled={isDiscarding}
                     onClick={handleConfirmDiscard}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1"
+                    className={`flex-1 py-2.5 px-3 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1 ${
+                      isDiscarding ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Confirmar</span>
+                    <span>{isDiscarding ? 'Descartando...' : 'Confirmar'}</span>
                   </button>
                 </div>
               </div>
@@ -707,7 +706,10 @@ export function HomeScreen({
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1"
+                    disabled={!feedbackText.trim()}
+                    className={`flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1 ${
+                      !feedbackText.trim() ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
                     <span>Enviar</span>
                   </button>

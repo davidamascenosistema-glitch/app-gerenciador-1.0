@@ -146,6 +146,8 @@ export function PurchaseScreen({
 
   // Modais de descarte
   const [isDiscardModalOpen, setIsDiscardModalOpen] = useState(false);
+  const [isDiscarding, setIsDiscarding] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
 
   // Modal de Importação de Molde
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -343,7 +345,7 @@ export function PurchaseScreen({
     if (!purchase || !onAddItem) return;
     const itemsToImport = list.items || [];
     if (itemsToImport.length === 0) {
-      showToast(`O molde "${list.name}" não possui itens cadastrados.`);
+      showToast(`A lista "${list.name}" não possui itens cadastrados.`);
       setIsImportModalOpen(false);
       return;
     }
@@ -363,7 +365,7 @@ export function PurchaseScreen({
 
     setIsImportModalOpen(false);
     const count = itemsToImport.length;
-    showToast(`${count} ${count === 1 ? 'item importado' : 'itens importados'} do molde "${list.name}"!`);
+    showToast(`${count} ${count === 1 ? 'item importado' : 'itens importados'} da lista "${list.name}"!`);
   };
 
   const copyToClipboard = async (text: string) => {
@@ -591,23 +593,29 @@ export function PurchaseScreen({
   const boughtItemsCount = purchase.items.filter((i) => i.bought).length;
   const comparisonInsight = calculateComparisonInsight(purchase, allPurchases);
 
-  const handleConcluirCompra = () => {
+  const handleConcluirCompra = async () => {
+    if (isFinishing) return;
     if (!purchase.items || purchase.items.length === 0) {
       showToast('Adicione itens à lista antes de finalizar!');
       return;
     }
 
-    const trimmed = titleValue.trim();
-    if (trimmed && onUpdateName && trimmed !== purchase.name) {
-      onUpdateName(purchase.id, trimmed);
-    }
+    try {
+      setIsFinishing(true);
+      const trimmed = titleValue.trim();
+      if (trimmed && onUpdateName && trimmed !== purchase.name) {
+        onUpdateName(purchase.id, trimmed);
+      }
 
-    // Disparar animação de celebração
-    fireCelebrationConfetti();
+      // Disparar animação de celebração
+      fireCelebrationConfetti();
 
-    // Finalizar a compra chamando o hook que faz UPDATE no registro existente (NUNCA INSERT)
-    if (onFinishPurchase) {
-      onFinishPurchase(purchase.id, trimmed || purchase.name);
+      // Finalizar a compra chamando o hook que faz UPDATE no registro existente (NUNCA INSERT)
+      if (onFinishPurchase) {
+        await onFinishPurchase(purchase.id, trimmed || purchase.name);
+      }
+    } finally {
+      setIsFinishing(false);
     }
   };
 
@@ -669,19 +677,19 @@ export function PurchaseScreen({
               </div>
             </div>
 
-            {/* Lado Direito: Botão Importar (+ Molde) e Menu de 3 Pontinhos (⋮) */}
+            {/* Lado Direito: Botão Importar (+ Lista) e Menu de 3 Pontinhos (⋮) */}
             <div className="flex items-center space-x-1.5 shrink-0 relative">
               {/* Botão de Importar Lista (Merge) */}
               {purchase.status !== 'finished' && (
                 <button
                   type="button"
                   onClick={() => setIsImportModalOpen(true)}
-                  title="Importar de um Molde"
-                  aria-label="Importar molde de lista"
+                  title="Importar Lista"
+                  aria-label="Importar lista"
                   className="flex items-center space-x-1 px-2.5 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200/80 active:bg-zinc-300 text-zinc-700 hover:text-emerald-800 border border-zinc-200/80 font-bold text-xs transition-colors shrink-0 cursor-pointer min-h-[44px] active:scale-95"
                 >
                   <FolderPlus className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span className="text-[11px] font-bold">+ Molde</span>
+                  <span className="text-[11px] font-bold">+ Lista</span>
                 </button>
               )}
 
@@ -1201,19 +1209,28 @@ export function PurchaseScreen({
                   {/* Ação Destrutiva em Destaque Vermelho */}
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsDiscardModalOpen(false);
-                      if (onDiscardPurchase) {
-                        onDiscardPurchase(purchase.id);
-                        showFeedbackToast('Lista de compras descartada');
-                      } else {
-                        onBack();
+                    disabled={isDiscarding}
+                    onClick={async () => {
+                      if (isDiscarding) return;
+                      try {
+                        setIsDiscarding(true);
+                        if (onDiscardPurchase) {
+                          await onDiscardPurchase(purchase.id);
+                          showFeedbackToast('Lista de compras descartada');
+                        } else {
+                          onBack();
+                        }
+                        setIsDiscardModalOpen(false);
+                      } finally {
+                        setIsDiscarding(false);
                       }
                     }}
-                    className="w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
+                    className={`w-full py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95 ${
+                      isDiscarding ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
                     <Trash2 className="w-4 h-4 stroke-[2.5]" />
-                    <span>Descartar Lista</span>
+                    <span>{isDiscarding ? 'Descartando...' : 'Descartar Lista'}</span>
                   </button>
 
                   {/* Ação Segura de Cancelar */}
@@ -1381,21 +1398,27 @@ export function PurchaseScreen({
 
                 {/* 3. Botão Finalizar Compra */}
                 <motion.button
-                  whileTap={motionConfig.tap.button}
+                  whileTap={isFinishing || totalItemsCount === 0 ? {} : motionConfig.tap.button}
                   transition={motionConfig.pressSpring}
                   type="button"
                   onClick={handleConcluirCompra}
-                  disabled={totalItemsCount === 0}
+                  disabled={totalItemsCount === 0 || isFinishing}
                   aria-label="Finalizar Compra"
                   title="Finalizar Compra"
                   className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl border transition-all cursor-pointer min-w-[64px] min-h-[50px] active:scale-95 ${
-                    totalItemsCount > 0
+                    totalItemsCount > 0 && !isFinishing
                       ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 font-bold shadow-2xs'
-                      : 'bg-zinc-100 text-zinc-400 border-zinc-200/50 cursor-not-allowed opacity-60'
+                      : 'bg-zinc-100 text-zinc-400 border-zinc-200/50 cursor-not-allowed opacity-50'
                   }`}
                 >
-                  <CheckCircle2 className="w-5 h-5 mb-0.5 text-emerald-600" />
-                  <span className="text-[10px] font-bold leading-none">Finalizar</span>
+                  {isFinishing ? (
+                    <Loader2 className="w-5 h-5 mb-0.5 animate-spin text-emerald-600" />
+                  ) : (
+                    <CheckCircle2 className="w-5 h-5 mb-0.5 text-emerald-600" />
+                  )}
+                  <span className="text-[10px] font-bold leading-none">
+                    {isFinishing ? 'Salvando...' : 'Finalizar'}
+                  </span>
                 </motion.button>
               </div>
             </div>

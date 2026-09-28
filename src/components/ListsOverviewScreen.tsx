@@ -70,7 +70,7 @@ export function ListsOverviewScreen({
                   Minhas Listas
                 </h1>
                 <p className="text-xs text-emerald-100/90 font-medium">
-                  {lists.length} {lists.length === 1 ? 'molde de planejamento' : 'moldes de planejamento'}
+                  {lists.length} {lists.length === 1 ? 'lista de planejamento' : 'listas de planejamento'}
                 </p>
               </div>
             </div>
@@ -246,7 +246,7 @@ export function ListsOverviewScreen({
                 Excluir Lista?
               </h3>
               <p className="text-xs text-zinc-500 text-center mt-1.5 leading-relaxed">
-                Tem certeza de que deseja excluir o molde{' '}
+                Tem certeza de que deseja excluir a lista{' '}
                 <strong className="text-zinc-800">"{listToDelete.name}"</strong>? Esta ação não pode ser desfeita.
               </p>
 

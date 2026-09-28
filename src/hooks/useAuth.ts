@@ -8,7 +8,7 @@ export interface AuthState {
   loading: boolean;
   isConfigured: boolean;
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: string | null; needsEmailConfirmation?: boolean }>;
+  signUp: (email: string, password: string, name?: string) => Promise<{ error: string | null; needsEmailConfirmation?: boolean }>;
   signOut: () => Promise<void>;
 }
 
@@ -123,7 +123,7 @@ export function useAuth(): AuthState {
   );
 
   const signUp = useCallback(
-    async (email: string, password: string): Promise<{ error: string | null; needsEmailConfirmation?: boolean }> => {
+    async (email: string, password: string, name?: string): Promise<{ error: string | null; needsEmailConfirmation?: boolean }> => {
       if (!configured) {
         return {
           error: 'Supabase não configurado. Adicione VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY nas configurações.',
@@ -131,9 +131,19 @@ export function useAuth(): AuthState {
       }
 
       try {
+        const trimmedName = name ? name.trim() : '';
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
+          ...(trimmedName
+            ? {
+                options: {
+                  data: {
+                    name: trimmedName,
+                  },
+                },
+              }
+            : {}),
         });
 
         if (error) {

@@ -82,10 +82,10 @@ export function ImportListModal({
                     id="import-list-title"
                     className="text-base sm:text-lg font-black text-zinc-900 tracking-tight leading-tight"
                   >
-                    Importar de um Molde
+                    Importar Lista
                   </h2>
                   <p className="text-xs text-zinc-500">
-                    Injete os itens de um molde salvo nesta compra ativa
+                    Injete os itens de uma lista salva nesta compra ativa
                   </p>
                 </div>
               </div>
@@ -100,7 +100,7 @@ export function ImportListModal({
               </button>
             </div>
 
-            {/* Lista de Moldes Disponíveis */}
+            {/* Lista de Listas Disponíveis */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2.5">
               {lists.length === 0 ? (
                 <div className="py-12 flex flex-col items-center justify-center text-center px-4">
@@ -108,16 +108,16 @@ export function ImportListModal({
                     <ClipboardList className="w-7 h-7" />
                   </div>
                   <h3 className="text-sm font-bold text-zinc-800 mb-1">
-                    Nenhum molde salvo
+                    Nenhuma lista salva
                   </h3>
                   <p className="text-xs text-zinc-500 max-w-xs">
-                    Você ainda não possui listas ou moldes criados. Crie listas na aba &ldquo;Listas&rdquo; para reutilizá-las aqui.
+                    Você ainda não possui listas criadas. Crie listas na aba &ldquo;Listas&rdquo; para reutilizá-las aqui.
                   </p>
                 </div>
               ) : (
                 <>
                   <p className="text-xs font-bold text-zinc-700 mb-2">
-                    Selecione o molde que deseja mesclar:
+                    Selecione a lista que deseja mesclar:
                   </p>
                   {lists.map((list) => {
                     const isSelected = selectedListId === list.id;
@@ -207,7 +207,7 @@ export function ImportListModal({
                     : 'bg-zinc-200 text-zinc-400 cursor-not-allowed shadow-none'
                 }`}
               >
-                <span>Importar Molde</span>
+                <span>Importar Lista</span>
                 <ArrowRight className="w-4 h-4" />
               </motion.button>
             </div>

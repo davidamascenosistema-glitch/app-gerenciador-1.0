@@ -88,14 +88,14 @@ export function CartScreen({
               <span>Iniciar Nova Compra</span>
             </motion.button>
 
-            {/* Ação secundária para moldes */}
+            {/* Ação secundária para listas */}
             {onNavigateToLists && (
               <button
                 type="button"
                 onClick={() => onNavigateToLists()}
                 className="mt-4 text-xs font-semibold text-emerald-700 hover:text-emerald-800 transition-colors cursor-pointer py-1"
               >
-                Ou usar um molde de lista &rarr;
+                Ou usar uma lista &rarr;
               </button>
             )}
           </motion.div>

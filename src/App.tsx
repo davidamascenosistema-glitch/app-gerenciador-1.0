@@ -18,6 +18,7 @@ import { ToastProvider, useToast } from './components/Toast';
 import { PurchaseCelebrationModal } from './components/PurchaseCelebrationModal';
 import { BottomNavBar } from './components/BottomNavBar';
 import { PurchaseSetupSheet } from './components/PurchaseSetupSheet';
+import { ResumePurchaseSheet } from './components/ResumePurchaseSheet';
 import { Purchase, List } from './types';
 
 /**
@@ -31,6 +32,7 @@ function MainApp() {
   const [activeScreen, setActiveScreen] = useState<'home' | 'manager' | 'lists' | 'cart' | 'history' | 'profile' | 'history_select'>('home');
   const [managerTab, setManagerTab] = useState<ManagerTab>('history');
   const [showPurchaseSetup, setShowPurchaseSetup] = useState(false);
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [activePurchaseId, setActivePurchaseId] = useState<string | null>(null);
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [selectedDetailPurchaseId, setSelectedDetailPurchaseId] = useState<string | null>(null);
@@ -365,22 +367,15 @@ function MainApp() {
       <HomeScreen
         user={auth.user}
         purchasesHook={purchasesHook}
-        listsHook={listsHook}
+        finishedPurchases={purchasesHook.getFinishedPurchases()}
         onNavigateToPurchase={(id) => {
           setActivePurchaseId(id);
         }}
-        onNavigateToList={(id) => {
-          setActiveListId(id);
-        }}
-        onNavigateToHistory={() => {
-          handleNavigateToHistory();
+        onNavigateToAnalytics={() => {
+          handleNavigateToManager('analytics');
         }}
         onNavigateToProfile={() => {
           setActiveScreen('profile');
-        }}
-        onRepeatPurchase={handleStartRepeatPurchase}
-        onSelectFinishedPurchase={(purchase) => {
-          setSelectedDetailPurchaseId(purchase.id);
         }}
       />
     );
@@ -395,6 +390,14 @@ function MainApp() {
 
   const pendingPurchases = purchasesHook.getPendingPurchases();
   const latestPending = pendingPurchases && pendingPurchases.length > 0 ? pendingPurchases[0] : null;
+
+  const handleFabClick = () => {
+    if (latestPending) {
+      setShowResumePrompt(true);
+    } else {
+      setShowPurchaseSetup(true);
+    }
+  };
 
   return (
     <div className="w-full min-h-screen bg-zinc-50 text-zinc-900 flex flex-col relative overflow-x-clip">
@@ -429,7 +432,7 @@ function MainApp() {
                 setSelectedDetailPurchaseId(null);
               }}
               onNavigateToManager={() => handleNavigateToManager('history')}
-              onOpenPurchaseSetup={() => setShowPurchaseSetup(true)}
+              onOpenPurchaseSetup={handleFabClick}
               hasPendingPurchase={Boolean(latestPending)}
               pendingItemsCount={latestPending ? latestPending.items.length : 0}
             />
@@ -437,11 +440,33 @@ function MainApp() {
         )}
       </AnimatePresence>
 
+      {/* Bottom Sheet de Interceptação de Compra Pendente */}
+      <ResumePurchaseSheet
+        isOpen={showResumePrompt}
+        purchaseName={latestPending?.name || 'Compra em andamento'}
+        itemsCount={latestPending?.items?.length || 0}
+        onClose={() => setShowResumePrompt(false)}
+        onResume={() => {
+          setShowResumePrompt(false);
+          if (latestPending) {
+            setActivePurchaseId(latestPending.id);
+          }
+        }}
+        onStartNew={() => {
+          setShowResumePrompt(false);
+          setShowPurchaseSetup(true);
+        }}
+      />
+
       {/* Menu de Preparação Suave (Bottom Sheet) acionado pelo botão central 'Comprar' */}
       <PurchaseSetupSheet
         isOpen={showPurchaseSetup}
         lists={listsHook.lists}
         onClose={() => setShowPurchaseSetup(false)}
+        onNavigateToCreateList={() => {
+          setShowPurchaseSetup(false);
+          handleNavigateToManager('lists');
+        }}
         onStartPurchase={(params) => {
           setShowPurchaseSetup(false);
           let initialItems: any[] = [];

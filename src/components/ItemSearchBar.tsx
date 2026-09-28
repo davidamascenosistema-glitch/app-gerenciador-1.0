@@ -301,12 +301,12 @@ export function ItemSearchBar({
                   transition={motionConfig.pressSpring}
                   type="button"
                   onClick={() => handleAddFreeText(query)}
-                  className="w-full text-left px-3 py-2 rounded-xl bg-white hover:bg-emerald-50 active:bg-emerald-100 border border-zinc-200/80 hover:border-emerald-300 transition-colors flex items-center justify-between text-xs font-bold text-emerald-700 cursor-pointer"
+                  className="w-full text-left px-3 py-2 rounded-xl bg-white hover:bg-emerald-50 active:bg-emerald-100 border border-zinc-200/80 hover:border-emerald-300 transition-colors flex items-center justify-between text-xs font-bold text-emerald-700 cursor-pointer min-w-0"
                 >
-                  <div className="flex items-center space-x-2 truncate">
+                  <div className="flex items-center space-x-2 truncate min-w-0 flex-1 pr-2">
                     <Plus className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <span className="truncate">
-                      Adicionar <span className="text-zinc-900 font-extrabold">"{query.trim()}"</span> como novo item
+                      Adicionar <span className="text-zinc-900 font-extrabold truncate">"{query.trim()}"</span> como novo item
                     </span>
                   </div>
                   <span className="text-[10px] text-zinc-400 font-normal flex items-center space-x-1 shrink-0">
@@ -340,12 +340,12 @@ export function ItemSearchBar({
                         key={`search-personal-${item.name}-${idx}`}
                         type="button"
                         onClick={() => handleSelectSuggestion(item)}
-                        className={`w-full text-left px-3.5 py-2.5 transition-colors flex items-center justify-between group cursor-pointer ${
+                        className={`w-full text-left px-3.5 py-2.5 transition-colors flex items-center justify-between group cursor-pointer min-w-0 ${
                           isSelected ? 'bg-emerald-100/70' : 'hover:bg-emerald-50/50 active:bg-emerald-100/70'
                         }`}
                       >
                         <div className="min-w-0 flex-1 pr-2">
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-2 min-w-0">
                             <span className="text-sm font-bold text-zinc-900 group-hover:text-emerald-950 truncate">
                               {item.name}
                             </span>
@@ -389,12 +389,12 @@ export function ItemSearchBar({
                         key={`search-generic-${item.name}-${idx}`}
                         type="button"
                         onClick={() => handleSelectSuggestion(item)}
-                        className={`w-full text-left px-3.5 py-2.5 transition-colors flex items-center justify-between group cursor-pointer ${
+                        className={`w-full text-left px-3.5 py-2.5 transition-colors flex items-center justify-between group cursor-pointer min-w-0 ${
                           isSelected ? 'bg-zinc-100' : 'hover:bg-zinc-50 active:bg-zinc-100'
                         }`}
                       >
                         <div className="min-w-0 flex-1 pr-2">
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-2 min-w-0">
                             <span className="text-sm font-semibold text-zinc-800 group-hover:text-zinc-950 truncate">
                               {item.name}
                             </span>

@@ -538,7 +538,7 @@ export function ListScreen({
                           className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
                         >
                           <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
-                          <span>Excluir este molde</span>
+                          <span>Excluir esta lista</span>
                         </button>
                       </motion.div>
                     </>
@@ -615,7 +615,7 @@ export function ListScreen({
                     <ClipboardList className="w-7 h-7" />
                   </div>
                   <h3 className="text-base sm:text-lg font-bold text-zinc-900 mb-1">
-                    Seu molde está sem itens
+                    Sua lista está sem itens
                   </h3>
                   <p className="text-xs text-zinc-500 max-w-xs leading-relaxed mb-4">
                     Adicione os produtos que você costuma comprar com frequência usando a barra de busca acima.
@@ -787,7 +787,7 @@ export function ListScreen({
                 <Trash2 className="w-6 h-6" />
               </div>
               <h3 className="text-base font-bold text-zinc-900 mb-1">
-                Excluir este molde de lista?
+                Excluir esta lista?
               </h3>
               <p className="text-xs text-zinc-500 leading-relaxed mb-5">
                 A lista "{list.name}" e seus {totalItemsCount} itens serão removidos permanentemente.

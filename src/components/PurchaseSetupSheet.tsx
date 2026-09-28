@@ -9,10 +9,12 @@ import {
   Plus,
   ArrowRight,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useMotionConfig } from '../styles/motionSystem';
 import { List } from '../types';
+import { sanitizePriceInput } from '../utils/purchaseHelpers';
 
 export interface PurchaseSetupParams {
   name?: string;
@@ -27,6 +29,7 @@ export interface PurchaseSetupSheetProps {
   selectedListId?: string | null;
   onClose: () => void;
   onStartPurchase: (params: PurchaseSetupParams) => void;
+  onNavigateToCreateList?: () => void;
 }
 
 const COMMON_STORES = [
@@ -48,12 +51,14 @@ export function PurchaseSetupSheet({
   selectedListId: initialSelectedListId,
   onClose,
   onStartPurchase,
+  onNavigateToCreateList,
 }: PurchaseSetupSheetProps) {
   const motionConfig = useMotionConfig();
 
   const [fromListId, setFromListId] = useState<string>('');
   const [storeName, setStoreName] = useState<string>('');
   const [budgetValue, setBudgetValue] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Reset or sync states when sheet opens
   useEffect(() => {
@@ -61,6 +66,7 @@ export function PurchaseSetupSheet({
       setFromListId(initialSelectedListId || '');
       setStoreName('');
       setBudgetValue('');
+      setIsSubmitting(false);
     }
   }, [isOpen, initialSelectedListId]);
 
@@ -68,14 +74,18 @@ export function PurchaseSetupSheet({
 
   const handleStart = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
 
     const cleanStore = storeName.trim();
     let numericBudget: number | undefined = undefined;
 
     if (budgetValue.trim()) {
-      const parsed = parseFloat(budgetValue.replace(/\./g, '').replace(',', '.'));
-      if (!isNaN(parsed) && parsed > 0) {
-        numericBudget = parsed;
+      const sanitized = sanitizePriceInput(budgetValue);
+      const parsed = parseFloat(sanitized.replace(/\./g, '').replace(',', '.'));
+      if (!isNaN(parsed) && parsed > 0 && isFinite(parsed)) {
+        numericBudget = Math.round(parsed * 100) / 100;
       }
     }
 
@@ -90,12 +100,17 @@ export function PurchaseSetupSheet({
       purchaseName = selectedList.name;
     }
 
-    onStartPurchase({
-      name: purchaseName,
-      storeName: cleanStore || undefined,
-      budget: numericBudget,
-      fromListId: cleanFromListId,
-    });
+    try {
+      onStartPurchase({
+        name: purchaseName,
+        storeName: cleanStore || undefined,
+        budget: numericBudget,
+        fromListId: cleanFromListId,
+      });
+    } finally {
+      // Re-enable in case modal remains open
+      setTimeout(() => setIsSubmitting(false), 500);
+    }
   };
 
   return (
@@ -148,7 +163,7 @@ export function PurchaseSetupSheet({
                     Preparar Compra
                   </h2>
                   <p className="text-xs text-zinc-500">
-                    Defina molde, local e orçamento da sua compra
+                    Defina lista, local e orçamento da sua compra
                   </p>
                 </div>
               </div>
@@ -165,19 +180,19 @@ export function PurchaseSetupSheet({
 
             {/* Form Scrollable Body */}
             <form onSubmit={handleStart} className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-              {/* 1. Molde de Lista (Opcional) */}
+              {/* 1. Lista Base (Opcional) */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-bold text-zinc-800 flex items-center space-x-1.5">
                     <ClipboardList className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Molde de Lista</span>
+                    <span>Lista Base</span>
                   </label>
                   <span className="text-[11px] font-medium text-zinc-400">Opcional</span>
                 </div>
 
-                {/* Seletor Horizontal de Moldes */}
+                {/* Seletor Horizontal de Listas */}
                 <div className="flex items-center space-x-2.5 overflow-x-auto pb-1.5 pt-0.5 no-scrollbar">
-                  {/* Opção Em Branco / Sem Molde */}
+                  {/* Opção Em Branco / Sem Lista */}
                   <button
                     type="button"
                     onClick={() => setFromListId('')}
@@ -224,10 +239,10 @@ export function PurchaseSetupSheet({
                             <ClipboardList className="w-3 h-3" />
                           )}
                         </div>
-                        <div className="text-left">
+                        <div className="text-left min-w-0">
                           <p className="font-semibold leading-tight truncate max-w-[120px]">{list.name}</p>
                           <span
-                            className={`text-[10px] font-medium leading-none ${
+                            className={`text-[10px] font-medium leading-none truncate block ${
                               isSelected ? 'text-emerald-700' : 'text-zinc-400'
                             }`}
                           >
@@ -240,9 +255,19 @@ export function PurchaseSetupSheet({
                 </div>
 
                 {lists.length === 0 && (
-                  <p className="text-[11px] text-zinc-400 mt-1 italic">
-                    Nenhum molde salvo ainda. Você começará uma lista limpa.
-                  </p>
+                  <div className="mt-2 text-xs text-zinc-500">
+                    <p>Agilize suas idas ao mercado criando listas de compras recorrentes.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onNavigateToCreateList?.();
+                      }}
+                      className="mt-1 text-emerald-600 font-bold hover:text-emerald-700 hover:underline cursor-pointer inline-flex items-center"
+                    >
+                      Criar minha primeira lista →
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -311,11 +336,10 @@ export function PurchaseSetupSheet({
                   </span>
                   <input
                     id="budget-input"
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
                     value={budgetValue}
-                    onChange={(e) => setBudgetValue(e.target.value)}
+                    onChange={(e) => setBudgetValue(sanitizePriceInput(e.target.value))}
                     placeholder="0,00"
                     className="w-full pl-10 pr-8 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50/70 text-zinc-800 text-xs sm:text-sm font-semibold placeholder-zinc-400 focus:outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/10 transition-all"
                   />
@@ -351,23 +375,32 @@ export function PurchaseSetupSheet({
               </div>
             </form>
 
-            {/* Footer com Botão de Ação Expansivo */}
-            <div className="p-5 pt-3 bg-white border-t border-zinc-100">
+            {/* Footer com Botão de Ação Expansivo e Proteção para Teclado Mobile */}
+            <div className="p-5 pt-3 pb-6 sm:pb-5 bg-white border-t border-zinc-100 shrink-0 pb-safe">
               <motion.button
-                whileTap={motionConfig.tap.button}
+                whileTap={isSubmitting ? {} : motionConfig.tap.button}
                 transition={motionConfig.pressSpring}
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => handleStart()}
-                className="w-full py-3.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-sm sm:text-base shadow-lg shadow-emerald-700/25 flex items-center justify-center space-x-2 transition-all cursor-pointer"
+                className={`w-full py-3.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-sm sm:text-base shadow-lg shadow-emerald-700/25 flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+                  isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
               >
-                <ShoppingCart className="w-5 h-5 stroke-[2.5]" />
-                <span>Iniciar Compra</span>
-                {selectedList && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-700/60 text-emerald-100 text-xs font-semibold ml-1">
+                {isSubmitting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <ShoppingCart className="w-5 h-5 stroke-[2.5] shrink-0" />
+                )}
+                <span className="truncate">
+                  {isSubmitting ? 'Preparando...' : 'Iniciar Compra'}
+                </span>
+                {selectedList && !isSubmitting && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-700/60 text-emerald-100 text-xs font-semibold ml-1 shrink-0">
                     {selectedList.items?.length || 0} itens
                   </span>
                 )}
-                <ArrowRight className="w-4 h-4 ml-auto" />
+                {!isSubmitting && <ArrowRight className="w-4 h-4 ml-auto shrink-0" />}
               </motion.button>
             </div>
           </motion.div>

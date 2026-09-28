@@ -10,7 +10,8 @@ import {
   Loader2, 
   KeyRound, 
   Sparkles,
-  Info
+  Info,
+  User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useMotionConfig } from '../styles/motionSystem';
@@ -25,10 +26,13 @@ export function AuthScreen({ authHook }: AuthScreenProps) {
   const { signInWithPassword, signUp, isConfigured } = authHook;
 
   const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  const isLogin = mode === 'login';
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -42,6 +46,11 @@ export function AuthScreen({ authHook }: AuthScreenProps) {
   };
 
   const validateForm = (): boolean => {
+    if (!isLogin && !name.trim()) {
+      setErrorMessage('Por favor, informe seu nome.');
+      return false;
+    }
+
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
       setErrorMessage('Por favor, informe seu e-mail.');
@@ -64,7 +73,7 @@ export function AuthScreen({ authHook }: AuthScreenProps) {
       return false;
     }
 
-    if (mode === 'signup' && password !== confirmPassword) {
+    if (!isLogin && password !== confirmPassword) {
       setErrorMessage('As senhas digitadas não coincidem.');
       return false;
     }
@@ -84,13 +93,13 @@ export function AuthScreen({ authHook }: AuthScreenProps) {
     setIsLoading(true);
 
     try {
-      if (mode === 'login') {
+      if (isLogin) {
         const { error } = await signInWithPassword(email, password);
         if (error) {
           setErrorMessage(error);
         }
       } else {
-        const { error, needsEmailConfirmation } = await signUp(email, password);
+        const { error, needsEmailConfirmation } = await signUp(email, password, name.trim());
         if (error) {
           setErrorMessage(error);
         } else if (needsEmailConfirmation) {
@@ -208,6 +217,37 @@ export function AuthScreen({ authHook }: AuthScreenProps) {
 
           {/* Formulário */}
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Campo Nome (exigido apenas se isLogin for false) */}
+            {!isLogin && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <label
+                  htmlFor="auth-name"
+                  className="block text-xs font-bold text-zinc-700 mb-1.5 uppercase tracking-wider"
+                >
+                  Nome
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="auth-name"
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Seu nome completo"
+                    autoComplete="name"
+                    required={!isLogin}
+                    className="w-full pl-10 pr-3.5 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all min-h-[44px]"
+                  />
+                </div>
+              </motion.div>
+            )}
+
             {/* Campo E-mail */}
             <div>
               <label

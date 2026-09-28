@@ -98,7 +98,7 @@ export function BottomNavBar({
           </motion.button>
         </div>
 
-        {/* 3. Direita: Gerenciador */}
+        {/* 3. Direita: Gestão */}
         <motion.button
           whileTap={motionConfig.tap.button}
           transition={motionConfig.pressSpring}
@@ -110,7 +110,7 @@ export function BottomNavBar({
               ? 'text-emerald-700 font-bold'
               : 'text-zinc-500 hover:text-zinc-900 active:text-emerald-600'
           }`}
-          aria-label="Gerenciador"
+          aria-label="Gestão"
         >
           {isManagerActive && (
             <motion.div
@@ -129,7 +129,7 @@ export function BottomNavBar({
               isManagerActive ? 'text-emerald-700 font-bold' : 'text-zinc-600 font-medium'
             }`}
           >
-            Gerenciador
+            Gestão
           </span>
         </motion.button>
       </div>

@@ -19,31 +19,43 @@ export const formatDateBRL = (dateString?: string): string => {
  * Formata um valor numérico no padrão de moeda em Real (BRL)
  */
 export const formatCurrencyBRL = (value: number): string => {
-  return value.toLocaleString('pt-BR', {
+  const safeVal = typeof value === 'number' && !isNaN(value) && isFinite(value) ? value : 0;
+  return safeVal.toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
   });
 };
 
 /**
- * Calcula o subtotal de um item individual (considerando quantidade ou peso)
+ * Calcula o subtotal de um item individual (considerando quantidade ou peso) com proteção anti-NaN
  */
 export const calculateItemSubtotal = (item: Item): number => {
-  if (!item.price) return 0;
+  if (!item || item.price === undefined || item.price === null) return 0;
+  const price = typeof item.price === 'number' ? item.price : parseFloat(String(item.price).replace(',', '.'));
+  if (isNaN(price) || price <= 0 || !isFinite(price)) return 0;
+
   if (item.isWeighted) {
-    return item.price * (item.weight || item.quantity);
+    const rawWeight = item.weight !== undefined && item.weight !== null ? item.weight : item.quantity;
+    const weight = typeof rawWeight === 'number' ? rawWeight : parseFloat(String(rawWeight).replace(',', '.'));
+    if (isNaN(weight) || weight <= 0 || !isFinite(weight)) return 0;
+    return price * weight;
   }
-  return item.price * item.quantity;
+
+  const rawQty = item.quantity;
+  const qty = typeof rawQty === 'number' ? rawQty : parseInt(String(rawQty), 10);
+  if (isNaN(qty) || qty <= 0 || !isFinite(qty)) return 0;
+  return price * qty;
 };
 
 /**
- * Calcula o valor total de uma compra (Purchase) ou lista de itens a partir dos seus itens
+ * Calcula o valor total de uma compra (Purchase) ou lista de itens a partir dos seus itens com proteção anti-NaN
  */
 export const calculatePurchaseTotal = (purchaseOrItems?: Purchase | Item[] | null): number => {
   if (!purchaseOrItems) return 0;
   const items = Array.isArray(purchaseOrItems) ? purchaseOrItems : purchaseOrItems.items;
   if (!items || !Array.isArray(items) || items.length === 0) return 0;
-  return items.reduce((total, item) => total + (item ? calculateItemSubtotal(item) : 0), 0);
+  const total = items.reduce((total, item) => total + (item ? calculateItemSubtotal(item) : 0), 0);
+  return isNaN(total) || total < 0 || !isFinite(total) ? 0 : total;
 };
 
 export const ITEM_CATEGORIES = [

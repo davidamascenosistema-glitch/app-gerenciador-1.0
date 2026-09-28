@@ -35,7 +35,7 @@ export interface ManagerScreenProps {
   finishedPurchases: Purchase[];
   onSelectPurchase: (purchase: Purchase) => void;
   onRepeatPurchase?: (purchase: Purchase) => void;
-  // Props de Listas (Moldes)
+  // Props de Listas
   lists: List[];
   loadingLists?: boolean;
   onCreateList: () => void;
@@ -45,12 +45,12 @@ export interface ManagerScreenProps {
 }
 
 const sanitizeTab = (tab: unknown): ManagerTab => {
-  if (tab === 'lists' || tab === 'analytics') return tab;
-  return 'history';
+  if (tab === 'history' || tab === 'analytics') return tab;
+  return 'lists';
 };
 
 export function ManagerScreen({
-  initialTab = 'history',
+  initialTab = 'lists',
   activeTab: controlledTab,
   onTabChange,
   finishedPurchases = [],
@@ -85,6 +85,18 @@ export function ManagerScreen({
   // Estados locais para a aba de Listas
   const [listSearchQuery, setListSearchQuery] = useState('');
   const [listToDelete, setListToDelete] = useState<List | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteList = async () => {
+    if (!listToDelete || isDeleting) return;
+    try {
+      setIsDeleting(true);
+      await onDeleteList?.(listToDelete.id);
+      setListToDelete(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Estados locais para a aba de Histórico
   const [historySearchQuery, setHistorySearchQuery] = useState('');
@@ -137,12 +149,12 @@ export function ManagerScreen({
           <div className="flex items-center justify-between mb-3">
             <div>
               <h1 className="text-lg sm:text-xl font-black text-zinc-900 tracking-tight leading-tight">
-                Gerenciador
+                Gestão
               </h1>
               <p className="text-xs text-zinc-500 font-medium mt-0.5">
-                {currentTab === 'history' && `${safeFinishedPurchases.length} compras concluídas`}
-                {currentTab === 'lists' && `${safeLists.length} moldes de planejamento`}
+                {currentTab === 'lists' && `${safeLists.length} listas de planejamento`}
                 {currentTab === 'analytics' && 'Visão analítica de gastos'}
+                {currentTab === 'history' && `${safeFinishedPurchases.length} compras concluídas`}
               </p>
             </div>
 
@@ -168,49 +180,13 @@ export function ManagerScreen({
             )}
           </div>
 
-          {/* Segmented Control / Tabs Horizontais */}
+          {/* Segmented Control / Tabs Horizontais: 1º Listas, 2º Análises, 3º Histórico */}
           <nav
             role="tablist"
-            aria-label="Abas do Gerenciador"
+            aria-label="Abas de Gestão"
             className="flex items-center p-1 bg-zinc-100/90 rounded-2xl border border-zinc-200/70 relative"
           >
-            {/* Aba 1: Histórico */}
-            <button
-              type="button"
-              role="tab"
-              aria-selected={currentTab === 'history'}
-              onClick={() => handleSelectTab('history')}
-              className={`relative flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer min-h-[38px] ${
-                currentTab === 'history'
-                  ? 'text-emerald-900 shadow-2xs'
-                  : 'text-zinc-600 hover:text-zinc-900'
-              }`}
-            >
-              {currentTab === 'history' && (
-                <motion.div
-                  layoutId="manager-tab-indicator"
-                  transition={motionConfig.pressSpring}
-                  className="absolute inset-0 bg-white rounded-xl border border-zinc-200/80 shadow-xs"
-                />
-              )}
-              <span className="relative z-10 flex items-center space-x-1.5">
-                <History className={`w-4 h-4 ${currentTab === 'history' ? 'text-emerald-600' : 'text-zinc-400'}`} />
-                <span>Histórico</span>
-                {safeFinishedPurchases.length > 0 && (
-                  <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
-                      currentTab === 'history'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-zinc-200 text-zinc-600'
-                    }`}
-                  >
-                    {safeFinishedPurchases.length}
-                  </span>
-                )}
-              </span>
-            </button>
-
-            {/* Aba 2: Listas */}
+            {/* Aba 1: Listas */}
             <button
               type="button"
               role="tab"
@@ -246,7 +222,7 @@ export function ManagerScreen({
               </span>
             </button>
 
-            {/* Aba 3: Análises */}
+            {/* Aba 2: Análises */}
             <button
               type="button"
               role="tab"
@@ -271,6 +247,42 @@ export function ManagerScreen({
                 <span className="text-[9px] px-1 py-0.2 rounded bg-amber-100 text-amber-800 font-bold uppercase tracking-wider">
                   Breve
                 </span>
+              </span>
+            </button>
+
+            {/* Aba 3: Histórico */}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={currentTab === 'history'}
+              onClick={() => handleSelectTab('history')}
+              className={`relative flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer min-h-[38px] ${
+                currentTab === 'history'
+                  ? 'text-emerald-900 shadow-2xs'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              {currentTab === 'history' && (
+                <motion.div
+                  layoutId="manager-tab-indicator"
+                  transition={motionConfig.pressSpring}
+                  className="absolute inset-0 bg-white rounded-xl border border-zinc-200/80 shadow-xs"
+                />
+              )}
+              <span className="relative z-10 flex items-center space-x-1.5">
+                <History className={`w-4 h-4 ${currentTab === 'history' ? 'text-emerald-600' : 'text-zinc-400'}`} />
+                <span>Histórico</span>
+                {safeFinishedPurchases.length > 0 && (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                      currentTab === 'history'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-zinc-200 text-zinc-600'
+                    }`}
+                  >
+                    {safeFinishedPurchases.length}
+                  </span>
+                )}
               </span>
             </button>
           </nav>
@@ -397,7 +409,7 @@ export function ManagerScreen({
           </div>
         )}
 
-        {/* ================= ABA 2: LISTAS (MOLDES) ================= */}
+        {/* ================= ABA 2: LISTAS ================= */}
         {currentTab === 'lists' && (
           <div className="space-y-3.5">
             {safeLists.length > 2 && (
@@ -407,7 +419,7 @@ export function ManagerScreen({
                   type="text"
                   value={listSearchQuery}
                   onChange={(e) => setListSearchQuery(e.target.value)}
-                  placeholder="Buscar por nome do molde..."
+                  placeholder="Buscar por nome da lista..."
                   className="w-full pl-10 pr-4 py-2.5 bg-white border border-zinc-200/90 rounded-2xl text-zinc-900 placeholder:text-zinc-400 text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all shadow-2xs"
                 />
               </div>
@@ -415,7 +427,7 @@ export function ManagerScreen({
 
             {loadingLists && safeLists.length === 0 ? (
               <div className="py-16 text-center text-zinc-400 text-sm">
-                Carregando seus moldes...
+                Carregando suas listas...
               </div>
             ) : filteredLists.length === 0 ? (
               <div className="py-14 text-center px-4 rounded-3xl border-2 border-dashed border-zinc-200/90 bg-white/50 my-2">
@@ -423,12 +435,12 @@ export function ManagerScreen({
                   <ClipboardList className="w-8 h-8 stroke-[1.8]" />
                 </div>
                 <h3 className="text-base font-bold text-zinc-900 tracking-tight">
-                  {listSearchQuery ? 'Nenhum molde encontrado' : 'Nenhum molde criado ainda'}
+                  {listSearchQuery ? 'Nenhuma lista encontrada' : 'Nenhuma lista criada ainda'}
                 </h3>
                 <p className="text-xs text-zinc-500 max-w-xs mx-auto mt-1.5 leading-relaxed">
                   {listSearchQuery
                     ? 'Tente pesquisar com outro nome.'
-                    : 'Crie listas de compras modelo para agilizar seu planejamento antes de ir ao supermercado.'}
+                    : 'Crie listas de compras para agilizar seu planejamento antes de ir ao supermercado.'}
                 </p>
                 {!listSearchQuery && (
                   <motion.button
@@ -438,16 +450,16 @@ export function ManagerScreen({
                     className="mt-5 inline-flex items-center space-x-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-700/20 cursor-pointer transition-colors"
                   >
                     <Plus className="w-4 h-4 stroke-[2.5]" />
-                    <span>Criar Primeiro Molde</span>
+                    <span>Criar Primeira Lista</span>
                   </motion.button>
                 )}
               </div>
             ) : (
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-xs text-zinc-500 font-semibold px-1">
-                  <span>MOLDES SALVOS</span>
+                  <span>LISTAS SALVAS</span>
                   <span>
-                    {filteredLists.length} {filteredLists.length === 1 ? 'molde' : 'moldes'}
+                    {filteredLists.length} {filteredLists.length === 1 ? 'lista' : 'listas'}
                   </span>
                 </div>
 
@@ -461,14 +473,14 @@ export function ManagerScreen({
                       layout
                       className="bg-white rounded-2xl border border-zinc-200/90 shadow-2xs hover:shadow-xs hover:border-emerald-300 transition-all overflow-hidden"
                     >
-                      {/* Clique no corpo abre a tela de edição do molde */}
+                      {/* Clique no corpo abre a tela de edição da lista */}
                       <div
                         onClick={() => onOpenList?.(list.id)}
                         className="p-4 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                       >
                         <div className="flex items-start justify-between">
-                          <div className="flex-1 pr-3">
-                            <h3 className="text-base font-bold text-zinc-900 leading-tight">
+                          <div className="flex-1 min-w-0 pr-3">
+                            <h3 className="text-base font-bold text-zinc-900 leading-tight truncate">
                               {list.name}
                             </h3>
                             <div className="flex items-center space-x-2 text-xs text-zinc-500 mt-1 font-medium">
@@ -484,7 +496,7 @@ export function ManagerScreen({
                             </div>
                           </div>
 
-                          <div className="text-zinc-400">
+                          <div className="text-zinc-400 shrink-0">
                             <ChevronRight className="w-5 h-5" />
                           </div>
                         </div>
@@ -495,13 +507,13 @@ export function ManagerScreen({
                             {sampleItems.map((item) => (
                               <span
                                 key={item.id}
-                                className="inline-block px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-700 text-[11px] font-medium"
+                                className="inline-block px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-700 text-[11px] font-medium truncate max-w-[140px]"
                               >
                                 {item.name}
                               </span>
                             ))}
                             {itemCount > 4 && (
-                              <span className="inline-block px-2 py-1 rounded-lg bg-zinc-50 text-zinc-400 text-[11px] font-medium border border-zinc-200/60">
+                              <span className="inline-block px-2 py-1 rounded-lg bg-zinc-50 text-zinc-400 text-[11px] font-medium border border-zinc-200/60 shrink-0">
                                 +{itemCount - 4} outros
                               </span>
                             )}
@@ -568,13 +580,14 @@ export function ManagerScreen({
                 Excluir Lista?
               </h3>
               <p className="text-xs text-zinc-500 text-center mt-1.5 leading-relaxed">
-                Tem certeza de que deseja excluir o molde{' '}
-                <strong className="text-zinc-800">&ldquo;{listToDelete.name}&rdquo;</strong>? Esta ação não pode ser desfeita.
+                Tem certeza de que deseja excluir a lista{' '}
+                <strong className="text-zinc-800 line-clamp-2 break-words">&ldquo;{listToDelete.name}&rdquo;</strong>? Esta ação não pode ser desfeita.
               </p>
 
               <div className="mt-5 flex items-center space-x-2">
                 <button
                   type="button"
+                  disabled={isDeleting}
                   onClick={() => setListToDelete(null)}
                   className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
                 >
@@ -582,16 +595,14 @@ export function ManagerScreen({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (listToDelete) {
-                      onDeleteList?.(listToDelete.id);
-                      setListToDelete(null);
-                    }
-                  }}
-                  className="flex-1 py-2.5 px-3 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1"
+                  disabled={isDeleting}
+                  onClick={handleDeleteList}
+                  className={`flex-1 py-2.5 px-3 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1 ${
+                    isDeleting ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>Excluir</span>
+                  <span>{isDeleting ? 'Excluindo...' : 'Excluir'}</span>
                 </button>
               </div>
             </motion.div>
