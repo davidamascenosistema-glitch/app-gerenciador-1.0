@@ -16,6 +16,7 @@ interface ItemSearchBarProps {
   getSuggestions: (query: string) => ItemSuggestion[];
   recordManualItem: (name: string, category?: string) => void;
   dropdownDirection?: 'up' | 'down';
+  hideVoiceButton?: boolean;
 }
 
 export function ItemSearchBar({
@@ -24,6 +25,7 @@ export function ItemSearchBar({
   getSuggestions,
   recordManualItem,
   dropdownDirection = 'down',
+  hideVoiceButton = false,
 }: ItemSearchBarProps) {
   const motionConfig = useMotionConfig();
   const [query, setQuery] = useState('');
@@ -226,20 +228,22 @@ export function ItemSearchBar({
 
             {/* Ações Integradas à Direita */}
             <div className="flex items-center space-x-1 shrink-0 ml-1.5">
-              {/* Botão de Microfone / Ditado por Voz */}
-              <button
-                type="button"
-                onClick={handleVoiceInput}
-                className={`w-9 h-9 sm:w-10 sm:h-10 min-h-[38px] min-w-[38px] rounded-xl flex items-center justify-center transition-all cursor-pointer ${
-                  isRecording
-                    ? 'bg-red-100 hover:bg-red-200 text-red-600 animate-pulse border border-red-200 shadow-2xs'
-                    : 'bg-transparent hover:bg-emerald-50 active:bg-emerald-100 text-zinc-500 hover:text-emerald-700 active:text-emerald-800'
-                }`}
-                title={isRecording ? 'Escutando... Clique para encerrar' : 'Ditar item por voz'}
-                aria-label={isRecording ? 'Parar gravação de voz' : 'Ditar item por voz'}
-              >
-                <Mic className={`w-5 h-5 ${isRecording ? 'text-red-600' : ''}`} />
-              </button>
+              {/* Botão de Microfone / Ditado por Voz (opcional) */}
+              {!hideVoiceButton && (
+                <button
+                  type="button"
+                  onClick={handleVoiceInput}
+                  className={`w-9 h-9 sm:w-10 sm:h-10 min-h-[38px] min-w-[38px] rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                    isRecording
+                      ? 'bg-red-100 hover:bg-red-200 text-red-600 animate-pulse border border-red-200 shadow-2xs'
+                      : 'bg-transparent hover:bg-emerald-50 active:bg-emerald-100 text-zinc-500 hover:text-emerald-700 active:text-emerald-800'
+                  }`}
+                  title={isRecording ? 'Escutando... Clique para encerrar' : 'Ditar item por voz'}
+                  aria-label={isRecording ? 'Parar gravação de voz' : 'Ditar item por voz'}
+                >
+                  <Mic className={`w-5 h-5 ${isRecording ? 'text-red-600' : ''}`} />
+                </button>
+              )}
 
               {/* Botão de Limpar */}
               {query.trim().length > 0 && !isRecording && (

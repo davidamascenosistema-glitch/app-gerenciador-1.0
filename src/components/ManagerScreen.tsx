@@ -18,6 +18,8 @@ import {
   Layers,
   ShoppingBag,
   Check,
+  X,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useMotionConfig } from '../styles/motionSystem';
@@ -38,7 +40,7 @@ export interface ManagerScreenProps {
   // Props de Listas
   lists: List[];
   loadingLists?: boolean;
-  onCreateList: () => void;
+  onCreateList: (name: string) => Promise<void> | void;
   onOpenList: (listId: string) => void;
   onDeleteList: (listId: string) => void;
   onStartPurchaseFromList: (list: List) => void;
@@ -86,6 +88,39 @@ export function ManagerScreen({
   const [listSearchQuery, setListSearchQuery] = useState('');
   const [listToDelete, setListToDelete] = useState<List | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Estados para o modal de criação de nova lista
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [isCreatingList, setIsCreatingList] = useState(false);
+
+  const handleOpenCreateModal = () => {
+    setNewListName('');
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCloseCreateModal = () => {
+    if (isCreatingList) return;
+    setIsCreateModalOpen(false);
+    setNewListName('');
+  };
+
+  const handleConfirmCreateList = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = newListName.trim();
+    if (!trimmed || isCreatingList) return;
+
+    try {
+      setIsCreatingList(true);
+      await onCreateList(trimmed);
+      setIsCreateModalOpen(false);
+      setNewListName('');
+    } catch (err) {
+      console.error('Erro ao criar lista:', err);
+    } finally {
+      setIsCreatingList(false);
+    }
+  };
 
   const handleDeleteList = async () => {
     if (!listToDelete || isDeleting) return;
@@ -164,7 +199,7 @@ export function ManagerScreen({
                 whileTap={motionConfig.tap.button}
                 transition={motionConfig.pressSpring}
                 type="button"
-                onClick={() => onCreateList?.()}
+                onClick={handleOpenCreateModal}
                 className="py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center space-x-1.5 shadow-2xs cursor-pointer transition-colors"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -244,9 +279,6 @@ export function ManagerScreen({
               <span className="relative z-10 flex items-center space-x-1.5">
                 <BarChart3 className={`w-4 h-4 ${currentTab === 'analytics' ? 'text-emerald-600' : 'text-zinc-400'}`} />
                 <span>Análises</span>
-                <span className="text-[9px] px-1 py-0.2 rounded bg-amber-100 text-amber-800 font-bold uppercase tracking-wider">
-                  Breve
-                </span>
               </span>
             </button>
 
@@ -446,7 +478,7 @@ export function ManagerScreen({
                   <motion.button
                     whileTap={motionConfig.tap.button}
                     type="button"
-                    onClick={() => onCreateList?.()}
+                    onClick={handleOpenCreateModal}
                     className="mt-5 inline-flex items-center space-x-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-700/20 cursor-pointer transition-colors"
                   >
                     <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -605,6 +637,100 @@ export function ManagerScreen({
                   <span>{isDeleting ? 'Excluindo...' : 'Excluir'}</span>
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal: Criar Nova Lista com Validação Obrigatória de Nome */}
+      <AnimatePresence>
+        {isCreateModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: 12 }}
+              transition={motionConfig.modalSpring}
+              className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-zinc-200 relative"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="create-list-title"
+            >
+              <button
+                type="button"
+                disabled={isCreatingList}
+                onClick={handleCloseCreateModal}
+                aria-label="Fechar modal"
+                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <form onSubmit={handleConfirmCreateList} className="p-5 pt-6">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 mb-3 mx-auto">
+                  <ClipboardList className="w-6 h-6 stroke-[2.2]" />
+                </div>
+
+                <h3 id="create-list-title" className="text-lg font-bold text-zinc-900 text-center tracking-tight">
+                  Nova Lista de Compras
+                </h3>
+                <p className="text-xs text-zinc-500 text-center mt-1 leading-relaxed">
+                  Defina um nome para planejar seus itens antes de ir às compras.
+                </p>
+
+                <div className="mt-4">
+                  <label htmlFor="modal-list-name" className="block text-xs font-bold text-zinc-700 mb-1.5 uppercase tracking-wider">
+                    Nome da lista *
+                  </label>
+                  <input
+                    id="modal-list-name"
+                    type="text"
+                    autoFocus
+                    value={newListName}
+                    onChange={(e) => setNewListName(e.target.value)}
+                    placeholder="Ex: Compras do Mês, Churrasco, Feira..."
+                    className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all min-h-[44px]"
+                  />
+                  {!newListName.trim() && (
+                    <span className="text-[11px] text-zinc-400 block mt-1 font-medium">
+                      O nome é obrigatório para criar a lista.
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-5 flex items-center space-x-2">
+                  <button
+                    type="button"
+                    disabled={isCreatingList}
+                    onClick={handleCloseCreateModal}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={!newListName.trim() || isCreatingList}
+                    className={`flex-1 py-2.5 px-3 rounded-xl text-white font-bold text-xs transition-all min-h-[44px] flex items-center justify-center space-x-1.5 ${
+                      !newListName.trim() || isCreatingList
+                        ? 'bg-emerald-400 opacity-60 cursor-not-allowed shadow-none'
+                        : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-md shadow-emerald-700/20 cursor-pointer'
+                    }`}
+                  >
+                    {isCreatingList ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                        <span>Criando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 stroke-[2.5]" />
+                        <span>Criar Lista</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

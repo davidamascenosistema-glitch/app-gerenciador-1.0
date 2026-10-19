@@ -147,8 +147,12 @@ export function useLists(userId?: string | null) {
    * Cria uma nova lista de molde (template)
    */
   const createList = async (params: CreateListParams | string): Promise<List> => {
-    const listName = typeof params === 'string' ? params.trim() : params.name.trim();
-    const finalName = listName || 'Lista de Planejamento';
+    const rawName = typeof params === 'string' ? params : (params?.name || '');
+    const listName = rawName.trim();
+    if (!listName) {
+      throw new Error('O nome da lista é obrigatório.');
+    }
+    const finalName = listName;
     const initialItems = typeof params === 'object' && params.items ? params.items : [];
 
     const newListId = crypto.randomUUID();

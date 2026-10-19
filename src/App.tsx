@@ -17,6 +17,7 @@ import { useAuth } from './hooks/useAuth';
 import { ToastProvider, useToast } from './components/Toast';
 import { PurchaseCelebrationModal } from './components/PurchaseCelebrationModal';
 import { BottomNavBar } from './components/BottomNavBar';
+import { PurchaseChoiceSheet } from './components/PurchaseChoiceSheet';
 import { PurchaseSetupSheet } from './components/PurchaseSetupSheet';
 import { ResumePurchaseSheet } from './components/ResumePurchaseSheet';
 import { Purchase, List } from './types';
@@ -30,7 +31,9 @@ function MainApp() {
   const listsHook = useLists(auth.user?.id);
   const { showToast } = useToast();
   const [activeScreen, setActiveScreen] = useState<'home' | 'manager' | 'lists' | 'cart' | 'history' | 'profile' | 'history_select'>('home');
-  const [managerTab, setManagerTab] = useState<ManagerTab>('history');
+  const [managerTab, setManagerTab] = useState<ManagerTab>('lists');
+  const [showPurchaseChoice, setShowPurchaseChoice] = useState(false);
+  const [purchaseStartMode, setPurchaseStartMode] = useState<'scratch' | 'list'>('scratch');
   const [showPurchaseSetup, setShowPurchaseSetup] = useState(false);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [activePurchaseId, setActivePurchaseId] = useState<string | null>(null);
@@ -78,10 +81,10 @@ function MainApp() {
     ? purchasesHook.getPurchaseById(selectedDetailPurchaseId)
     : null;
 
-  // Navegação para a aba Gerenciador
+  // Navegação para a aba Gestão
   const handleNavigateToManager = (tab?: ManagerTab | unknown) => {
     const validTab: ManagerTab =
-      tab === 'lists' || tab === 'analytics' ? tab : 'history';
+      tab === 'history' || tab === 'analytics' ? tab : 'lists';
     setManagerTab(validTab);
     setActiveScreen('manager');
     setActivePurchaseId(null);
@@ -107,14 +110,21 @@ function MainApp() {
     handleNavigateToManager('history');
   };
 
-  // Criar novo molde de lista
-  const handleCreateListTemplate = async () => {
-    const created = await listsHook.createList({ name: 'Nova Lista' });
+  // Criar nova lista com nome obrigatório
+  const handleCreateListTemplate = async (name: string) => {
+    const trimmed = typeof name === 'string' ? name.trim() : '';
+    if (!trimmed) return;
+    const created = await listsHook.createList({ name: trimmed });
     setActiveListId(created.id);
   };
 
   // Iniciar compra a partir de um molde de lista
   const handleStartPurchaseFromListTemplate = (listTemplate: List) => {
+    // Garante que qualquer carrinho pendente anterior seja descartado (uma compra ativa por vez)
+    purchasesHook.getPendingPurchases().forEach((p) => {
+      purchasesHook.discardPurchase(p.id);
+    });
+
     const initialItems = (listTemplate.items || []).map((item) => ({
       id: crypto.randomUUID(),
       name: item.name,
@@ -141,6 +151,11 @@ function MainApp() {
   };
 
   const handleCreateNewList = () => {
+    // Garante que qualquer carrinho pendente anterior seja descartado (uma compra ativa por vez)
+    purchasesHook.getPendingPurchases().forEach((p) => {
+      purchasesHook.discardPurchase(p.id);
+    });
+
     const newPurchase = purchasesHook.createPurchase({
       name: 'Planejamento de compra',
       status: 'pending',
@@ -155,6 +170,11 @@ function MainApp() {
   };
 
   const handleSelectPurchaseToRepeat = (originalPurchase: Purchase) => {
+    // Garante que qualquer carrinho pendente anterior seja descartado (uma compra ativa por vez)
+    purchasesHook.getPendingPurchases().forEach((p) => {
+      purchasesHook.discardPurchase(p.id);
+    });
+
     const newPurchase = purchasesHook.createPurchaseFromTemplate(originalPurchase);
     showToast(`Lista criada a partir de "${originalPurchase.name || 'Compra Anterior'}"`);
     setActiveScreen('home');
@@ -228,7 +248,9 @@ function MainApp() {
         userId={auth.user?.id}
         list={activeList}
         allPurchases={purchasesHook.purchases}
-        onBack={() => setActiveListId(null)}
+        onBack={() => {
+          setActiveListId(null);
+        }}
         onSaveList={async (currentList) => {
           const success = await listsHook.saveListItems(currentList.id, currentList.items);
           if (success) {
@@ -245,6 +267,11 @@ function MainApp() {
           showToast('Molde de lista excluído.');
         }}
         onStartPurchaseFromList={(listTemplate) => {
+          // Garante apenas uma compra ativa por vez descartando compras pendentes anteriores
+          purchasesHook.getPendingPurchases().forEach((p) => {
+            purchasesHook.discardPurchase(p.id);
+          });
+
           const initialItems = (listTemplate.items || []).map((item) => ({
             id: crypto.randomUUID(),
             name: item.name,
@@ -279,6 +306,11 @@ function MainApp() {
         lists={listsHook.lists}
         onContinuePurchase={(purchaseId) => setActivePurchaseId(purchaseId)}
         onStartNewPurchase={(params) => {
+          // Garante apenas uma compra ativa por vez descartando compras pendentes anteriores
+          purchasesHook.getPendingPurchases().forEach((p) => {
+            purchasesHook.discardPurchase(p.id);
+          });
+
           let initialItems: any[] = [];
           if (params.fromListId) {
             const foundList = listsHook.getListById(params.fromListId);
@@ -331,7 +363,7 @@ function MainApp() {
         activeTab={managerTab}
         onTabChange={(tab) => {
           const validTab: ManagerTab =
-            tab === 'lists' || tab === 'analytics' ? tab : 'history';
+            tab === 'history' || tab === 'analytics' ? tab : 'lists';
           setManagerTab(validTab);
         }}
         finishedPurchases={purchasesHook.getFinishedPurchases()}
@@ -368,6 +400,9 @@ function MainApp() {
         user={auth.user}
         purchasesHook={purchasesHook}
         finishedPurchases={purchasesHook.getFinishedPurchases()}
+        lists={listsHook.lists}
+        onNavigateToLists={() => handleNavigateToManager('lists')}
+        onOpenList={(id) => setActiveListId(id)}
         onNavigateToPurchase={(id) => {
           setActivePurchaseId(id);
         }}
@@ -395,7 +430,7 @@ function MainApp() {
     if (latestPending) {
       setShowResumePrompt(true);
     } else {
-      setShowPurchaseSetup(true);
+      setShowPurchaseChoice(true);
     }
   };
 
@@ -431,7 +466,7 @@ function MainApp() {
                 setActiveListId(null);
                 setSelectedDetailPurchaseId(null);
               }}
-              onNavigateToManager={() => handleNavigateToManager('history')}
+              onNavigateToManager={() => handleNavigateToManager('lists')}
               onOpenPurchaseSetup={handleFabClick}
               hasPendingPurchase={Boolean(latestPending)}
               pendingItemsCount={latestPending ? latestPending.items.length : 0}
@@ -454,14 +489,36 @@ function MainApp() {
         }}
         onStartNew={() => {
           setShowResumePrompt(false);
+          // Descarta qualquer compra pendente anterior para que não haja sobreposição de carrinhos ativos
+          purchasesHook.getPendingPurchases().forEach((p) => {
+            purchasesHook.discardPurchase(p.id);
+          });
+          setShowPurchaseChoice(true);
+        }}
+      />
+
+      {/* 1. Interceptador de Escolha (Novo Bottom Sheet ao Clicar no FAB 'Comprar') */}
+      <PurchaseChoiceSheet
+        isOpen={showPurchaseChoice}
+        listsCount={listsHook.lists?.length || 0}
+        onClose={() => setShowPurchaseChoice(false)}
+        onSelectStartFromScratch={() => {
+          setShowPurchaseChoice(false);
+          setPurchaseStartMode('scratch');
+          setShowPurchaseSetup(true);
+        }}
+        onSelectStartFromList={() => {
+          setShowPurchaseChoice(false);
+          setPurchaseStartMode('list');
           setShowPurchaseSetup(true);
         }}
       />
 
-      {/* Menu de Preparação Suave (Bottom Sheet) acionado pelo botão central 'Comprar' */}
+      {/* 2. Menu de Preparação da Compra */}
       <PurchaseSetupSheet
         isOpen={showPurchaseSetup}
         lists={listsHook.lists}
+        startMode={purchaseStartMode}
         onClose={() => setShowPurchaseSetup(false)}
         onNavigateToCreateList={() => {
           setShowPurchaseSetup(false);
@@ -469,6 +526,11 @@ function MainApp() {
         }}
         onStartPurchase={(params) => {
           setShowPurchaseSetup(false);
+          // Garante que qualquer carrinho pendente anterior seja descartado (uma compra ativa por vez)
+          purchasesHook.getPendingPurchases().forEach((p) => {
+            purchasesHook.discardPurchase(p.id);
+          });
+
           let initialItems: any[] = [];
           if (params.fromListId) {
             const foundList = listsHook.getListById(params.fromListId);

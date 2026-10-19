@@ -26,7 +26,7 @@ import {
   Filter,
   ChevronDown,
   Keyboard,
-  FolderPlus,
+  ClipboardList,
   Mic,
   MicOff,
 } from 'lucide-react';
@@ -659,7 +659,7 @@ export function PurchaseScreen({
                         (e.target as HTMLInputElement).blur();
                       }
                     }}
-                    placeholder="Digite aqui o nome da lista"
+                    placeholder="Nome da compra"
                     className="w-full text-sm sm:text-base font-bold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal bg-zinc-50/80 hover:bg-zinc-100/80 focus:bg-white border border-dashed border-zinc-300 hover:border-emerald-400 focus:border-solid focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-1.5 pr-8 transition-all outline-none leading-tight truncate"
                   />
                   <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-emerald-600 transition-colors">
@@ -677,22 +677,8 @@ export function PurchaseScreen({
               </div>
             </div>
 
-            {/* Lado Direito: Botão Importar (+ Lista) e Menu de 3 Pontinhos (⋮) */}
-            <div className="flex items-center space-x-1.5 shrink-0 relative">
-              {/* Botão de Importar Lista (Merge) */}
-              {purchase.status !== 'finished' && (
-                <button
-                  type="button"
-                  onClick={() => setIsImportModalOpen(true)}
-                  title="Importar Lista"
-                  aria-label="Importar lista"
-                  className="flex items-center space-x-1 px-2.5 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200/80 active:bg-zinc-300 text-zinc-700 hover:text-emerald-800 border border-zinc-200/80 font-bold text-xs transition-colors shrink-0 cursor-pointer min-h-[44px] active:scale-95"
-                >
-                  <FolderPlus className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span className="text-[11px] font-bold">+ Lista</span>
-                </button>
-              )}
-
+            {/* Lado Direito: Menu de Opções (⋮) */}
+            <div className="flex items-center shrink-0 relative">
               {/* Menu de 3 Pontinhos (⋮) para Ações Secundárias */}
               <div className="relative">
                 <button
@@ -723,8 +709,23 @@ export function PurchaseScreen({
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: -4 }}
                         transition={{ duration: 0.12 }}
-                        className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-xl border border-zinc-200/90 py-1.5 z-50 overflow-hidden"
+                        className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-zinc-200/90 py-1.5 z-50 overflow-hidden"
                       >
+                        {/* 1. Importar itens de uma lista salva (Salva-Vidas) */}
+                        {purchase.status !== 'finished' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsMenuOpen(false);
+                              setIsImportModalOpen(true);
+                            }}
+                            className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-zinc-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center space-x-2.5 transition-colors cursor-pointer min-h-[44px]"
+                          >
+                            <ClipboardList className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>Importar itens de uma lista</span>
+                          </button>
+                        )}
+
                         {/* Compartilhar */}
                         <button
                           type="button"
@@ -854,7 +855,7 @@ export function PurchaseScreen({
 
       {/* Main Content (Rolagem Livre com padding inferior dinâmico para não sobrepor o rodapé fixo) */}
       <main
-        className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-3 sm:py-4 flex flex-col pb-36 sm:pb-40"
+        className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-3 sm:py-4 flex flex-col pb-44 sm:pb-48"
       >
         <div className="space-y-3">
             {/* Lista de Cards de Itens ou Estado Vazio com Animação Fluida desde o 1º item */}
@@ -908,6 +909,17 @@ export function PurchaseScreen({
                       <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">
                         Use a barra de busca acima para pesquisar ou adicionar itens à sua lista.
                       </p>
+
+                      {purchase.status !== 'finished' && (
+                        <button
+                          type="button"
+                          onClick={() => setIsImportModalOpen(true)}
+                          className="bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 font-bold px-4 py-2.5 rounded-xl flex items-center space-x-2 mt-4 transition-colors cursor-pointer text-xs sm:text-sm border border-emerald-200/80 shadow-2xs active:scale-95"
+                        >
+                          <ClipboardList className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Importar itens de uma Lista salva</span>
+                        </button>
+                      )}
                     </motion.div>
                   ) : (
                     visibleSections.map((section) => (
@@ -973,7 +985,7 @@ export function PurchaseScreen({
                   <span className="text-[11px] text-zinc-400 font-medium">Toque para adicionar</span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex overflow-x-auto whitespace-nowrap gap-2 pb-2 no-scrollbar scrollbar-hide -mx-1 px-1">
                   {availableSuggestions.map((suggestion, idx) => (
                     <motion.button
                       whileTap={motionConfig.tap.button}
@@ -1248,7 +1260,7 @@ export function PurchaseScreen({
         )}
       </AnimatePresence>
 
-      {/* Voice-First Bottom Dock - Barra Inferior de Adição por Voz com Digitação Discreta */}
+      {/* Voice-First Bottom Dock - Barra Inferior com Microfone como Rei (FAB Central Estilo Assistente Virtual Siri/Google) */}
       {purchase.status !== 'finished' ? (
         <div className="fixed bottom-0 left-0 right-0 z-40 pb-safe pointer-events-none">
           {/* Banner flutuante com instrução de fala durante a gravação */}
@@ -1259,10 +1271,10 @@ export function PurchaseScreen({
                   initial={{ opacity: 0, y: 8, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                  className="pointer-events-auto mb-2 px-4 py-2 rounded-2xl bg-zinc-900/90 backdrop-blur-md text-white text-xs font-medium shadow-xl flex items-center justify-center space-x-2 border border-white/10"
+                  className="pointer-events-auto mb-3 px-4 py-2.5 rounded-2xl bg-zinc-900/90 backdrop-blur-md text-white text-xs font-semibold shadow-2xl flex items-center justify-center space-x-2 border border-white/10"
                 >
                   <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
-                  <span>Ouvindo... Diga ex: &ldquo;2 caixas de leite por 5 reais&rdquo;</span>
+                  <span>Ouvindo com atenção... Diga ex: &ldquo;2 caixas de leite por 5 reais&rdquo;</span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1294,6 +1306,7 @@ export function PurchaseScreen({
                     </button>
                   </div>
                   <ItemSearchBar
+                    hideVoiceButton={true}
                     dropdownDirection="up"
                     onAddItem={(name, category, isWeighted, pricingModeSource) => {
                       handleAddItemFromSearch(name, category, isWeighted, pricingModeSource);
@@ -1307,14 +1320,14 @@ export function PurchaseScreen({
             )}
           </AnimatePresence>
 
-          {/* Barra Principal Inferior Voice-First */}
-          <div className="pointer-events-auto bg-white/95 backdrop-blur-md border-t border-zinc-200/80 shadow-[0_-6px_24px_rgba(0,0,0,0.08)] px-4 py-2.5">
+          {/* Barra Principal Inferior Voice-First com FAB Central Absoluto estilo Siri/Google Assistant */}
+          <div className="pointer-events-auto relative bg-white/95 backdrop-blur-md border-t border-zinc-200/80 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] px-4 pt-3 pb-8 sm:pb-9">
             <div className="w-full max-w-md md:max-w-xl mx-auto">
-              {/* Resumo Financeiro / Itens quando há itens na lista */}
+              {/* Linha de Resumo Financeiro / Itens no topo da barra */}
               {totalItemsCount > 0 && (
                 <div className="flex items-center justify-between text-xs pb-2 border-b border-zinc-100 mb-2">
                   <div className="flex items-center space-x-1.5">
-                    <span className="text-zinc-500 font-medium">Total:</span>
+                    <span className="text-zinc-400 font-medium">Total:</span>
                     <span className="text-sm sm:text-base font-black text-zinc-900 tracking-tight">
                       <AnimatedCurrency value={totalValue} />
                     </span>
@@ -1329,30 +1342,34 @@ export function PurchaseScreen({
                 </div>
               )}
 
-              {/* Grid de Ações: Esquerda (Teclado), Centro (Microfone Hero), Direita (Finalizar) */}
-              <div className="flex items-center justify-between gap-2.5">
-                {/* 1. Botão Teclado (Digitação Discreta) */}
-                <motion.button
-                  whileTap={motionConfig.tap.button}
-                  transition={motionConfig.pressSpring}
-                  type="button"
-                  onClick={() => setIsKeyboardOpen((prev) => !prev)}
-                  aria-label={isKeyboardOpen ? 'Fechar digitação' : 'Abrir digitação por teclado'}
-                  title="Digitação manual"
-                  className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl border transition-all cursor-pointer min-w-[64px] min-h-[50px] active:scale-95 ${
-                    isKeyboardOpen
-                      ? 'bg-emerald-50 border-emerald-400 text-emerald-700 shadow-2xs font-bold'
-                      : 'bg-zinc-100 hover:bg-zinc-200/80 text-zinc-600 border-zinc-200/70 hover:text-zinc-900'
-                  }`}
-                >
-                  <Keyboard className="w-5 h-5 mb-0.5" />
-                  <span className="text-[10px] font-bold leading-none">Teclado</span>
-                </motion.button>
-
-                {/* 2. Hero Botão de Microfone (Voice-First Central em Grande Destaque) */}
-                <div className="flex-1 flex flex-col items-center">
+              {/* Grid Estruturado: Esquerda (Digitar), Centro Absoluto Elevado (Microfone Rei), Direita (Concluir) */}
+              <div className="relative flex items-center justify-between min-h-[52px]">
+                {/* 1. Lado Esquerdo: Campo / Botão de Digitação Manual Discreto */}
+                <div className="flex-1 flex justify-start">
                   <motion.button
-                    whileTap={{ scale: 0.94 }}
+                    whileTap={motionConfig.tap.button}
+                    transition={motionConfig.pressSpring}
+                    type="button"
+                    onClick={() => setIsKeyboardOpen((prev) => !prev)}
+                    aria-label={isKeyboardOpen ? 'Fechar digitação' : 'Abrir digitação por teclado'}
+                    title="Digitação manual"
+                    className={`flex items-center space-x-1.5 py-2 px-3 sm:px-4 rounded-2xl border transition-all cursor-pointer min-h-[44px] active:scale-95 ${
+                      isKeyboardOpen
+                        ? 'bg-emerald-50 border-emerald-400 text-emerald-800 font-bold shadow-xs'
+                        : 'bg-zinc-100/90 hover:bg-zinc-200/90 text-zinc-600 border-zinc-200/80 hover:text-zinc-900 font-semibold'
+                    }`}
+                  >
+                    <Keyboard className="w-4 h-4 text-zinc-600" />
+                    <span className="text-xs">Digitar</span>
+                  </motion.button>
+                </div>
+
+                {/* 2. Centro: O MICROFONE COMO REI (Elevado para ergonomia de uma mão só / polegar) */}
+                <div className="absolute left-1/2 -translate-x-1/2 -top-10 sm:-top-11 flex flex-col items-center z-20 pointer-events-auto">
+                  {/* Botão FAB Circular Gigante */}
+                  <motion.button
+                    whileTap={{ scale: 0.92 }}
+                    whileHover={{ scale: 1.05 }}
                     transition={motionConfig.pressSpring}
                     type="button"
                     onClick={handleToggleVoice}
@@ -1364,62 +1381,74 @@ export function PurchaseScreen({
                         ? 'Processando áudio...'
                         : 'Ditar item por voz'
                     }
-                    title={isRecording ? 'Gravando... Toque para parar' : 'Ditar item por voz'}
-                    className={`relative w-full max-w-[210px] h-13 sm:h-14 rounded-full flex items-center justify-center space-x-2 px-4 font-black text-sm text-white shadow-lg transition-all cursor-pointer ${
+                    title={isRecording ? 'Gravando... Toque para parar' : 'Ditar item por voz (Assistente)'}
+                    className={`relative w-16 h-16 sm:w-18 sm:h-18 rounded-full flex items-center justify-center text-white shadow-2xl transition-all cursor-pointer border-4 border-white ${
                       isRecording
-                        ? 'bg-red-600 shadow-red-600/40 ring-4 ring-red-300 animate-pulse'
+                        ? 'bg-gradient-to-br from-red-500 to-rose-700 shadow-red-500/50 ring-4 ring-red-400/40 animate-pulse'
                         : isProcessingVoice
-                        ? 'bg-emerald-700 shadow-emerald-700/30 cursor-wait'
-                        : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-emerald-600/30'
+                        ? 'bg-gradient-to-br from-emerald-700 to-teal-800 shadow-emerald-800/40 cursor-wait'
+                        : 'bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 hover:from-emerald-600 hover:to-teal-800 shadow-emerald-600/40 hover:shadow-emerald-600/60 ring-4 ring-emerald-500/20'
                     }`}
                   >
+                    {/* Anéis de pulso de voz estilo Siri durante a escuta */}
                     {isRecording && (
-                      <span className="absolute -inset-1 rounded-full bg-red-500/30 animate-ping pointer-events-none" />
+                      <>
+                        <span className="absolute -inset-2 rounded-full bg-red-500/25 animate-ping pointer-events-none" />
+                        <span className="absolute -inset-4 rounded-full bg-red-500/15 animate-pulse pointer-events-none" />
+                      </>
                     )}
 
                     {isProcessingVoice ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin text-white" />
-                        <span className="tracking-wide">Processando...</span>
-                      </>
+                      <Loader2 className="w-7 h-7 sm:w-8 sm:h-8 animate-spin text-white" />
                     ) : isRecording ? (
-                      <>
-                        <Mic className="w-5 h-5 animate-bounce stroke-[2.5]" />
-                        <span className="tracking-wide">Ouvindo...</span>
-                      </>
+                      <Mic className="w-7 h-7 sm:w-8 sm:h-8 animate-bounce stroke-[2.5]" />
                     ) : (
-                      <>
-                        <Mic className="w-5 h-5 stroke-[2.5]" />
-                        <span className="tracking-wide">Falar Item</span>
-                      </>
+                      <div className="relative flex items-center justify-center">
+                        <span className="absolute w-8 h-8 rounded-full bg-white/20 blur-xs" />
+                        <Mic className="w-7 h-7 sm:w-8 sm:h-8 stroke-[2.3] relative z-10" />
+                      </div>
                     )}
                   </motion.button>
+
+                  {/* Rótulo de status elegante do assistente */}
+                  <span
+                    className={`text-[10px] sm:text-[11px] font-extrabold tracking-tight mt-1 text-center select-none ${
+                      isRecording
+                        ? 'text-red-600 animate-pulse'
+                        : isProcessingVoice
+                        ? 'text-emerald-700 font-bold'
+                        : 'text-zinc-600'
+                    }`}
+                  >
+                    {isRecording ? 'Ouvindo...' : isProcessingVoice ? 'Processando...' : 'Falar Item'}
+                  </span>
                 </div>
 
-                {/* 3. Botão Finalizar Compra */}
-                <motion.button
-                  whileTap={isFinishing || totalItemsCount === 0 ? {} : motionConfig.tap.button}
-                  transition={motionConfig.pressSpring}
-                  type="button"
-                  onClick={handleConcluirCompra}
-                  disabled={totalItemsCount === 0 || isFinishing}
-                  aria-label="Finalizar Compra"
-                  title="Finalizar Compra"
-                  className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl border transition-all cursor-pointer min-w-[64px] min-h-[50px] active:scale-95 ${
-                    totalItemsCount > 0 && !isFinishing
-                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 font-bold shadow-2xs'
-                      : 'bg-zinc-100 text-zinc-400 border-zinc-200/50 cursor-not-allowed opacity-50'
-                  }`}
-                >
-                  {isFinishing ? (
-                    <Loader2 className="w-5 h-5 mb-0.5 animate-spin text-emerald-600" />
-                  ) : (
-                    <CheckCircle2 className="w-5 h-5 mb-0.5 text-emerald-600" />
-                  )}
-                  <span className="text-[10px] font-bold leading-none">
-                    {isFinishing ? 'Salvando...' : 'Finalizar'}
-                  </span>
-                </motion.button>
+                {/* 3. Lado Direito: Botão Concluir/Finalizar Compra */}
+                <div className="flex-1 flex justify-end">
+                  <motion.button
+                    whileTap={isFinishing || totalItemsCount === 0 ? {} : motionConfig.tap.button}
+                    transition={motionConfig.pressSpring}
+                    type="button"
+                    onClick={handleConcluirCompra}
+                    disabled={totalItemsCount === 0 || isFinishing}
+                    aria-label="Finalizar Compra"
+                    className={`flex items-center space-x-1.5 py-2 px-3 sm:px-4 rounded-2xl border transition-all cursor-pointer min-h-[44px] ${
+                      totalItemsCount > 0 && !isFinishing
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md shadow-emerald-700/20 active:scale-95 border-emerald-600'
+                        : 'bg-zinc-100 text-zinc-400 border-zinc-200/50 cursor-not-allowed opacity-50 font-semibold'
+                    }`}
+                  >
+                    {isFinishing ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                    )}
+                    <span className="text-xs font-bold">
+                      {isFinishing ? 'Salvando...' : 'Concluir'}
+                    </span>
+                  </motion.button>
+                </div>
               </div>
             </div>
           </div>

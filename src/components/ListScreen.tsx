@@ -399,7 +399,7 @@ export function ListScreen({
   };
 
   const handleBack = () => {
-    if (onSaveList && list.items && list.items.length > 0) {
+    if (onSaveList) {
       onSaveList(list);
     }
     onBack();

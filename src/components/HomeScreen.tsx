@@ -6,9 +6,7 @@ import {
   TrendingUp,
   ShoppingCart,
   DollarSign,
-  Clock,
-  Trash2,
-  Play,
+  ClipboardList,
   X,
   Check,
   Sparkles,
@@ -20,7 +18,7 @@ import { ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { useMotionConfig } from '../styles/motionSystem';
 import { usePurchases } from '../hooks/usePurchases';
 import { calculatePurchaseTotal, formatCurrencyBRL } from '../utils/purchaseHelpers';
-import { Purchase } from '../types';
+import { Purchase, List } from '../types';
 import { useToast } from './Toast';
 import { User } from '@supabase/supabase-js';
 
@@ -28,6 +26,9 @@ interface HomeScreenProps {
   user?: User | null;
   purchasesHook?: ReturnType<typeof usePurchases>;
   finishedPurchases?: Purchase[];
+  lists?: List[];
+  onNavigateToLists?: () => void;
+  onOpenList?: (listId: string) => void;
   onNavigateToPurchase?: (purchaseId: string) => void;
   onNavigateToAnalytics?: () => void;
   onNavigateToProfile?: () => void;
@@ -38,6 +39,9 @@ export function HomeScreen({
   user,
   purchasesHook: externalPurchasesHook,
   finishedPurchases: externalFinishedPurchases,
+  lists = [],
+  onNavigateToLists,
+  onOpenList,
   onNavigateToPurchase,
   onNavigateToAnalytics,
   onNavigateToProfile,
@@ -57,8 +61,6 @@ export function HomeScreen({
 
   // Estados locais
   const [timeFilter, setTimeFilter] = useState<'ano' | 'mes' | 'semana'>('mes');
-  const [purchaseToDiscard, setPurchaseToDiscard] = useState<Purchase | null>(null);
-  const [isDiscarding, setIsDiscarding] = useState(false);
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
@@ -141,40 +143,6 @@ export function HomeScreen({
 
     return { total, count, avg };
   }, [finishedPurchases, timeFilter]);
-
-  // Continuar compra pendente
-  const handleContinuePending = (purchase: Purchase) => {
-    if (onNavigateToPurchase) {
-      onNavigateToPurchase(purchase.id);
-    } else {
-      const name = purchase.name || 'Compra sem nome';
-      showToast(`Continuando: "${name}" (${purchase.items.length} itens)`);
-    }
-  };
-
-  // Descartar compra pendente
-  const handleOpenDiscardModal = (purchase: Purchase, e?: React.MouseEvent) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    setPurchaseToDiscard(purchase);
-  };
-
-  const handleConfirmDiscard = async () => {
-    if (!purchaseToDiscard || isDiscarding) return;
-    try {
-      setIsDiscarding(true);
-      const name = purchaseToDiscard.name || 'Compra sem nome';
-      const pendingId = purchaseToDiscard.id;
-
-      await discardPurchase(pendingId);
-      setPurchaseToDiscard(null);
-      showToast(`Compra "${name}" descartada com sucesso.`);
-    } finally {
-      setIsDiscarding(false);
-    }
-  };
 
   const handleSendFeedback = (e: React.FormEvent) => {
     e.preventDefault();
@@ -438,143 +406,110 @@ export function HomeScreen({
 
 
         {/* ========================================================================= */}
-        {/* 4. SEÇÃO "CONTINUAR COMPRANDO" (SESSÃO ATIVA CONDICIONAL)                  */}
+        {/* 4. SEÇÃO "MINHAS LISTAS" (PRÉVIA DA GESTÃO)                               */}
         {/* ========================================================================= */}
-        {activePendingPurchase && (
-          <section aria-label="Sessão Ativa de Compra" className="space-y-2">
-            <div className="flex items-center space-x-1.5">
-              <Clock className="w-4 h-4 text-amber-500 shrink-0" />
+        <section aria-label="Minhas Listas" className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <ClipboardList className="w-4 h-4 text-emerald-600" />
               <h3 className="text-sm sm:text-base font-bold text-zinc-900 tracking-tight">
-                Continuar Comprando
+                Minhas Listas
               </h3>
+              {lists.length > 0 && (
+                <span className="text-[11px] font-semibold text-zinc-400">
+                  ({lists.length})
+                </span>
+              )}
             </div>
 
-            <div className="w-full bg-white border border-amber-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs flex items-center justify-between transition-all">
-              {/* Informações da compra */}
-              <div 
-                className="flex-1 min-w-0 overflow-hidden pr-3 cursor-pointer"
-                onClick={() => handleContinuePending(activePendingPurchase)}
+            <button
+              type="button"
+              onClick={onNavigateToLists}
+              className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 transition-colors flex items-center space-x-1 cursor-pointer py-1 px-1.5 -mr-1.5 rounded-lg hover:bg-emerald-50/60"
+            >
+              <span>Ver mais</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Cards de Prévia das Listas (limita a até 3 para evitar scroll excessivo) */}
+          {lists.length === 0 ? (
+            <div className="bg-white border border-zinc-200/90 rounded-2xl p-4 text-center shadow-2xs">
+              <p className="text-xs text-zinc-500">
+                Nenhuma lista de compras cadastrada ainda.
+              </p>
+              <button
+                type="button"
+                onClick={onNavigateToLists}
+                className="mt-2 text-xs font-bold text-emerald-700 hover:text-emerald-800 transition-colors inline-flex items-center space-x-1 cursor-pointer"
               >
-                <h4 className="text-sm font-semibold text-zinc-900 truncate pr-2 leading-tight hover:text-emerald-700 transition-colors">
-                  {activePendingPurchase.name || 'Compra em andamento'}
-                </h4>
-                <p className="text-xs text-zinc-500 font-medium mt-1">
-                  {activePendingPurchase.items.length}{' '}
-                  {activePendingPurchase.items.length === 1 ? 'item' : 'itens'} •{' '}
-                  {calculatePurchaseTotal(activePendingPurchase.items || []) > 0
-                    ? formatCurrencyBRL(calculatePurchaseTotal(activePendingPurchase.items || []))
-                    : 'aguardando preços'}
-                </p>
-              </div>
-
-              {/* Ações: Descartar (Lixeira) e Retomar (Play) */}
-              <div className="flex items-center space-x-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={(e) => handleOpenDiscardModal(activePendingPurchase, e)}
-                  aria-label="Descartar compra em andamento"
-                  className="w-9 h-9 rounded-xl border border-zinc-200 hover:border-red-300 text-zinc-400 hover:text-red-600 hover:bg-red-50 active:bg-red-100 flex items-center justify-center cursor-pointer transition-colors min-h-[36px] min-w-[36px]"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleContinuePending(activePendingPurchase)}
-                  aria-label="Retomar compra"
-                  className="w-9 h-9 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 flex items-center justify-center cursor-pointer transition-colors min-h-[36px] min-w-[36px]"
-                >
-                  <Play className="w-4 h-4 fill-emerald-700" />
-                </button>
-              </div>
+                <span>Criar lista na Gestão</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
             </div>
-          </section>
-        )}
+          ) : (
+            <div className="space-y-2.5">
+              {lists.slice(0, 3).map((list) => {
+                const count = list.items ? list.items.length : 0;
+                const previewItems = (list.items || []).slice(0, 3);
+                return (
+                  <div
+                    key={list.id}
+                    onClick={() => {
+                      if (onOpenList) {
+                        onOpenList(list.id);
+                      } else {
+                        onNavigateToLists?.();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (onOpenList) onOpenList(list.id);
+                        else onNavigateToLists?.();
+                      }
+                    }}
+                    className="w-full bg-white border border-zinc-200/90 hover:border-emerald-300 rounded-2xl p-3.5 shadow-2xs hover:shadow-xs transition-all cursor-pointer flex items-center justify-between group text-left"
+                  >
+                    <div className="flex-1 min-w-0 pr-3">
+                      <div className="flex items-center space-x-2">
+                        <h4 className="text-sm font-bold text-zinc-900 group-hover:text-emerald-700 transition-colors truncate">
+                          {list.name}
+                        </h4>
+                        <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-1.5 py-0.5 rounded-full shrink-0">
+                          {count} {count === 1 ? 'item' : 'itens'}
+                        </span>
+                      </div>
+
+                      {previewItems.length > 0 ? (
+                        <p className="text-xs text-zinc-400 font-medium truncate mt-1">
+                          {previewItems.map((it) => it.name).join(', ')}
+                          {count > 3 ? ` +${count - 3}` : ''}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-zinc-400 font-medium truncate mt-1">
+                          Lista vazia
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="text-zinc-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all shrink-0">
+                      <ArrowRight className="w-4 h-4" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
       </main>
 
       {/* ========================================================================= */}
-      {/* MODAIS: NOVA COMPRA, DESCARTE, PREMIUM E FEEDBACK                         */}
+      {/* MODAIS: PREMIUM E FEEDBACK                                                */}
       {/* ========================================================================= */}
-
-
-      {/* Modal: Confirmar Descarte de Compra Pendente */}
-      <AnimatePresence>
-        {purchaseToDiscard && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-            <motion.div
-              initial={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
-              transition={motionConfig.modalSpring}
-              className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-zinc-200 relative"
-            >
-              <button
-                type="button"
-                onClick={() => setPurchaseToDiscard(null)}
-                aria-label="Fechar modal"
-                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <div className="p-5 pt-6">
-                <div className="w-12 h-12 rounded-2xl bg-red-100 border border-red-200 flex items-center justify-center text-red-600 mb-3 mx-auto">
-                  <Trash2 className="w-6 h-6" />
-                </div>
-
-                <h3 className="text-lg font-bold text-zinc-900 text-center tracking-tight">
-                  Descartar compra?
-                </h3>
-                <p className="text-xs text-zinc-500 text-center mt-1.5 leading-relaxed">
-                  Deseja realmente descartar a compra{' '}
-                  <strong className="text-zinc-800 line-clamp-2 break-words">
-                    "{purchaseToDiscard.name || 'Compra sem nome'}"
-                  </strong>
-                  ?
-                </p>
-
-                <div className="mt-4 bg-zinc-50 border border-zinc-200/80 rounded-xl p-3 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between text-zinc-600">
-                    <span>Itens adicionados:</span>
-                    <span className="font-bold text-zinc-800">
-                      {purchaseToDiscard.items.length}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-zinc-600">
-                    <span>Valor estimado:</span>
-                    <span className="font-bold text-zinc-800">
-                      {formatCurrencyBRL(calculatePurchaseTotal(purchaseToDiscard.items || []))}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-5 flex items-center space-x-2">
-                  <button
-                    type="button"
-                    disabled={isDiscarding}
-                    onClick={() => setPurchaseToDiscard(null)}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isDiscarding}
-                    onClick={handleConfirmDiscard}
-                    className={`flex-1 py-2.5 px-3 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1 ${
-                      isDiscarding ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>{isDiscarding ? 'Descartando...' : 'Confirmar'}</span>
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* Modal: Assinar Premium */}
       <AnimatePresence>
