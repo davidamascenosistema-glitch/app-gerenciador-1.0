@@ -49,7 +49,7 @@ export function HomeScreen({
   initialToastMessage,
 }: HomeScreenProps) {
   const motionConfig = useMotionConfig();
-  const localPurchasesHook = usePurchases();
+  const localPurchasesHook = usePurchases(user?.id);
   const purchasesHook = externalPurchasesHook || localPurchasesHook;
 
   const { 

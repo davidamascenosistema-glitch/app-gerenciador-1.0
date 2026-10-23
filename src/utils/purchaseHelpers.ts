@@ -397,7 +397,7 @@ export const calculateComparisonInsight = (
 ): ComparisonInsight => {
   const { average, count } = calculateHistoricalAverage(allPurchases, currentPurchase.id);
 
-  if (count === 0 || average === 0) {
+  if (count === 0 || !average || isNaN(average) || !isFinite(average) || average <= 0) {
     return {
       hasHistory: false,
       averageValue: 0,
@@ -410,6 +410,16 @@ export const calculateComparisonInsight = (
 
   const currentTotal = calculatePurchaseTotal(currentPurchase);
   const diffPercent = ((currentTotal - average) / average) * 100;
+  if (isNaN(diffPercent) || !isFinite(diffPercent)) {
+    return {
+      hasHistory: true,
+      averageValue: average,
+      percentageDiff: 0,
+      status: 'consistent',
+      formattedDiffText: 'Valor consistente com suas compras recentes',
+      sampleCount: count,
+    };
+  }
   const absRounded = Math.round(Math.abs(diffPercent));
 
   if (diffPercent >= 3) {

@@ -698,8 +698,8 @@ export function PurchaseScreen({
   }
 
   const totalValue = calculatePurchaseTotal(purchase);
-  const totalItemsCount = purchase.items.length;
-  const boughtItemsCount = purchase.items.filter((i) => i.bought).length;
+  const totalItemsCount = purchase?.items ? purchase.items.length : 0;
+  const boughtItemsCount = purchase?.items ? purchase.items.filter((i) => i.bought).length : 0;
   const comparisonInsight = calculateComparisonInsight(purchase, allPurchases);
 
   // Identifica itens sem preço preenchido (0, nulo ou indefinido)

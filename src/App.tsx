@@ -469,7 +469,7 @@ function MainApp() {
               onNavigateToManager={() => handleNavigateToManager('lists')}
               onOpenPurchaseSetup={handleFabClick}
               hasPendingPurchase={Boolean(latestPending)}
-              pendingItemsCount={latestPending ? latestPending.items.length : 0}
+              pendingItemsCount={latestPending?.items ? latestPending.items.length : 0}
             />
           </motion.div>
         )}

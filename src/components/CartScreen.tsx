@@ -112,7 +112,7 @@ export function CartScreen({
                 <span>Compra em Andamento</span>
               </span>
               <span className="text-xs text-zinc-400 font-medium">
-                {latestPending?.items.length || 0} {latestPending?.items.length === 1 ? 'item' : 'itens'}
+                {latestPending?.items?.length ?? 0} {(latestPending?.items?.length ?? 0) === 1 ? 'item' : 'itens'}
               </span>
             </div>
 

@@ -15,6 +15,9 @@ interface ProfileScreenProps {
   onRepeatPurchase?: () => void;
 }
 
+// Modo desenvolvedor temporariamente desativado a pedido do usuário
+const IS_DEV_MODE_ENABLED = false;
+
 export function ProfileScreen({
   user,
   onSignOut,
@@ -30,8 +33,10 @@ export function ProfileScreen({
   const [showDevPanel, setShowDevPanel] = useState(false);
   const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Gatilho secreto: 7 cliques consecutivos com timeout de 2 segundos de inatividade
+  // Gatilho secreto: desativado temporariamente
   const handleDevSecretClick = () => {
+    if (!IS_DEV_MODE_ENABLED) return;
+
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current);
     }
@@ -110,15 +115,13 @@ export function ProfileScreen({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           className="w-full bg-white rounded-2xl sm:rounded-3xl border border-zinc-200/90 p-4 sm:p-5 text-center shadow-xs flex flex-col items-center"
         >
-          {/* Avatar com inicial do usuário - Gatilho Secreto (7 toques) */}
-          <button
-            type="button"
-            onClick={handleDevSecretClick}
-            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 text-white font-extrabold text-xl sm:text-2xl flex items-center justify-center mb-2 shadow-md shadow-emerald-700/20 border-2 sm:border-3 border-white cursor-pointer select-none active:scale-95 transition-transform"
+          {/* Avatar com inicial do usuário */}
+          <div
+            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 text-white font-extrabold text-xl sm:text-2xl flex items-center justify-center mb-2 shadow-md shadow-emerald-700/20 border-2 sm:border-3 border-white select-none"
             aria-label="Foto de perfil do usuário"
           >
             {user?.email ? userInitial : <UserIcon className="w-7 h-7 stroke-[1.5]" />}
-          </button>
+          </div>
 
           {/* Dados do Usuário */}
           <h2 className="text-sm sm:text-base font-extrabold text-zinc-900 tracking-tight break-all max-w-full leading-tight">
@@ -194,25 +197,23 @@ export function ProfileScreen({
             </motion.button>
           </div>
 
-          {/* Versão do App - Gatilho Secreto Alternativo (7 toques) */}
+          {/* Versão do App */}
           <div className="mt-3 pt-2.5 border-t border-zinc-100 w-full text-center">
-            <button
-              type="button"
-              onClick={handleDevSecretClick}
-              className="text-[10px] sm:text-[11px] text-zinc-400 font-medium select-none cursor-default hover:text-zinc-600 transition-colors"
-            >
+            <span className="text-[10px] sm:text-[11px] text-zinc-400 font-medium select-none">
               Versão 1.2.0
-            </button>
+            </span>
           </div>
         </motion.div>
       </main>
 
-      {/* Modal DevTools Secreto */}
-      <DevPanelModal
-        isOpen={showDevPanel}
-        onClose={() => setShowDevPanel(false)}
-        userId={user?.id}
-      />
+      {/* Modal DevTools (desativado temporariamente) */}
+      {IS_DEV_MODE_ENABLED && (
+        <DevPanelModal
+          isOpen={showDevPanel}
+          onClose={() => setShowDevPanel(false)}
+          userId={user?.id}
+        />
+      )}
     </div>
   );
 }
