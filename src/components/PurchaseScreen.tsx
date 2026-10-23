@@ -1624,8 +1624,7 @@ export function PurchaseScreen({
                   <div className="text-zinc-600 font-semibold text-xs flex items-center space-x-1">
                     <span className="font-bold text-emerald-700">{boughtItemsCount}</span>
                     <span>
-                      /{totalItemsCount} {totalItemsCount === 1 ? 'item' : 'itens'}{' '}
-                      ({boughtItemsCount === totalItemsCount ? '✓ concluído' : 'no carrinho'})
+                      /{totalItemsCount} {totalItemsCount === 1 ? 'item' : 'itens'}
                     </span>
                   </div>
                 </div>
