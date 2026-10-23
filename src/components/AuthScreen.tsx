@@ -10,7 +10,6 @@ import {
   Loader2, 
   KeyRound, 
   Sparkles,
-  Info,
   User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -166,27 +165,6 @@ export function AuthScreen({ authHook }: AuthScreenProps) {
               Criar Conta
             </button>
           </div>
-
-          {/* Aviso se Supabase não estiver configurado */}
-          {!isConfigured && (
-            <div className="mb-5 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
-              <div className="flex items-center space-x-1.5 font-bold text-amber-900">
-                <Info className="w-4 h-4 shrink-0 text-amber-700" />
-                <span>Configuração de Conexão Supabase</span>
-              </div>
-              <p className="leading-relaxed text-amber-800">
-                Para autenticar usuários, defina as variáveis{' '}
-                <code className="px-1 py-0.5 rounded bg-amber-100/80 font-mono font-bold">
-                  VITE_SUPABASE_URL
-                </code>{' '}
-                e{' '}
-                <code className="px-1 py-0.5 rounded bg-amber-100/80 font-mono font-bold">
-                  VITE_SUPABASE_ANON_KEY
-                </code>{' '}
-                nas configurações do projeto.
-              </p>
-            </div>
-          )}
 
           {/* Mensagens de Feedback (Erro ou Sucesso) */}
           <AnimatePresence mode="wait">
@@ -364,7 +342,7 @@ export function AuthScreen({ authHook }: AuthScreenProps) {
         {/* Rodapé informativo */}
         <div className="text-center mt-6 text-xs text-zinc-400 flex items-center justify-center space-x-1.5">
           <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Autenticação segura via Supabase</span>
+          <span>Acesso seguro com proteção de dados</span>
         </div>
       </div>
     </div>

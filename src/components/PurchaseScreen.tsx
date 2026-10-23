@@ -27,12 +27,12 @@ import {
   ChevronDown,
   Keyboard,
   ClipboardList,
+  Store,
   Mic,
   MicOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Item, Purchase, ItemSuggestion, PricingModeDefault, List } from '../types';
-import { parseVoiceCommand } from '../services/gemini';
 import { normalizeText } from '../services/suggestionsService';
 import { useItemSuggestions } from '../hooks/useItemSuggestions';
 import { ItemSearchBar } from './ItemSearchBar';
@@ -144,10 +144,24 @@ export function PurchaseScreen({
     }
   }, [purchase?.name, purchase?.id]);
 
-  // Modais de descarte
+  // Modais de descarte e finalização
   const [isDiscardModalOpen, setIsDiscardModalOpen] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [isPriceWarningModalOpen, setIsPriceWarningModalOpen] = useState(false);
+  const [highlightMissingPrices, setHighlightMissingPrices] = useState(false);
+
+  // Desativa o destaque automaticamente assim que todos os itens receberem um preço válido
+  useEffect(() => {
+    if (highlightMissingPrices) {
+      const remainingWithoutPrice = (purchase?.items || []).filter(
+        (item) => item.price == null || isNaN(Number(item.price)) || Number(item.price) <= 0
+      );
+      if (remainingWithoutPrice.length === 0) {
+        setHighlightMissingPrices(false);
+      }
+    }
+  }, [purchase?.items, highlightMissingPrices]);
 
   // Modal de Importação de Molde
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -182,7 +196,11 @@ export function PurchaseScreen({
     };
   }, []);
 
-  const handleVoiceInput = async (transcript: string) => {
+  /**
+   * Processa a intenção de voz do usuário utilizando a API do Gemini com Processamento
+   * de Linguagem Natural (NLP), substituindo a lógica legada de expressões regulares.
+   */
+  const processVoiceIntentWithAI = async (transcript: string) => {
     if (!transcript || !transcript.trim()) return;
 
     if (!purchase || !purchase.id) {
@@ -190,42 +208,133 @@ export function PurchaseScreen({
       return;
     }
 
+    // 1. Ativa estado de carregamento para a UI indicar que a IA está a "pensar"
+    setIsProcessingVoice(true);
+    showToast('IA analisando o comando de voz...', 2000);
+
     try {
-      setIsProcessingVoice(true);
-      showToast('Analisando voz...', 2500);
+      const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+      let parsedItem: {
+        name: string;
+        quantity: number;
+        price: number;
+        category: string;
+      } | null = null;
 
-      const itemData = await parseVoiceCommand(transcript);
+      const requestBody = {
+        system_instruction: {
+          parts: [{
+            text: 'Você é um assistente de supermercado. Extraia da frase do usuário o nome do produto, quantidade, preço unitário e categoria. Retorne APENAS um JSON estrito com esta estrutura exata: {"name": "Nome Capitalizado", "quantity": numero_ou_1, "price": numero_ou_0, "category": "Categoria"}. Não inclua crases (```json) ou texto adicional.'
+          }]
+        },
+        contents: [
+          { role: 'user', parts: [{ text: transcript }] }
+        ],
+        generationConfig: {
+          response_mime_type: 'application/json'
+        }
+      };
 
-      if (!itemData || !itemData.name) {
-        showToast('Não foi possível identificar o item da sua fala');
-        return;
+      // 2. Integração com a API do Gemini via fetch POST direto se houver chave cliente
+      if (apiKey) {
+        try {
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(requestBody),
+            }
+          );
+
+          if (response.ok) {
+            const data = await response.json();
+            const textContent = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (textContent) {
+              const cleanText = textContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+              parsedItem = JSON.parse(cleanText);
+            }
+          }
+        } catch (clientErr) {
+          console.warn('Tentativa direta com Gemini API falhou, acionando proxy do servidor:', clientErr);
+        }
       }
 
+      // Se não houver chave no cliente ou a chamada direta falhar, recorre à rota proxy /api/voice-parse do servidor
+      if (!parsedItem || !parsedItem.name) {
+        try {
+          const serverRes = await fetch('/api/voice-parse', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ transcript }),
+          });
+
+          if (serverRes.ok) {
+            const sData = await serverRes.json();
+            const rawText = sData.text || '';
+            if (rawText) {
+              const cleanServerText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+              parsedItem = JSON.parse(cleanServerText);
+            } else if (sData.name) {
+              parsedItem = {
+                name: sData.name,
+                quantity: sData.quantity || 1,
+                price: sData.price || 0,
+                category: sData.category || 'Geral',
+              };
+            }
+          }
+        } catch (serverErr) {
+          console.warn('Falha no fallback /api/voice-parse:', serverErr);
+        }
+      }
+
+      if (!parsedItem || !parsedItem.name) {
+        throw new Error('Não foi possível obter dados estruturados da IA');
+      }
+
+      // Injeta o item no carrinho com os dados estruturados da IA
       if (onAddItem) {
-        const hasPrice = typeof itemData.price === 'number' && itemData.price > 0;
-        const isWeighted = Boolean(itemData.is_weighted);
-        const qty = typeof itemData.quantity === 'number' && itemData.quantity > 0 ? itemData.quantity : 1;
-        // Extrai o peso real devolvido pela IA; se falhar, usa o qty como fallback
-        const actualWeight = typeof itemData.weight === 'number' && itemData.weight > 0 ? itemData.weight : qty;
+        const qty = typeof parsedItem.quantity === 'number' && parsedItem.quantity > 0 ? parsedItem.quantity : 1;
+        const priceNum = typeof parsedItem.price === 'number' && parsedItem.price > 0 ? parsedItem.price : undefined;
+        const categoryStr = parsedItem.category?.trim() || 'Geral';
+        const nameStr = parsedItem.name.trim();
 
         onAddItem(purchase.id, {
-          name: itemData.name,
-          category: itemData.category || 'Geral',
-          quantity: isWeighted ? 1 : qty,
-          weight: isWeighted ? actualWeight : undefined,
-          isWeighted: isWeighted,
-          price: hasPrice ? (itemData.price as number) : undefined,
-          bought: hasPrice ? true : false,
+          name: nameStr,
+          category: categoryStr,
+          quantity: qty,
+          isWeighted: false,
+          price: priceNum,
+          bought: Boolean(priceNum && priceNum > 0),
         });
 
-        const formattedQty = isWeighted ? `${actualWeight.toString().replace('.', ',')} kg` : `${qty} un`;
-        const formattedPrice = hasPrice ? ` por ${formatCurrencyBRL(itemData.price as number)}` : '';
-        showToast(`"${itemData.name}" (${formattedQty}${formattedPrice}) adicionado!`, 3500);
+        const formattedQty = `${qty} un`;
+        const formattedPrice = priceNum ? ` por ${formatCurrencyBRL(priceNum)}` : '';
+        showToast(`"${nameStr}" (${formattedQty}${formattedPrice}) adicionado!`, 3500);
       }
-    } catch (err: any) {
-      console.error('Erro ao processar comando de voz:', err);
-      showToast('Erro ao processar áudio. Tente novamente.');
+    } catch (err) {
+      console.error('Erro na IA do assistente de voz, usando fallback:', err);
+      // 3. Fallback: Se a IA falhar ou o JSON vier quebrado, adiciona o item apenas com o nome bruto que a pessoa falou e preço zero
+      if (onAddItem && purchase && purchase.id) {
+        const rawName = transcript.trim();
+        const fallbackName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+        onAddItem(purchase.id, {
+          name: fallbackName,
+          category: 'Geral',
+          quantity: 1,
+          isWeighted: false,
+          price: undefined,
+          bought: false,
+        });
+        showToast(`"${fallbackName}" adicionado à lista.`, 3000);
+      }
     } finally {
+      // Desativa o loading
       setIsProcessingVoice(false);
     }
   };
@@ -265,7 +374,7 @@ export function PurchaseScreen({
       recognition.onresult = (event: any) => {
         const transcript = event.results?.[0]?.[0]?.transcript || '';
         if (transcript.trim()) {
-          handleVoiceInput(transcript.trim());
+          processVoiceIntentWithAI(transcript.trim());
         }
       };
 
@@ -582,7 +691,7 @@ export function PurchaseScreen({
         </div>
         <h2 className="text-xl font-bold text-zinc-900 mb-2">Nenhuma compra em andamento</h2>
         <p className="text-zinc-500 max-w-[250px]">
-          Inicie uma nova sessão de compras a partir da tela de Início ou Listas para usar o carrinho.
+          Inicie uma nova compra a partir da tela de Início ou de suas Listas.
         </p>
       </div>
     );
@@ -593,13 +702,17 @@ export function PurchaseScreen({
   const boughtItemsCount = purchase.items.filter((i) => i.bought).length;
   const comparisonInsight = calculateComparisonInsight(purchase, allPurchases);
 
-  const handleConcluirCompra = async () => {
-    if (isFinishing) return;
-    if (!purchase.items || purchase.items.length === 0) {
-      showToast('Adicione itens à lista antes de finalizar!');
-      return;
-    }
+  // Identifica itens sem preço preenchido (0, nulo ou indefinido)
+  const getItemsWithoutPrice = () => {
+    if (!purchase?.items) return [];
+    return purchase.items.filter(
+      (item) => item.price == null || isNaN(Number(item.price)) || Number(item.price) <= 0
+    );
+  };
 
+  // Execução da finalização da compra no banco de dados e disparo de celebração
+  const executeFinalizarCompra = async () => {
+    if (isFinishing) return;
     try {
       setIsFinishing(true);
       const trimmed = titleValue.trim();
@@ -616,13 +729,62 @@ export function PurchaseScreen({
       }
     } finally {
       setIsFinishing(false);
+      setIsPriceWarningModalOpen(false);
     }
+  };
+
+  // Handler de retorno para preenchimento de preços: mantém o destaque visual ativo até que os itens recebam preço
+  const handleBackAndFillPrices = () => {
+    setIsPriceWarningModalOpen(false);
+    setHighlightMissingPrices(true);
+  };
+
+  // Handler de conclusão com validações de integridade
+  const handleConcluirCompra = async () => {
+    if (isFinishing) return;
+
+    // 1. Validação de Carrinho Vazio
+    if (totalItemsCount === 0 || !purchase.items || purchase.items.length === 0) {
+      showToast('Sua compra está vazia. Adicione itens ou descarte a lista no menu de opções.');
+      return;
+    }
+
+    // 2. Validação de Itens sem Preço
+    const itemsWithoutPrice = getItemsWithoutPrice();
+    if (itemsWithoutPrice.length > 0) {
+      setIsPriceWarningModalOpen(true);
+      return;
+    }
+
+    await executeFinalizarCompra();
   };
 
   // Orçamento (Budget) da compra
   const numericBudget = purchase.budget != null && Number(purchase.budget) > 0 ? Number(purchase.budget) : undefined;
-  const isOverBudget = numericBudget !== undefined && totalValue > numericBudget;
-  const isNearBudget = numericBudget !== undefined && totalValue >= numericBudget * 0.85;
+  const percentageUsed = numericBudget ? (totalValue / numericBudget) * 100 : 0;
+  const isOverBudget = percentageUsed >= 100;
+  const isNearBudget = percentageUsed >= 80 && percentageUsed < 100;
+
+  // Notificação e vibração hápica no exato momento em que o orçamento é extrapolado
+  const hasTriggeredOverBudgetToastRef = useRef(false);
+  useEffect(() => {
+    if (isOverBudget && numericBudget !== undefined && !hasTriggeredOverBudgetToastRef.current) {
+      hasTriggeredOverBudgetToastRef.current = true;
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        try {
+          navigator.vibrate([100, 50, 100]);
+        } catch {
+          // ignore
+        }
+      }
+      showToast(
+        `Atenção: Orçamento ultrapassado em ${formatCurrencyBRL(totalValue - numericBudget)}!`,
+        3500
+      );
+    } else if (!isOverBudget) {
+      hasTriggeredOverBudgetToastRef.current = false;
+    }
+  }, [isOverBudget, numericBudget, totalValue, showToast]);
 
   const allSections = groupItemsByCategory(purchase.items);
   const visibleSections =
@@ -647,24 +809,35 @@ export function PurchaseScreen({
               </button>
 
               <div className="min-w-0 flex-1">
-                <div className="relative w-full group">
-                  <input
-                    id="purchase-title-input"
-                    type="text"
-                    value={titleValue}
-                    onChange={(e) => setTitleValue(e.target.value)}
-                    onBlur={handleSaveTitle}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        (e.target as HTMLInputElement).blur();
-                      }
-                    }}
-                    placeholder="Nome da compra"
-                    className="w-full text-sm sm:text-base font-bold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal bg-zinc-50/80 hover:bg-zinc-100/80 focus:bg-white border border-dashed border-zinc-300 hover:border-emerald-400 focus:border-solid focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-1.5 pr-8 transition-all outline-none leading-tight truncate"
-                  />
-                  <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-emerald-600 transition-colors">
-                    <Pencil className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                <div className="relative w-full group bg-zinc-50/80 hover:bg-zinc-100/80 focus-within:bg-white border border-dashed border-zinc-300 hover:border-emerald-400 focus-within:border-solid focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 rounded-xl px-3 py-1.5 transition-all">
+                  <div className="relative flex items-center">
+                    <input
+                      id="purchase-title-input"
+                      type="text"
+                      value={titleValue}
+                      onChange={(e) => setTitleValue(e.target.value)}
+                      onBlur={handleSaveTitle}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          (e.target as HTMLInputElement).blur();
+                        }
+                      }}
+                      placeholder="Nome da compra"
+                      className="w-full text-sm sm:text-base font-bold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal bg-transparent border-none p-0 pr-6 outline-none leading-tight truncate focus:ring-0"
+                    />
+                    <div className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-emerald-600 transition-colors">
+                      <Pencil className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                    </div>
                   </div>
+
+                  {purchase?.storeName && (
+                    <div className="flex items-center space-x-1 mt-0.5 min-w-0">
+                      <Store className="w-3 h-3 text-emerald-600 shrink-0" />
+                      <span className="text-[10px] font-semibold text-emerald-700 truncate">
+                        {purchase.storeName}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 {purchase.status === 'finished' && (
                   <div className="flex items-center space-x-1.5 mt-0.5 px-0.5">
@@ -773,12 +946,20 @@ export function PurchaseScreen({
         {/* Barra de Progresso do Orçamento (Abaixo do subtotal no topo da tela) */}
         {numericBudget !== undefined && (
           <div className="w-full max-w-md md:max-w-xl mx-auto px-3 sm:px-6 pb-2.5 pt-0">
-            <div
-              className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
+            <motion.div
+              key={isOverBudget ? 'budget-exceeded' : 'budget-ok'}
+              initial={isOverBudget ? { x: -8, scale: 0.98 } : false}
+              animate={
                 isOverBudget
-                  ? 'bg-rose-50/95 border-rose-300 text-rose-950 shadow-xs'
+                  ? { x: [0, -7, 7, -5, 5, -3, 3, 0], scale: [1, 1.02, 1] }
+                  : { x: 0, scale: 1 }
+              }
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+              className={`p-2.5 sm:p-3 rounded-2xl border transition-all duration-300 ${
+                isOverBudget
+                  ? 'bg-rose-50 border-rose-400 text-rose-950 ring-2 ring-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.55)] animate-pulse'
                   : isNearBudget
-                  ? 'bg-amber-50/95 border-amber-300 text-amber-950 shadow-xs'
+                  ? 'bg-amber-50/95 border-amber-300 text-amber-950 shadow-xs animate-pulse'
                   : 'bg-emerald-50/95 border-emerald-300/80 text-emerald-950 shadow-xs'
               }`}
             >
@@ -788,17 +969,22 @@ export function PurchaseScreen({
                   <span className="font-semibold text-zinc-600 shrink-0">Subtotal:</span>
                   <span
                     className={`font-black text-xs sm:text-sm truncate ${
-                      isOverBudget ? 'text-rose-700' : 'text-zinc-900'
+                      isOverBudget ? 'text-rose-600' : 'text-zinc-900'
                     }`}
                   >
                     {formatCurrencyBRL(totalValue)}
                   </span>
                 </div>
-                <div className="flex items-center space-x-1 shrink-0 text-right">
+                <div className="flex items-center space-x-1.5 shrink-0 text-right">
+                  {isOverBudget && (
+                    <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-rose-600 text-white animate-bounce shadow-xs">
+                      <span>Excedido</span>
+                    </span>
+                  )}
                   <span
                     className={`font-bold text-xs ${
                       isOverBudget
-                        ? 'text-rose-700 font-extrabold'
+                        ? 'text-rose-600 font-extrabold'
                         : isNearBudget
                         ? 'text-amber-800 font-extrabold'
                         : 'text-zinc-700'
@@ -814,13 +1000,13 @@ export function PurchaseScreen({
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
                     isOverBudget
-                      ? 'bg-rose-600'
+                      ? 'bg-rose-500 animate-pulse'
                       : isNearBudget
                       ? 'bg-amber-500'
                       : 'bg-emerald-500'
                   }`}
                   style={{
-                    width: `${Math.min(100, Math.round((totalValue / numericBudget) * 100))}%`,
+                    width: `${Math.min(100, Math.round(percentageUsed))}%`,
                   }}
                 />
               </div>
@@ -828,27 +1014,30 @@ export function PurchaseScreen({
               {/* Informação descritiva de limite */}
               <div className="flex items-center justify-between text-[11px] mt-1.5 font-semibold">
                 {isOverBudget ? (
-                  <span className="text-rose-700 font-bold">
-                    Orçamento ultrapassado em {formatCurrencyBRL(totalValue - numericBudget)}
+                  <span className="text-rose-600 font-bold flex items-center space-x-1 min-w-0 truncate">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600 animate-bounce shrink-0" />
+                    <span className="truncate">
+                      Orçamento excedido em {formatCurrencyBRL(totalValue - numericBudget)}
+                    </span>
                   </span>
                 ) : (
-                  <span className="text-zinc-600">
+                  <span className="text-zinc-600 truncate">
                     Restam {formatCurrencyBRL(numericBudget - totalValue)} para atingir o limite
                   </span>
                 )}
                 <span
                   className={
                     isOverBudget
-                      ? 'text-rose-700 font-extrabold'
+                      ? 'text-rose-600 font-black'
                       : isNearBudget
                       ? 'text-amber-800 font-bold'
                       : 'text-emerald-700 font-bold'
                   }
                 >
-                  {Math.round((totalValue / numericBudget) * 100)}%
+                  {Math.round(percentageUsed)}%
                 </span>
               </div>
-            </div>
+            </motion.div>
           </div>
         )}
       </div>
@@ -964,6 +1153,7 @@ export function PurchaseScreen({
                                   showToast(`"${item.name}" removido da lista`);
                                 }}
                                 getCategoryBadgeStyle={getCategoryBadgeStyle}
+                                highlightMissingPrice={highlightMissingPrices}
                               />
                             ))}
                         </AnimatePresence>
@@ -1260,6 +1450,105 @@ export function PurchaseScreen({
         )}
       </AnimatePresence>
 
+      {/* Modal de Confirmação: Alerta de Itens sem Preço */}
+      <AnimatePresence>
+        {isPriceWarningModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !isFinishing) setIsPriceWarningModalOpen(false);
+            }}
+          >
+            <motion.div
+              {...MOTION_VARIANTS.modalContent}
+              className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-zinc-200 overflow-hidden relative font-sans"
+            >
+              {/* Botão Fechar (X) */}
+              <button
+                type="button"
+                disabled={isFinishing}
+                onClick={() => setIsPriceWarningModalOpen(false)}
+                aria-label="Fechar modal"
+                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="p-5 pt-6">
+                <div className="w-13 h-13 rounded-2xl flex items-center justify-center mb-3.5 mx-auto bg-amber-50 border border-amber-200 text-amber-600 shadow-2xs">
+                  <AlertTriangle className="w-6 h-6 stroke-[2.3]" />
+                </div>
+
+                <h3 className="text-lg font-bold text-zinc-900 text-center tracking-tight">
+                  Itens sem preço
+                </h3>
+                <p className="text-xs text-zinc-600 text-center mt-2 leading-relaxed">
+                  Você possui itens no carrinho sem preço preenchido. Isso pode afetar suas análises futuras. Deseja concluir a compra assim mesmo ou voltar para preencher?
+                </p>
+
+                {/* Lista contextual de itens sem valor */}
+                {(() => {
+                  const itemsWithoutPrice = getItemsWithoutPrice();
+                  if (itemsWithoutPrice.length === 0) return null;
+                  return (
+                    <div className="mt-4 bg-amber-50/60 border border-amber-200/80 rounded-2xl p-3 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between font-bold text-amber-900">
+                        <span>Itens sem valor definido:</span>
+                        <span className="bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded-full text-[10px]">
+                          {itemsWithoutPrice.length} {itemsWithoutPrice.length === 1 ? 'item' : 'itens'}
+                        </span>
+                      </div>
+                      <div className="max-h-24 overflow-y-auto no-scrollbar divide-y divide-amber-100/80 pt-1">
+                        {itemsWithoutPrice.slice(0, 5).map((it) => (
+                          <div key={it.id} className="py-1 flex items-center justify-between text-zinc-700">
+                            <span className="truncate pr-2 font-medium">{it.name}</span>
+                            <span className="text-[10px] text-amber-700 font-semibold shrink-0">R$ 0,00</span>
+                          </div>
+                        ))}
+                        {itemsWithoutPrice.length > 5 && (
+                          <p className="pt-1 text-[10px] text-amber-800 font-semibold text-center">
+                            + {itemsWithoutPrice.length - 5} outro(s) item(ns)
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="mt-5 space-y-2">
+                  {/* Botão Secundário: Voltar e preencher */}
+                  <button
+                    type="button"
+                    disabled={isFinishing}
+                    onClick={handleBackAndFillPrices}
+                    className="w-full py-3 px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-800 font-bold text-xs sm:text-sm transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95"
+                  >
+                    <span>Voltar e preencher</span>
+                  </button>
+
+                  {/* Botão de Confirmação: Concluir mesmo assim */}
+                  <button
+                    type="button"
+                    disabled={isFinishing}
+                    onClick={executeFinalizarCompra}
+                    className={`w-full py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-amber-600/20 transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95 ${
+                      isFinishing ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    {isFinishing ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 stroke-[2.3]" />
+                    )}
+                    <span>{isFinishing ? 'Salvando compra...' : 'Concluir mesmo assim'}</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Voice-First Bottom Dock - Barra Inferior com Microfone como Rei (FAB Central Estilo Assistente Virtual Siri/Google) */}
       {purchase.status !== 'finished' ? (
         <div className="fixed bottom-0 left-0 right-0 z-40 pb-safe pointer-events-none">
@@ -1378,10 +1667,16 @@ export function PurchaseScreen({
                       isRecording
                         ? 'Ouvindo áudio... Toque para parar'
                         : isProcessingVoice
-                        ? 'Processando áudio...'
+                        ? 'IA pensando...'
                         : 'Ditar item por voz'
                     }
-                    title={isRecording ? 'Gravando... Toque para parar' : 'Ditar item por voz (Assistente)'}
+                    title={
+                      isRecording
+                        ? 'Gravando... Toque para parar'
+                        : isProcessingVoice
+                        ? 'IA pensando...'
+                        : 'Ditar item por voz (Assistente Inteligente)'
+                    }
                     className={`relative w-16 h-16 sm:w-18 sm:h-18 rounded-full flex items-center justify-center text-white shadow-2xl transition-all cursor-pointer border-4 border-white ${
                       isRecording
                         ? 'bg-gradient-to-br from-red-500 to-rose-700 shadow-red-500/50 ring-4 ring-red-400/40 animate-pulse'
@@ -1416,27 +1711,27 @@ export function PurchaseScreen({
                       isRecording
                         ? 'text-red-600 animate-pulse'
                         : isProcessingVoice
-                        ? 'text-emerald-700 font-bold'
+                        ? 'text-emerald-700 font-bold animate-pulse'
                         : 'text-zinc-600'
                     }`}
                   >
-                    {isRecording ? 'Ouvindo...' : isProcessingVoice ? 'Processando...' : 'Falar Item'}
+                    {isRecording ? 'Ouvindo...' : isProcessingVoice ? 'IA Pensando...' : 'Falar Item'}
                   </span>
                 </div>
 
                 {/* 3. Lado Direito: Botão Concluir/Finalizar Compra */}
                 <div className="flex-1 flex justify-end">
                   <motion.button
-                    whileTap={isFinishing || totalItemsCount === 0 ? {} : motionConfig.tap.button}
+                    whileTap={isFinishing ? {} : motionConfig.tap.button}
                     transition={motionConfig.pressSpring}
                     type="button"
                     onClick={handleConcluirCompra}
-                    disabled={totalItemsCount === 0 || isFinishing}
+                    disabled={isFinishing}
                     aria-label="Finalizar Compra"
                     className={`flex items-center space-x-1.5 py-2 px-3 sm:px-4 rounded-2xl border transition-all cursor-pointer min-h-[44px] ${
                       totalItemsCount > 0 && !isFinishing
                         ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md shadow-emerald-700/20 active:scale-95 border-emerald-600'
-                        : 'bg-zinc-100 text-zinc-400 border-zinc-200/50 cursor-not-allowed opacity-50 font-semibold'
+                        : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-500 border-zinc-200/80 font-semibold'
                     }`}
                   >
                     {isFinishing ? (

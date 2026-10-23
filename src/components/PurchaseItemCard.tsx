@@ -18,6 +18,7 @@ interface PurchaseItemCardProps {
   onEditItem: (purchaseId: string, itemId: string, updates: Partial<Item>) => void;
   onRemoveItem: (purchaseId: string, itemId: string) => void;
   getCategoryBadgeStyle: (category: string) => string;
+  highlightMissingPrice?: boolean;
 }
 
 export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
@@ -27,6 +28,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   onEditItem,
   onRemoveItem,
   getCategoryBadgeStyle,
+  highlightMissingPrice = false,
 }) => {
   const motionConfig = useMotionConfig();
   const subtotal = calculateItemSubtotal(item);
@@ -538,42 +540,63 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
         </div>
 
         {/* 3. Coluna: Preço Unitário / Preço por Kg */}
-        <div className="flex flex-col min-w-0 ml-2">
-          <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate ml-1 w-[55.94px]">
-            {item.isWeighted ? 'Preço/kg' : 'Preço/un'}
-          </label>
-          <div className="h-8 sm:h-8.5 w-full min-w-[70px] flex items-center bg-zinc-50 hover:bg-zinc-100/70 rounded-lg border border-zinc-200/90 pl-2 pr-2 ml-[3px] mr-0 transition-colors focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white">
-            <span className="text-[11px] font-bold text-zinc-400 mr-1 shrink-0">R$</span>
-            <input
-              ref={priceInputRef}
-              type="text"
-              inputMode="decimal"
-              value={priceInput}
-              onFocus={() => setIsEditingPrice(true)}
-              onChange={(e) => setPriceInput(sanitizePriceInput(e.target.value))}
-              onBlur={handleSavePrice}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleSavePrice();
-                  priceInputRef.current?.blur();
-                }
-                if (e.key === 'Escape') {
-                  setPriceInput(
-                    item.price !== undefined && item.price !== null && item.price > 0
-                      ? sanitizePriceInput(item.price.toString())
-                      : ''
-                  );
-                  setIsEditingPrice(false);
-                  priceInputRef.current?.blur();
-                }
-              }}
-              placeholder="0,00"
-              className={`bg-transparent font-bold text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal outline-none transition-all ${
-                isLargePrice ? 'w-[38.5625px] text-[11px]' : 'w-full text-xs'
-              }`}
-            />
-          </div>
-        </div>
+        {(() => {
+          const isMissingPrice = !item.price || item.price === 0;
+          const isHighlighted = highlightMissingPrice && isMissingPrice;
+
+          return (
+            <div className="flex flex-col min-w-0 ml-2">
+              <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate ml-1 w-[55.94px]">
+                {item.isWeighted ? 'Preço/kg' : 'Preço/un'}
+              </label>
+              <div
+                className={`h-8 sm:h-8.5 w-full min-w-[70px] flex items-center rounded-lg pl-2 pr-2 ml-[3px] mr-0 transition-all duration-300 ${
+                  isHighlighted
+                    ? 'ring-2 ring-rose-400 bg-rose-50 text-rose-700 animate-pulse border border-rose-300'
+                    : 'bg-zinc-50 hover:bg-zinc-100/70 border border-zinc-200/90 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white'
+                }`}
+              >
+                <span
+                  className={`text-[11px] font-bold mr-1 shrink-0 ${
+                    isHighlighted ? 'text-rose-500' : 'text-zinc-400'
+                  }`}
+                >
+                  R$
+                </span>
+                <input
+                  ref={priceInputRef}
+                  type="text"
+                  inputMode="decimal"
+                  value={priceInput}
+                  onFocus={() => setIsEditingPrice(true)}
+                  onChange={(e) => setPriceInput(sanitizePriceInput(e.target.value))}
+                  onBlur={handleSavePrice}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSavePrice();
+                      priceInputRef.current?.blur();
+                    }
+                    if (e.key === 'Escape') {
+                      setPriceInput(
+                        item.price !== undefined && item.price !== null && item.price > 0
+                          ? sanitizePriceInput(item.price.toString())
+                          : ''
+                      );
+                      setIsEditingPrice(false);
+                      priceInputRef.current?.blur();
+                    }
+                  }}
+                  placeholder="0,00"
+                  className={`bg-transparent font-bold outline-none transition-all ${
+                    isHighlighted
+                      ? 'text-rose-700 placeholder:text-rose-400'
+                      : 'text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal'
+                  } ${isLargePrice ? 'w-[38.5625px] text-[11px]' : 'w-full text-xs'}`}
+                />
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 4. Coluna: Subtotal integrado em linha */}
         <div className="flex flex-col items-end justify-center min-w-[72px] sm:min-w-[85px] pl-2">

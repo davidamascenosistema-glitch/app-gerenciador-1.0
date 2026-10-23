@@ -79,7 +79,7 @@ export function ResumePurchaseSheet({
                     Compra em Andamento
                   </h2>
                   <p className="text-xs text-zinc-500 font-medium mt-0.5">
-                    Existe uma sessão de compras ativa pendente
+                    Você possui itens no carrinho aguardando conclusão
                   </p>
                 </div>
               </div>
@@ -103,7 +103,7 @@ export function ResumePurchaseSheet({
                 <div className="flex items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 border border-amber-200/80 text-amber-700 tracking-wide">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                    Pendente
+                    Em andamento
                   </span>
                   <span className="text-xs font-semibold text-zinc-500 flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-zinc-400" />

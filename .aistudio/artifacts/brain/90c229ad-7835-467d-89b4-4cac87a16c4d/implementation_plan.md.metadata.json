@@ -1,0 +1,6 @@
+{
+  "summary":  "Plano de implementação da funcionalidade 'Enviar Feedback', com envio para Formspree/EmailJS, categorização por Bug, Sugestão e Elogio, e integração com o botão da tela inicial.",
+  "updatedAt":  "2026-10-21T21:34:03.016946149Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

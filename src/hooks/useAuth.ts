@@ -38,7 +38,7 @@ export function formatAuthError(error: AuthError | Error | null): string {
     return 'Por favor, insira um formato de e-mail válido.';
   }
   if (msg.includes('network') || msg.includes('failed to fetch')) {
-    return 'Falha de conexão. Verifique sua internet ou a URL do Supabase.';
+    return 'Falha de conexão. Verifique sua conexão com a internet.';
   }
 
   return error.message || 'Ocorreu um erro ao processar a autenticação.';
@@ -100,7 +100,7 @@ export function useAuth(): AuthState {
     async (email: string, password: string): Promise<{ error: string | null }> => {
       if (!configured) {
         return {
-          error: 'Supabase não configurado. Adicione VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY nas configurações.',
+          error: 'Serviço de sincronização temporariamente indisponível. Tente novamente mais tarde.',
         };
       }
 
@@ -126,7 +126,7 @@ export function useAuth(): AuthState {
     async (email: string, password: string, name?: string): Promise<{ error: string | null; needsEmailConfirmation?: boolean }> => {
       if (!configured) {
         return {
-          error: 'Supabase não configurado. Adicione VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY nas configurações.',
+          error: 'Serviço de sincronização temporariamente indisponível. Tente novamente mais tarde.',
         };
       }
 

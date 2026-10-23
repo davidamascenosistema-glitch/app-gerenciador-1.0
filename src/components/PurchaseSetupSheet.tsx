@@ -41,12 +41,65 @@ const DEFAULT_STORES = [
 ];
 
 const BUDGET_MILESTONES = [
-  { value: 0, label: 'R$ 0' },
-  { value: 100, label: 'R$ 100' },
-  { value: 250, label: 'R$ 250' },
-  { value: 500, label: 'R$ 500' },
-  { value: 1000, label: 'R$ 1.000' },
+  { value: 0, label: 'R$ 0', percent: 0 },
+  { value: 100, label: 'R$ 100', percent: 25 },
+  { value: 250, label: 'R$ 250', percent: 50 },
+  { value: 500, label: 'R$ 500', percent: 75 },
+  { value: 1000, label: 'R$ 1.000', percent: 100 },
 ];
+
+/**
+ * Converte a posição física do slider (0% a 100%) no valor de orçamento real (0 a 1000),
+ * alinhando precisamente o cursor (thumb) aos marcos visuais exibidos na régua horizontal:
+ * - 0%   -> R$ 0
+ * - 25%  -> R$ 100
+ * - 50%  -> R$ 250
+ * - 75%  -> R$ 500
+ * - 100% -> R$ 1.000
+ */
+const positionToBudget = (pos: number): number => {
+  if (pos <= 0) return 0;
+  if (pos >= 100) return 1000;
+
+  // Snap magnético suave ao passar exatamente sobre ou muito próximo do marco
+  if (Math.abs(pos - 0) <= 1.5) return 0;
+  if (Math.abs(pos - 25) <= 1.5) return 100;
+  if (Math.abs(pos - 50) <= 1.5) return 250;
+  if (Math.abs(pos - 75) <= 1.5) return 500;
+  if (Math.abs(pos - 100) <= 1.5) return 1000;
+
+  if (pos <= 25) {
+    const rawVal = (pos / 25) * 100;
+    return Math.round(rawVal / 5) * 5;
+  } else if (pos <= 50) {
+    const rawVal = 100 + ((pos - 25) / 25) * 150;
+    return Math.round(rawVal / 10) * 10;
+  } else if (pos <= 75) {
+    const rawVal = 250 + ((pos - 50) / 25) * 250;
+    return Math.round(rawVal / 10) * 10;
+  } else {
+    const rawVal = 500 + ((pos - 75) / 25) * 500;
+    return Math.round(rawVal / 25) * 25;
+  }
+};
+
+/**
+ * Converte o valor de orçamento real (0 a 1000) na posição percentual física do slider (0% a 100%).
+ */
+const budgetToPosition = (val: number): number => {
+  if (val <= 0) return 0;
+  if (val >= 1000) return 100;
+
+  if (val <= 100) {
+    return (val / 100) * 25;
+  } else if (val <= 250) {
+    return 25 + ((val - 100) / 150) * 25;
+  } else if (val <= 500) {
+    return 50 + ((val - 250) / 250) * 25;
+  } else {
+    return 75 + ((val - 500) / 500) * 25;
+  }
+};
 
 export function PurchaseSetupSheet({
   isOpen,
@@ -105,15 +158,16 @@ export function PurchaseSetupSheet({
     }
   };
 
-  // Sincroniza input de texto quando o slider muda
-  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = Number(e.target.value);
-    setSliderValue(val);
-    if (val === 0) {
+  // Sincroniza input de texto quando o slider muda de posição
+  const handleSliderPositionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const pos = Number(e.target.value);
+    const calculatedBudget = positionToBudget(pos);
+    setSliderValue(calculatedBudget);
+    if (calculatedBudget === 0) {
       setBudgetValue('');
     } else {
       setBudgetValue(
-        val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        calculatedBudget.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       );
     }
   };
@@ -152,7 +206,7 @@ export function PurchaseSetupSheet({
   };
 
   const selectedList = lists.find((l) => l.id === fromListId);
-  const sliderPercentage = Math.min(100, Math.max(0, (sliderValue / 1000) * 100));
+  const sliderPercentage = budgetToPosition(sliderValue);
 
   // Filtragem de Estabelecimentos
   const trimmedQuery = storeSearchQuery.trim();
@@ -494,10 +548,10 @@ export function PurchaseSetupSheet({
                     <input
                       type="range"
                       min="0"
-                      max="1000"
-                      step="10"
-                      value={sliderValue}
-                      onChange={handleSliderChange}
+                      max="100"
+                      step="0.5"
+                      value={sliderPercentage}
+                      onChange={handleSliderPositionChange}
                       style={{
                         background: `linear-gradient(to right, #059669 0%, #059669 ${sliderPercentage}%, #e4e4e7 ${sliderPercentage}%, #e4e4e7 100%)`,
                       }}
@@ -505,17 +559,21 @@ export function PurchaseSetupSheet({
                     />
                   </div>
 
-                  {/* Régua de Marcadores (Milestones) */}
-                  <div className="flex justify-between items-center px-1 select-none">
+                  {/* Régua de Marcadores (Milestones) alinhados de forma milimétrica à posição do polegar */}
+                  <div className="relative w-full h-8 select-none mt-1">
                     {BUDGET_MILESTONES.map((milestone) => {
-                      const isExact = sliderValue === milestone.value;
+                      const isExact = Math.abs(sliderValue - milestone.value) < 10;
 
                       return (
                         <button
                           key={milestone.value}
                           type="button"
                           onClick={() => handleMilestoneClick(milestone.value)}
-                          className="flex flex-col items-center group cursor-pointer transition-all"
+                          style={{
+                            left: `calc(8px + (100% - 16px) * (${milestone.percent} / 100))`,
+                            transform: 'translateX(-50%)',
+                          }}
+                          className="absolute top-0 flex flex-col items-center group cursor-pointer p-0.5"
                         >
                           {/* Ponto / Tick */}
                           <span
@@ -527,7 +585,7 @@ export function PurchaseSetupSheet({
                           />
                           {/* Rótulo */}
                           <span
-                            className={`text-[10px] transition-colors ${
+                            className={`text-[10px] whitespace-nowrap transition-colors ${
                               isExact
                                 ? 'font-bold text-emerald-700'
                                 : 'font-medium text-zinc-400 group-hover:text-zinc-600'

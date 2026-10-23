@@ -50,7 +50,7 @@ function MainApp() {
         </div>
         <div className="flex items-center space-x-2 text-zinc-600 text-sm font-semibold">
           <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
-          <span>Carregando sessão...</span>
+          <span>Carregando...</span>
         </div>
       </div>
     );
@@ -201,7 +201,7 @@ function MainApp() {
     setActiveScreen('home');
     setActivePurchaseId(null);
     setSelectedDetailPurchaseId(null);
-    showToast('Sessão encerrada com sucesso.');
+    showToast('Você saiu da sua conta.');
   };
 
   // Determinar a tela ativa e chave de transição

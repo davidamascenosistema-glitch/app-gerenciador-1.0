@@ -1,10 +1,13 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 
 async function startServer() {
   const app = express();
+  // AI Studio Cloud Run uses an internal Nginx reverse-proxy on port 8080 that forwards traffic to port 3000
   const PORT = 3000;
 
   app.use(express.json({ limit: '15mb' }));
@@ -12,6 +15,76 @@ async function startServer() {
   // API Health Check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
+  });
+
+  // API Enviar Feedback (Formspree / Notificação)
+  app.post('/api/feedback', async (req, res) => {
+    try {
+      const { category, message, email, name, metadata } = req.body || {};
+
+      if (!message || typeof message !== 'string' || message.trim().length === 0) {
+        return res.status(400).json({ error: 'A mensagem de feedback é obrigatória.' });
+      }
+
+      const validCategory = category || 'sugestao';
+      const userEmail = email?.trim() || 'Não informado';
+      const userName = name?.trim() || 'Usuário do App';
+      const categoryLabels: Record<string, string> = {
+        bug: '🐞 Reporte de Bug',
+        sugestao: '💡 Sugestão de Melhoria',
+        elogio: '⭐ Elogio / Feedback Positivo',
+      };
+      const categoryLabel = categoryLabels[validCategory] || 'Feedback Geral';
+
+      console.log('----------------------------------------------------');
+      console.log(`[NOVO FEEDBACK RECEBIDO] [${new Date().toISOString()}]`);
+      console.log(`Categoria: ${categoryLabel}`);
+      console.log(`De: ${userName} <${userEmail}>`);
+      console.log(`Mensagem: ${message.trim()}`);
+      if (metadata) console.log('Metadados:', metadata);
+      console.log('----------------------------------------------------');
+
+      // Se houver endpoint ou ID do Formspree configurado em variáveis de ambiente
+      const formspreeEndpoint =
+        process.env.FORMSPREE_ENDPOINT ||
+        (process.env.FORMSPREE_FORM_ID ? `https://formspree.io/f/${process.env.FORMSPREE_FORM_ID}` : null);
+
+      if (formspreeEndpoint) {
+        try {
+          const response = await fetch(formspreeEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+              _subject: `[Lista & Compra] ${categoryLabel} de ${userName}`,
+              categoria: categoryLabel,
+              email: userEmail,
+              nome: userName,
+              mensagem: message.trim(),
+              enviadoEm: new Date().toLocaleString('pt-BR'),
+              metadados: metadata || {},
+            }),
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            console.warn('[Formspree Warning] Resposta de erro do Formspree:', errText);
+          }
+        } catch (formspreeErr: any) {
+          console.warn('[Formspree Error] Falha ao encaminhar para Formspree:', formspreeErr?.message || formspreeErr);
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Feedback recebido com sucesso!',
+      });
+    } catch (err: any) {
+      console.error('Erro no processamento do feedback:', err);
+      return res.status(500).json({ error: 'Falha interna ao registrar feedback.' });
+    }
   });
 
   // Helper seguro para inicializar GoogleGenAI apenas quando solicitado
@@ -133,34 +206,13 @@ async function startServer() {
     try {
       const ai = getGenAI();
 
-      const promptToSend =
-        typeof customPrompt === 'string' && customPrompt.trim().length > 0
-          ? customPrompt
-          : `
-Você é um extrator de dados de compras. Leia a frase do usuário e retorne APENAS um objeto JSON válido.
-
-REGRAS:
-1. Limpe o nome do produto. Remova quantidades, preços e conectivos do nome. Coloque no singular.
-2. Preço (price) é sempre um número decimal (ex: 1.00, 5.30). Se não houver preço, retorne null.
-3. Não adicione crases, markdown, nem a palavra json no retorno.
-
-EXEMPLOS REAIS:
-Frase: "10 pães 1 real"
-JSON: {"name": "Pão Francês", "quantity": 10, "price": 1.00, "is_weighted": false, "weight": null, "category": "Padaria"}
-
-Frase: "dois leites de cinco e trinta"
-JSON: {"name": "Leite", "quantity": 2, "price": 5.30, "is_weighted": false, "weight": null, "category": "Laticínios"}
-
-Frase: "meio quilo de carne moída"
-JSON: {"name": "Carne Moída", "quantity": 1, "price": null, "is_weighted": true, "weight": 0.5, "category": "Açougue"}
-
-AGORA É A SUA VEZ:
-Frase: "${transcript.trim()}"
-JSON:
-`;
-
       const response = await generateContentWithFallback(ai, {
-        contents: promptToSend,
+        contents: transcript.trim(),
+        config: {
+          systemInstruction:
+            'Você é um assistente de supermercado. Extraia da frase do usuário o nome do produto, quantidade, preço unitário e categoria. Retorne APENAS um JSON estrito com esta estrutura exata: {"name": "Nome Capitalizado", "quantity": numero_ou_1, "price": numero_ou_0, "category": "Categoria"}. Não inclua crases (```json) ou texto adicional.',
+          responseMimeType: 'application/json',
+        },
       });
 
       const raw = response.text || '';
@@ -262,15 +314,21 @@ Regras de análise:
     }
   });
 
+  const distPath = path.join(process.cwd(), 'dist');
+  const hasBuiltDist = fs.existsSync(path.join(distPath, 'index.html'));
+  const isProduction =
+    process.env.NODE_ENV === 'production' ||
+    Boolean(process.env.K_SERVICE) ||
+    (hasBuiltDist && process.env.NODE_ENV !== 'development');
+
   // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
@@ -278,7 +336,7 @@ Regras de análise:
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://0.0.0.0:${PORT} (${isProduction ? 'production' : 'development'})`);
   });
 }
 

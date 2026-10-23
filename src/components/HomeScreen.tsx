@@ -21,6 +21,7 @@ import { calculatePurchaseTotal, formatCurrencyBRL } from '../utils/purchaseHelp
 import { Purchase, List } from '../types';
 import { useToast } from './Toast';
 import { User } from '@supabase/supabase-js';
+import { FeedbackModal } from './FeedbackModal';
 
 interface HomeScreenProps {
   user?: User | null;
@@ -63,7 +64,6 @@ export function HomeScreen({
   const [timeFilter, setTimeFilter] = useState<'ano' | 'mes' | 'semana'>('mes');
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
-  const [feedbackText, setFeedbackText] = useState('');
 
   // Toast inicial se fornecido
   React.useEffect(() => {
@@ -144,14 +144,6 @@ export function HomeScreen({
     return { total, count, avg };
   }, [finishedPurchases, timeFilter]);
 
-  const handleSendFeedback = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!feedbackText.trim()) return;
-    showToast('Agradecemos seu feedback!');
-    setFeedbackText('');
-    setIsFeedbackModalOpen(false);
-  };
-
   return (
     <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 flex flex-col justify-between selection:bg-emerald-500 selection:text-white font-sans relative">
       
@@ -200,7 +192,7 @@ export function HomeScreen({
               {/* Botão Fantasma: Enviar Feedback */}
               <button
                 type="button"
-                onClick={() => showToast('EM BREVE')}
+                onClick={() => setIsFeedbackModalOpen(true)}
                 className="text-emerald-100/90 hover:text-white hover:bg-emerald-800/60 active:scale-95 font-semibold text-xs px-3 py-1 rounded-full transition-all flex items-center space-x-1.5 cursor-pointer min-h-[28px]"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
@@ -546,7 +538,7 @@ export function HomeScreen({
                 <div className="mt-4 bg-emerald-50/60 border border-emerald-100 rounded-2xl p-3.5 text-left space-y-2 text-xs">
                   <div className="flex items-center space-x-2 text-zinc-700">
                     <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Sincronização em nuvem ilimitada</span>
+                    <span>Acesso em todos os seus aparelhos</span>
                   </div>
                   <div className="flex items-center space-x-2 text-zinc-700">
                     <Check className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -589,71 +581,12 @@ export function HomeScreen({
       </AnimatePresence>
 
       {/* Modal: Enviar Feedback */}
-      <AnimatePresence>
-        {isFeedbackModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-            <motion.div
-              initial={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={motionConfig.shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
-              transition={motionConfig.modalSpring}
-              className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-zinc-200 relative"
-            >
-              <button
-                type="button"
-                onClick={() => setIsFeedbackModalOpen(false)}
-                aria-label="Fechar modal"
-                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-500 hover:text-zinc-700 flex items-center justify-center transition-colors cursor-pointer min-h-[32px] min-w-[32px]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <form onSubmit={handleSendFeedback} className="p-5 pt-6">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 mb-3 mx-auto">
-                  <MessageSquare className="w-6 h-6" />
-                </div>
-
-                <h3 className="text-lg font-bold text-zinc-900 text-center tracking-tight">
-                  Enviar Feedback
-                </h3>
-                <p className="text-xs text-zinc-500 text-center mt-1">
-                  Conte-nos sua opinião, sugestão de melhoria ou reporte de dúvidas.
-                </p>
-
-                <div className="mt-4">
-                  <textarea
-                    rows={4}
-                    value={feedbackText}
-                    onChange={(e) => setFeedbackText(e.target.value)}
-                    placeholder="Escreva sua mensagem aqui..."
-                    required
-                    className="w-full p-3 rounded-xl border border-zinc-200 text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none"
-                  />
-                </div>
-
-                <div className="mt-4 flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsFeedbackModalOpen(false)}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-xs transition-colors min-h-[44px] cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={!feedbackText.trim()}
-                    className={`flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1 ${
-                      !feedbackText.trim() ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                  >
-                    <span>Enviar</span>
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <FeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
+        userEmail={user?.email || ''}
+        userName={userName}
+      />
 
     </div>
   );

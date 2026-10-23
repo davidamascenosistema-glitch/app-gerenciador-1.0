@@ -46,7 +46,7 @@ export function CartScreen({
                 Carrinho
               </h1>
               <p className="text-[11px] text-zinc-500 font-medium">
-                Sessão ativa de compras no mercado
+                Sua compra em andamento
               </p>
             </div>
           </div>

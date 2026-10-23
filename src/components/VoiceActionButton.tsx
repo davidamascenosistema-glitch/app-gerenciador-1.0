@@ -28,7 +28,13 @@ export function VoiceActionButton({ onTranscript, className = '' }: VoiceActionB
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert('Reconhecimento de voz não é suportado pelo seu navegador.');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('app-toast', {
+            detail: { message: 'Reconhecimento de voz não suportado pelo navegador.' },
+          })
+        );
+      }
       return;
     }
 
