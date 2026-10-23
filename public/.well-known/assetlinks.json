@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.listaecompra.twa",
+        "sha256_cert_fingerprints": ["74:30:1E:87:73:C8:FB:B6:DE:03:81:1A:1D:BD:64:9B:1E:12:B3:BD:1C:9E:6E:66:4F:B7:EB:22:94:EC:44:F3"]
+      }
+    }]
