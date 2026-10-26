@@ -315,24 +315,29 @@ Regras de análise:
   });
 
   const distPath = path.join(process.cwd(), 'dist');
-  const hasBuiltDist = fs.existsSync(path.join(distPath, 'index.html'));
+  const indexPath = path.join(distPath, 'index.html');
+  const hasBuiltDist = fs.existsSync(indexPath);
   const isProduction =
-    process.env.NODE_ENV === 'production' ||
-    Boolean(process.env.K_SERVICE) ||
-    (hasBuiltDist && process.env.NODE_ENV !== 'development');
+    (process.env.NODE_ENV === 'production' || Boolean(process.env.K_SERVICE)) &&
+    hasBuiltDist;
 
-  // Vite middleware for development
-  if (!isProduction) {
+  // Se a pasta dist/ com index.html existir, serve arquivos estáticos compilados de produção.
+  // Caso contrário (desenvolvimento ou se o build ainda não tiver sido gerado), utiliza o middleware do Vite.
+  if (isProduction && hasBuiltDist) {
+    app.use(express.static(distPath));
+    app.get('*', (req, res, next) => {
+      res.sendFile(indexPath, (err) => {
+        if (err) {
+          next(err);
+        }
+      });
+    });
+  } else {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
