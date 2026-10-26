@@ -11,26 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        manifest: {
-          name: 'Lista & Compra',
-          short_name: 'ListaCompra',
-          theme_color: '#059669',
-          background_color: '#ffffff',
-          display: 'standalone',
-          // NOTA: As imagens de ícone abaixo devem ser colocadas manualmente na pasta public
-          icons: [
-            {
-              src: '/icon-192x192.png',
-              sizes: '192x192',
-              type: 'image/png',
-            },
-            {
-              src: '/icon-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-            },
-          ],
-        },
+        manifest: false,
       }),
     ],
     resolve: {
