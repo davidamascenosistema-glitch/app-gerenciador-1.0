@@ -3,6 +3,6 @@
       "target": {
         "namespace": "android_app",
         "package_name": "app.vercel.listaecompra.twa",
-        "sha256_cert_fingerprints": ["AF:37:D5:8C:99:DA:93:B1:42:90:72:09:5C:A0:6E:9E:11:AD:0B:CF:D3:35:62:0C:68:84:CC:EB:25:53:BF:9F"]
+        "sha256_cert_fingerprints": ["E1:D6:1A:94:FD:FB:8B:25:9C:CA:13:FA:07:21:65:17:19:B1:04:DF:71:73:51:D2:EF:D5:B4:72:13:6A:1A:43"]
       }
     }]
