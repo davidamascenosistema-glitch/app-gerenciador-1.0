@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { List, ListItem, CreateListParams } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import {
+  sanitizeItemName,
+  sanitizeItemCategory,
+  validateItemQuantity,
+  validateItemPrice,
+} from '../utils/purchaseHelpers';
 
 const LOCAL_STORAGE_KEY = 'lista_e_compra_template_lists';
 
@@ -327,41 +333,39 @@ export function useLists(userId?: string | null) {
   };
 
   /**
-   * Adiciona um item a uma lista existente
+   * Adiciona um item a uma lista existente com validação e sanitização
    */
   const addItemToList = async (
     listId: string,
     itemData: Omit<ListItem, 'id'>
   ): Promise<void> => {
+    const safeName = sanitizeItemName(itemData.name);
+    if (!safeName) return;
+    const safeCategory = sanitizeItemCategory(itemData.category, 'Geral');
+
     const newItemId = crypto.randomUUID();
     const isWeighted = Boolean(itemData.isWeighted);
 
     let parsedWeight: number | undefined = undefined;
     if (itemData.weight !== undefined && itemData.weight !== null) {
-      const w = typeof itemData.weight === 'string'
-        ? parseFloat(String(itemData.weight).replace(',', '.'))
-        : Number(itemData.weight);
-      if (!isNaN(w) && w > 0) {
-        parsedWeight = w;
-      }
+      parsedWeight = validateItemQuantity(itemData.weight, 1);
     } else if (isWeighted) {
-      const q = typeof itemData.quantity === 'string'
-        ? parseFloat(String(itemData.quantity).replace(',', '.'))
-        : Number(itemData.quantity || 1);
-      parsedWeight = !isNaN(q) && q > 0 ? q : 1;
+      parsedWeight = validateItemQuantity(itemData.quantity, 1);
     }
 
-    const rawQty = itemData.quantity;
-    const parsedQty = typeof rawQty === 'string' ? parseInt(String(rawQty), 10) : Number(rawQty || 1);
-    const validQty = !isNaN(parsedQty) && parsedQty >= 1 ? parsedQty : 1;
+    const validQty = Math.max(1, Math.round(validateItemQuantity(itemData.quantity, 1)));
+    const validPrice = validateItemPrice((itemData as any).price);
 
     const newItem: ListItem = {
       ...itemData,
       id: newItemId,
       listId,
+      name: safeName,
+      category: safeCategory,
       quantity: validQty,
       isWeighted,
       weight: isWeighted ? (parsedWeight ?? 1) : parsedWeight,
+      price: validPrice,
     };
 
     setLists((prev) => {
@@ -381,8 +385,8 @@ export function useLists(userId?: string | null) {
         const itemPayload: Record<string, any> = {
           list_id: listId,
           user_id: userId,
-          name: itemData.name.trim(),
-          category: itemData.category || 'Geral',
+          name: safeName,
+          category: safeCategory,
           quantity: validQty,
           is_weighted: isWeighted,
         };
@@ -426,7 +430,7 @@ export function useLists(userId?: string | null) {
   };
 
   /**
-   * Atualiza um item de uma lista existente
+   * Atualiza um item de uma lista existente com validação e sanitização
    */
   const editListItem = async (
     listId: string,
@@ -434,6 +438,19 @@ export function useLists(userId?: string | null) {
     updates: Partial<ListItem>
   ): Promise<void> => {
     const sanitizedUpdates: Partial<ListItem> = { ...updates };
+
+    if (updates.name !== undefined) {
+      const safeName = sanitizeItemName(updates.name);
+      if (safeName) {
+        sanitizedUpdates.name = safeName;
+      } else {
+        delete sanitizedUpdates.name;
+      }
+    }
+
+    if (updates.category !== undefined) {
+      sanitizedUpdates.category = sanitizeItemCategory(updates.category, 'Geral');
+    }
 
     if (updates.isWeighted !== undefined) {
       sanitizedUpdates.isWeighted = Boolean(updates.isWeighted);
@@ -443,10 +460,7 @@ export function useLists(userId?: string | null) {
       if (updates.weight === null) {
         sanitizedUpdates.weight = undefined;
       } else {
-        const w = typeof updates.weight === 'string'
-          ? parseFloat(String(updates.weight).replace(',', '.'))
-          : Number(updates.weight);
-        sanitizedUpdates.weight = !isNaN(w) && w > 0 ? w : undefined;
+        sanitizedUpdates.weight = validateItemQuantity(updates.weight, 1);
       }
     }
 
@@ -455,10 +469,11 @@ export function useLists(userId?: string | null) {
     }
 
     if (updates.quantity !== undefined) {
-      const q = typeof updates.quantity === 'string'
-        ? parseInt(String(updates.quantity), 10)
-        : Number(updates.quantity);
-      sanitizedUpdates.quantity = !isNaN(q) && q > 0 ? q : 1;
+      sanitizedUpdates.quantity = Math.max(1, Math.round(validateItemQuantity(updates.quantity, 1)));
+    }
+
+    if ('price' in updates) {
+      sanitizedUpdates.price = validateItemPrice(updates.price);
     }
 
     setLists((prev) => {
@@ -501,7 +516,7 @@ export function useLists(userId?: string | null) {
           dbUpdates.pricing_mode_source = sanitizedUpdates.pricingModeSource;
         }
 
-        if (sanitizedUpdates.price !== undefined) {
+        if ('price' in updates) {
           dbUpdates.price = sanitizedUpdates.price != null ? Number(sanitizedUpdates.price) : null;
         }
 

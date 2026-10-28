@@ -1,9 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { ArrowLeft, User as UserIcon, LogOut, Loader2, Mail, Calendar } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useMotionConfig } from '../styles/motionSystem';
 import { User } from '@supabase/supabase-js';
-import { DevPanelModal } from './DevPanelModal';
 
 interface ProfileScreenProps {
   user: User | null;
@@ -15,53 +14,13 @@ interface ProfileScreenProps {
   onRepeatPurchase?: () => void;
 }
 
-// Modo desenvolvedor temporariamente desativado a pedido do usuário
-const IS_DEV_MODE_ENABLED = false;
-
 export function ProfileScreen({
   user,
   onSignOut,
   onBack,
-  onNavigateToHome,
-  onNavigateToHistory,
-  onCreateNewList,
-  onRepeatPurchase,
 }: ProfileScreenProps) {
   const motionConfig = useMotionConfig();
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [clickCount, setClickCount] = useState(0);
-  const [showDevPanel, setShowDevPanel] = useState(false);
-  const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Gatilho secreto: desativado temporariamente
-  const handleDevSecretClick = () => {
-    if (!IS_DEV_MODE_ENABLED) return;
-
-    if (clickTimerRef.current) {
-      clearTimeout(clickTimerRef.current);
-    }
-
-    setClickCount((prev) => {
-      const next = prev + 1;
-      if (next >= 7) {
-        setShowDevPanel(true);
-        return 0;
-      }
-      return next;
-    });
-
-    clickTimerRef.current = setTimeout(() => {
-      setClickCount(0);
-    }, 2000);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (clickTimerRef.current) {
-        clearTimeout(clickTimerRef.current);
-      }
-    };
-  }, []);
 
   const handleLogout = async () => {
     setIsSigningOut(true);
@@ -205,15 +164,6 @@ export function ProfileScreen({
           </div>
         </motion.div>
       </main>
-
-      {/* Modal DevTools (desativado temporariamente) */}
-      {IS_DEV_MODE_ENABLED && (
-        <DevPanelModal
-          isOpen={showDevPanel}
-          onClose={() => setShowDevPanel(false)}
-          userId={user?.id}
-        />
-      )}
     </div>
   );
 }

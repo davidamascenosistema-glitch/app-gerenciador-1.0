@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Item, Purchase } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
-import { calculatePurchaseTotal } from '../utils/purchaseHelpers';
+import {
+  calculatePurchaseTotal,
+  sanitizeItemName,
+  sanitizeItemCategory,
+  validateItemQuantity,
+  validateItemPrice,
+} from '../utils/purchaseHelpers';
 
 const STORAGE_KEY_PURCHASES = 'lista_e_compra_purchases_cache';
 
@@ -529,23 +535,33 @@ export function usePurchases(userId?: string | null) {
   };
 
   /**
-   * Adiciona um novo item à tabela purchase_items e atualiza o estado
+   * Adiciona um novo item à tabela purchase_items e atualiza o estado com validação e sanitização
    */
   const addItemToPurchase = (
     purchaseId: string,
     itemData: Omit<Item, 'id' | 'bought'> & { id?: string; bought?: boolean }
   ): void => {
+    const safeName = sanitizeItemName(itemData.name);
+    if (!safeName) return;
+
+    const safeCategory = sanitizeItemCategory(itemData.category, 'Geral');
+    const safeQuantity = validateItemQuantity(itemData.quantity, 1);
+    const safeWeight =
+      itemData.weight !== undefined && itemData.weight !== null
+        ? validateItemQuantity(itemData.weight, 1)
+        : undefined;
+    const safePrice = validateItemPrice(itemData.price);
     const newItemId = itemData.id || crypto.randomUUID();
 
-    const defaultBought = itemData.bought !== undefined ? itemData.bought : false;
+    const defaultBought = itemData.bought !== undefined ? Boolean(itemData.bought) : false;
     const newItem: Item = {
       id: newItemId,
-      name: itemData.name,
-      category: itemData.category || 'Geral',
-      quantity: itemData.quantity || 1,
-      weight: itemData.weight,
-      isWeighted: itemData.isWeighted || false,
-      price: itemData.price,
+      name: safeName,
+      category: safeCategory,
+      quantity: safeQuantity,
+      weight: safeWeight,
+      isWeighted: Boolean(itemData.isWeighted),
+      price: safePrice,
       bought: defaultBought,
       pricingModeSource: itemData.pricingModeSource ?? null,
     };
@@ -565,12 +581,12 @@ export function usePurchases(userId?: string | null) {
         id: newItemId,
         purchase_id: purchaseId,
         user_id: userId,
-        name: itemData.name,
-        category: itemData.category || 'Geral',
-        quantity: itemData.quantity || 1,
-        weight: itemData.weight != null ? itemData.weight : null,
+        name: safeName,
+        category: safeCategory,
+        quantity: safeQuantity,
+        weight: safeWeight != null ? safeWeight : null,
         is_weighted: Boolean(itemData.isWeighted),
-        price: itemData.price != null ? itemData.price : null,
+        price: safePrice != null ? safePrice : null,
         bought: defaultBought,
         pricing_mode_source: itemData.pricingModeSource ?? null,
         created_at: new Date().toISOString(),
@@ -596,20 +612,44 @@ export function usePurchases(userId?: string | null) {
   };
 
   /**
-   * Edita um item existente na tabela purchase_items e no estado
+   * Edita um item existente na tabela purchase_items e no estado com validação e sanitização
    */
   const editItemInPurchase = (
     purchaseId: string,
     itemId: string,
     updatedData: Partial<Omit<Item, 'id'>>
   ): void => {
+    const sanitizedUpdates: Partial<Omit<Item, 'id'>> = { ...updatedData };
+
+    if (updatedData.name !== undefined) {
+      const safeName = sanitizeItemName(updatedData.name);
+      if (safeName) {
+        sanitizedUpdates.name = safeName;
+      } else {
+        delete sanitizedUpdates.name;
+      }
+    }
+    if (updatedData.category !== undefined) {
+      sanitizedUpdates.category = sanitizeItemCategory(updatedData.category, 'Geral');
+    }
+    if (updatedData.quantity !== undefined) {
+      sanitizedUpdates.quantity = validateItemQuantity(updatedData.quantity, 1);
+    }
+    if (updatedData.weight !== undefined) {
+      sanitizedUpdates.weight =
+        updatedData.weight != null ? validateItemQuantity(updatedData.weight, 1) : undefined;
+    }
+    if ('price' in updatedData) {
+      sanitizedUpdates.price = validateItemPrice(updatedData.price);
+    }
+
     setPurchases((prev) =>
       prev.map((p) => {
         if (p.id !== purchaseId) return p;
         return {
           ...p,
           items: p.items.map((item) =>
-            item.id === itemId ? { ...item, ...updatedData } : item
+            item.id === itemId ? { ...item, ...sanitizedUpdates } : item
           ),
         };
       })
@@ -617,14 +657,14 @@ export function usePurchases(userId?: string | null) {
 
     if (isSupabaseConfigured() && userId) {
       const dbUpdate: any = {};
-      if (updatedData.name !== undefined) dbUpdate.name = updatedData.name;
-      if (updatedData.category !== undefined) dbUpdate.category = updatedData.category;
-      if (updatedData.quantity !== undefined) dbUpdate.quantity = updatedData.quantity;
-      if (updatedData.weight !== undefined) dbUpdate.weight = updatedData.weight != null ? updatedData.weight : null;
-      if (updatedData.isWeighted !== undefined) dbUpdate.is_weighted = Boolean(updatedData.isWeighted);
-      if (updatedData.price !== undefined) dbUpdate.price = updatedData.price != null ? updatedData.price : null;
-      if (updatedData.bought !== undefined) dbUpdate.bought = Boolean(updatedData.bought);
-      if (updatedData.pricingModeSource !== undefined) dbUpdate.pricing_mode_source = updatedData.pricingModeSource;
+      if (sanitizedUpdates.name !== undefined) dbUpdate.name = sanitizedUpdates.name;
+      if (sanitizedUpdates.category !== undefined) dbUpdate.category = sanitizedUpdates.category;
+      if (sanitizedUpdates.quantity !== undefined) dbUpdate.quantity = sanitizedUpdates.quantity;
+      if ('weight' in updatedData) dbUpdate.weight = sanitizedUpdates.weight != null ? sanitizedUpdates.weight : null;
+      if (sanitizedUpdates.isWeighted !== undefined) dbUpdate.is_weighted = Boolean(sanitizedUpdates.isWeighted);
+      if ('price' in updatedData) dbUpdate.price = sanitizedUpdates.price != null ? sanitizedUpdates.price : null;
+      if (sanitizedUpdates.bought !== undefined) dbUpdate.bought = Boolean(sanitizedUpdates.bought);
+      if (sanitizedUpdates.pricingModeSource !== undefined) dbUpdate.pricing_mode_source = sanitizedUpdates.pricingModeSource;
 
       supabase.from('purchase_items').update(dbUpdate).eq('id', itemId).then(async ({ error }) => {
         if (error && (error.code === 'PGRST204' || error.code === '42703')) {

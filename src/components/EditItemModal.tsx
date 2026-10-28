@@ -2,7 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { X, Pencil, Scale, Tag } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Item } from '../types';
-import { ALL_CATEGORIES, sanitizePriceInput, sanitizeWeightInput } from '../utils/purchaseHelpers';
+import {
+  ALL_CATEGORIES,
+  MAX_ITEM_NAME_LENGTH,
+  MAX_ITEM_QUANTITY,
+  sanitizePriceInput,
+  sanitizeWeightInput,
+  sanitizeItemName,
+  sanitizeItemCategory,
+  validateItemQuantity,
+  validateItemPrice,
+} from '../utils/purchaseHelpers';
 import { MOTION_TOKENS, useMotionConfig } from '../styles/motionSystem';
 
 interface EditItemModalProps {
@@ -23,10 +33,10 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
 
   useEffect(() => {
     if (item) {
-      setName(item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, '').trim());
-      setCategory(item.category || 'Geral');
+      setName(sanitizeItemName(item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, '')));
+      setCategory(sanitizeItemCategory(item.category, 'Geral'));
       setIsWeighted(Boolean(item.isWeighted));
-      setQuantity(item.quantity || 1);
+      setQuantity(validateItemQuantity(item.quantity, 1));
       setWeightStr(
         item.weight !== undefined && item.weight !== null
           ? sanitizeWeightInput(item.weight.toString())
@@ -51,25 +61,27 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedName = name.trim();
+    const trimmedName = sanitizeItemName(name);
     if (!trimmedName) return;
 
+    const sanitizedCategory = sanitizeItemCategory(category, 'Geral');
     const sanitizedPrice = sanitizePriceInput(priceStr);
-    const parsedPrice = sanitizedPrice ? parseFloat(sanitizedPrice.replace(',', '.')) : undefined;
-    const roundedPrice = parsedPrice !== undefined && !isNaN(parsedPrice) && parsedPrice >= 0
-      ? Math.round(parsedPrice * 100) / 100
-      : undefined;
-    const parsedWeight = isWeighted && weightStr
-      ? Math.round(parseFloat(sanitizeWeightInput(weightStr).replace(',', '.')) * 1000) / 1000
-      : undefined;
+    const validatedPrice = sanitizedPrice ? validateItemPrice(sanitizedPrice) : undefined;
+    const validatedWeight =
+      isWeighted && weightStr
+        ? validateItemQuantity(sanitizeWeightInput(weightStr), 1)
+        : undefined;
+    const validatedQuantity = isWeighted
+      ? 1
+      : Math.max(1, Math.min(MAX_ITEM_QUANTITY, Math.round(validateItemQuantity(quantity, 1))));
 
     onSave(item.id, {
       name: trimmedName,
-      category,
+      category: sanitizedCategory,
       isWeighted,
-      quantity: isWeighted ? 1 : Math.max(1, quantity),
-      weight: parsedWeight,
-      price: roundedPrice,
+      quantity: validatedQuantity,
+      weight: validatedWeight,
+      price: validatedPrice,
     });
 
     onClose();
@@ -128,8 +140,9 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                 type="text"
                 required
                 autoFocus
+                maxLength={MAX_ITEM_NAME_LENGTH}
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => setName(e.target.value.replace(/<[^>]*>/g, '').slice(0, MAX_ITEM_NAME_LENGTH))}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-sm font-medium text-zinc-900 bg-white transition-all outline-none"
               />
             </div>
@@ -262,15 +275,23 @@ export function EditItemModal({ isOpen, item, onClose, onSave }: EditItemModalPr
                       type="number"
                       inputMode="numeric"
                       min="1"
+                      max={MAX_ITEM_QUANTITY}
                       value={quantity}
-                      onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setQuantity(
+                          !isNaN(val) && Number.isFinite(val)
+                            ? Math.min(MAX_ITEM_QUANTITY, Math.max(1, val))
+                            : 1
+                        );
+                      }}
                       className="w-full text-center py-2 rounded-xl border border-zinc-300 text-sm font-bold text-zinc-900 focus:border-emerald-500 h-10 outline-none"
                     />
                     <motion.button
                       whileTap={motionConfig.tap.iconButton}
                       transition={motionConfig.pressSpring}
                       type="button"
-                      onClick={() => setQuantity((q) => q + 1)}
+                      onClick={() => setQuantity((q) => Math.min(MAX_ITEM_QUANTITY, q + 1))}
                       className="w-10 h-10 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 font-bold text-zinc-700 flex items-center justify-center shrink-0 cursor-pointer text-base"
                     >
                       +

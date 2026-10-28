@@ -3,7 +3,12 @@ import { Search, Plus, ListPlus, History, Sparkles, X, CornerDownLeft, Mic, MicO
 import { motion, AnimatePresence } from 'motion/react';
 import { useMotionConfig } from '../styles/motionSystem';
 import { ItemSuggestion, PricingModeDefault } from '../types';
-import { resolvePricingMode } from '../utils/purchaseHelpers';
+import {
+  resolvePricingMode,
+  MAX_ITEM_NAME_LENGTH,
+  sanitizeItemName,
+  sanitizeItemCategory,
+} from '../utils/purchaseHelpers';
 
 interface ItemSearchBarProps {
   onAddItem: (
@@ -79,7 +84,7 @@ export function ItemSearchBar({
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert('Seu navegador não possui suporte para reconhecimento de voz.');
+      setSpeechError('Seu navegador não possui suporte para reconhecimento de voz.');
       return;
     }
 
@@ -108,7 +113,7 @@ export function ItemSearchBar({
       recognition.onresult = (event: any) => {
         const transcript = event.results?.[0]?.[0]?.transcript || '';
         if (transcript) {
-          const cleanTranscript = transcript.replace(/[.,!?]+$/, '').trim();
+          const cleanTranscript = sanitizeItemName(transcript.replace(/[.,!?]+$/, ''));
           setQuery(cleanTranscript);
           setIsOpen(true);
           setSelectedIndex(-1);
@@ -138,7 +143,10 @@ export function ItemSearchBar({
 
   const handleSelectSuggestion = (suggestion: ItemSuggestion) => {
     const { isWeighted, pricingModeSource } = resolvePricingMode(suggestion.defaultPricingMode);
-    onAddItem(suggestion.name, suggestion.category, isWeighted, pricingModeSource);
+    const safeName = sanitizeItemName(suggestion.name);
+    const safeCategory = sanitizeItemCategory(suggestion.category, 'Geral');
+    if (!safeName) return;
+    onAddItem(safeName, safeCategory, isWeighted, pricingModeSource);
     setQuery('');
     setIsOpen(false);
     setSelectedIndex(-1);
@@ -146,7 +154,7 @@ export function ItemSearchBar({
   };
 
   const handleAddFreeText = (text: string) => {
-    const trimmed = text.trim();
+    const trimmed = sanitizeItemName(text);
     if (!trimmed) return;
 
     // Verificar se existe correspondência exata nas sugestões
@@ -213,9 +221,10 @@ export function ItemSearchBar({
             <input
               ref={inputRef}
               type="text"
+              maxLength={MAX_ITEM_NAME_LENGTH}
               value={query}
               onChange={(e) => {
-                setQuery(e.target.value);
+                setQuery(e.target.value.replace(/<[^>]*>/g, '').slice(0, MAX_ITEM_NAME_LENGTH));
                 setIsOpen(true);
                 setSelectedIndex(-1);
               }}

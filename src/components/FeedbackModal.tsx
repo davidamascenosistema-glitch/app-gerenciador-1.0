@@ -17,11 +17,21 @@ import { useToast } from './Toast';
 
 export type FeedbackCategory = 'bug' | 'sugestao' | 'elogio';
 
+export const MAX_FEEDBACK_LENGTH = 1000;
+export const FEEDBACK_SESSION_LOCK_KEY = 'lista_compra_feedback_sent_session';
+
 interface FeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
   userEmail?: string;
   userName?: string;
+  hasSentInSession?: boolean;
+  onSendFeedback?: (payload: {
+    category: FeedbackCategory;
+    message: string;
+    email: string;
+    name: string;
+  }) => Promise<void>;
 }
 
 const CATEGORIES: {
@@ -75,6 +85,8 @@ export function FeedbackModal({
   onClose,
   userEmail = '',
   userName = '',
+  hasSentInSession: externalHasSentInSession = false,
+  onSendFeedback,
 }: FeedbackModalProps) {
   const motionConfig = useMotionConfig();
   const { showToast } = useToast();
@@ -85,6 +97,20 @@ export function FeedbackModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [sessionLocked, setSessionLocked] = useState<boolean>(() => {
+    try {
+      return externalHasSentInSession || sessionStorage.getItem(FEEDBACK_SESSION_LOCK_KEY) === 'true';
+    } catch {
+      return externalHasSentInSession;
+    }
+  });
+
+  // Sincroniza trava de sessão externa
+  React.useEffect(() => {
+    if (externalHasSentInSession) {
+      setSessionLocked(true);
+    }
+  }, [externalHasSentInSession]);
 
   // Sincroniza e-mail se mudar
   React.useEffect(() => {
@@ -93,7 +119,7 @@ export function FeedbackModal({
     }
   }, [userEmail, email]);
 
-  // Resetar estados ao fechar ou reabrir
+  // Resetar estados ao fechar ou reabrir (mantendo a trava de sessão ativa)
   const handleClose = () => {
     if (isSubmitting) return;
     setIsSuccess(false);
@@ -117,42 +143,87 @@ export function FeedbackModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim()) {
+
+    // Trava contra múltiplos envios seguidos na mesma sessão
+    const alreadySent =
+      sessionLocked ||
+      externalHasSentInSession ||
+      (() => {
+        try {
+          return sessionStorage.getItem(FEEDBACK_SESSION_LOCK_KEY) === 'true';
+        } catch {
+          return false;
+        }
+      })();
+
+    if (alreadySent) {
+      setErrorMsg('Você já enviou um feedback nesta sessão. Obrigado pela sua colaboração!');
+      return;
+    }
+
+    const trimmedMessage = message.replace(/<[^>]*>/g, '').trim();
+    if (!trimmedMessage) {
       setErrorMsg('Por favor, digite sua mensagem antes de enviar.');
       return;
     }
+
+    if (trimmedMessage.length > MAX_FEEDBACK_LENGTH) {
+      setErrorMsg(`Sua mensagem não pode ultrapassar ${MAX_FEEDBACK_LENGTH} caracteres.`);
+      return;
+    }
+
+    const safeMessage = trimmedMessage.slice(0, MAX_FEEDBACK_LENGTH);
 
     setIsSubmitting(true);
     setErrorMsg(null);
 
     try {
-      const response = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      if (onSendFeedback) {
+        await onSendFeedback({
           category,
-          message: message.trim(),
+          message: safeMessage,
           email: email.trim(),
           name: userName.trim(),
-          metadata: {
-            url: window.location.href,
-            timestamp: new Date().toISOString(),
+        });
+      } else {
+        const response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        }),
-      });
+          body: JSON.stringify({
+            category,
+            message: safeMessage,
+            email: email.trim(),
+            name: userName.trim(),
+            metadata: {
+              url: window.location.href,
+              timestamp: new Date().toISOString(),
+            },
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error('Falha ao enviar feedback.');
+        if (!response.ok) {
+          throw new Error('Falha ao enviar feedback.');
+        }
       }
 
+      try {
+        sessionStorage.setItem(FEEDBACK_SESSION_LOCK_KEY, 'true');
+      } catch {
+        // ignore storage errors
+      }
+      setSessionLocked(true);
       setIsSuccess(true);
       showToast('Obrigado! Feedback enviado com sucesso.');
     } catch (err: any) {
       console.warn('Erro ao enviar feedback pela API:', err);
       // Fallback gracioso
-      setErrorMsg('Não foi possível enviar automaticamente. Você também pode enviar para davidamascenosistema@gmail.com.');
+      setErrorMsg(
+        err?.message && err.message.includes('sessão')
+          ? err.message
+          : 'Não foi possível enviar automaticamente. Você também pode enviar para davidamascenosistema@gmail.com.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -207,8 +278,8 @@ export function FeedbackModal({
 
             {/* Conteúdo rolável se tela pequena */}
             <div className="p-5 overflow-y-auto flex-1">
-              {isSuccess ? (
-                /* Estado de Sucesso */
+              {isSuccess || sessionLocked ? (
+                /* Estado de Sucesso / Trava de Sessão */
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -221,7 +292,7 @@ export function FeedbackModal({
                     Feedback Enviado!
                   </h4>
                   <p className="text-xs text-zinc-600 max-w-xs leading-relaxed">
-                    Muito obrigado por dedicar seu tempo para nos ajudar. Lemos cada mensagem com atenção para melhorar o Lista &amp; Compra!
+                    Muito obrigado por dedicar seu tempo para nos ajudar. Você já registrou seu feedback nesta sessão e lemos cada mensagem com atenção para melhorar o Lista &amp; Compra!
                   </p>
                   <div className="pt-3 w-full">
                     <button
@@ -282,16 +353,16 @@ export function FeedbackModal({
                         Mensagem <span className="text-rose-500">*</span>
                       </label>
                       <span className="text-[10px] text-zinc-400 font-mono">
-                        {message.length}/1000
+                        {message.length}/{MAX_FEEDBACK_LENGTH}
                       </span>
                     </div>
                     <textarea
                       id="feedback-message"
                       rows={4}
-                      maxLength={1000}
+                      maxLength={MAX_FEEDBACK_LENGTH}
                       value={message}
                       onChange={(e) => {
-                        setMessage(e.target.value);
+                        setMessage(e.target.value.slice(0, MAX_FEEDBACK_LENGTH));
                         if (errorMsg) setErrorMsg(null);
                       }}
                       placeholder={getPlaceholder()}
@@ -354,9 +425,11 @@ export function FeedbackModal({
                     </button>
                     <button
                       type="submit"
-                      disabled={isSubmitting || !message.trim()}
+                      disabled={isSubmitting || sessionLocked || !message.trim() || message.length > MAX_FEEDBACK_LENGTH}
                       className={`flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-xs transition-all min-h-[44px] cursor-pointer flex items-center justify-center space-x-1.5 ${
-                        isSubmitting || !message.trim() ? 'opacity-50 cursor-not-allowed' : ''
+                        isSubmitting || sessionLocked || !message.trim() || message.length > MAX_FEEDBACK_LENGTH
+                          ? 'opacity-50 cursor-not-allowed'
+                          : ''
                       }`}
                     >
                       {isSubmitting ? (

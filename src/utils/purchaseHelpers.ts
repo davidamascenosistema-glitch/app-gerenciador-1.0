@@ -26,25 +26,109 @@ export const formatCurrencyBRL = (value: number): string => {
   });
 };
 
+// Constantes de limites de segurança e validação matemática
+export const MAX_VOICE_TRANSCRIPT_LENGTH = 250;
+export const MAX_ITEM_NAME_LENGTH = 80;
+export const MAX_ITEM_CATEGORY_LENGTH = 40;
+export const MIN_ITEM_QUANTITY = 0.001;
+export const MAX_ITEM_QUANTITY = 9999;
+export const MIN_ITEM_PRICE = 0;
+export const MAX_ITEM_PRICE = 99999.99;
+
 /**
- * Calcula o subtotal de um item individual (considerando quantidade ou peso) com proteção anti-NaN
+ * Remove tags HTML, caracteres de controle e espaços duplicados, limitando o tamanho máximo.
+ */
+export const stripHtmlAndSanitizeText = (raw: unknown, maxLength: number): string => {
+  if (typeof raw !== 'string') return '';
+  return raw
+    .replace(/<[^>]*>/g, '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+};
+
+/**
+ * Sanitiza o nome de um item: sem tags HTML e no máximo 80 caracteres.
+ */
+export const sanitizeItemName = (rawName: unknown): string => {
+  return stripHtmlAndSanitizeText(rawName, MAX_ITEM_NAME_LENGTH);
+};
+
+/**
+ * Sanitiza a categoria de um item: sem tags HTML e no máximo 40 caracteres.
+ */
+export const sanitizeItemCategory = (rawCategory: unknown, fallback: string = 'Geral'): string => {
+  const cleaned = stripHtmlAndSanitizeText(rawCategory, MAX_ITEM_CATEGORY_LENGTH);
+  return cleaned || fallback;
+};
+
+/**
+ * Valida e limita a quantidade ou peso entre 0.001 e 9999 (impede negativos, zero, NaN ou Infinity).
+ */
+export const validateItemQuantity = (rawQuantity: unknown, fallback: number = 1): number => {
+  const safeFallback =
+    Number.isFinite(fallback) && fallback >= MIN_ITEM_QUANTITY && fallback <= MAX_ITEM_QUANTITY
+      ? fallback
+      : 1;
+  const parsed =
+    typeof rawQuantity === 'number'
+      ? rawQuantity
+      : typeof rawQuantity === 'string'
+      ? parseFloat(rawQuantity.replace(',', '.'))
+      : NaN;
+
+  if (!Number.isFinite(parsed) || isNaN(parsed) || parsed < MIN_ITEM_QUANTITY) {
+    return safeFallback;
+  }
+
+  const clamped = Math.min(MAX_ITEM_QUANTITY, Math.max(MIN_ITEM_QUANTITY, parsed));
+  return Math.round(clamped * 1000) / 1000;
+};
+
+/**
+ * Valida e limita o preço entre 0 e 99999.99 (impede negativos, NaN ou Infinity).
+ * Retorna undefined se o preço não foi informado ou for inválido/negativo.
+ */
+export const validateItemPrice = (rawPrice: unknown): number | undefined => {
+  if (rawPrice === undefined || rawPrice === null || rawPrice === '') {
+    return undefined;
+  }
+  const parsed =
+    typeof rawPrice === 'number'
+      ? rawPrice
+      : typeof rawPrice === 'string'
+      ? parseFloat(rawPrice.replace(',', '.'))
+      : NaN;
+
+  if (!Number.isFinite(parsed) || isNaN(parsed) || parsed < MIN_ITEM_PRICE) {
+    return undefined;
+  }
+
+  const clamped = Math.min(MAX_ITEM_PRICE, Math.max(MIN_ITEM_PRICE, parsed));
+  return Math.round(clamped * 100) / 100;
+};
+
+/**
+ * Calcula o subtotal de um item individual (considerando quantidade ou peso) com proteção anti-NaN e limites seguros
  */
 export const calculateItemSubtotal = (item: Item): number => {
   if (!item || item.price === undefined || item.price === null) return 0;
-  const price = typeof item.price === 'number' ? item.price : parseFloat(String(item.price).replace(',', '.'));
-  if (isNaN(price) || price <= 0 || !isFinite(price)) return 0;
+  const price = validateItemPrice(item.price);
+  if (price === undefined || price <= 0) return 0;
 
   if (item.isWeighted) {
     const rawWeight = item.weight !== undefined && item.weight !== null ? item.weight : item.quantity;
-    const weight = typeof rawWeight === 'number' ? rawWeight : parseFloat(String(rawWeight).replace(',', '.'));
-    if (isNaN(weight) || weight <= 0 || !isFinite(weight)) return 0;
-    return price * weight;
+    const weight = validateItemQuantity(rawWeight, 0);
+    if (weight < MIN_ITEM_QUANTITY) return 0;
+    const sub = price * weight;
+    return Number.isFinite(sub) && sub >= 0 ? sub : 0;
   }
 
-  const rawQty = item.quantity;
-  const qty = typeof rawQty === 'number' ? rawQty : parseInt(String(rawQty), 10);
-  if (isNaN(qty) || qty <= 0 || !isFinite(qty)) return 0;
-  return price * qty;
+  const qty = validateItemQuantity(item.quantity, 0);
+  if (qty < MIN_ITEM_QUANTITY) return 0;
+  const sub = price * qty;
+  return Number.isFinite(sub) && sub >= 0 ? sub : 0;
 };
 
 /**
@@ -77,7 +161,7 @@ export const ALL_CATEGORIES = ITEM_CATEGORIES;
  * Sanitiza a entrada de peso:
  * - Aceita apenas números e uma única vírgula/ponto decimal
  * - Converte ponto em vírgula
- * - Limita estritamente a no máximo 3 dígitos após a vírgula (ex: 1,456)
+ * - Limita estritamente a no máximo 3 dígitos após a vírgula (ex: 1,456) e valor máximo de 9999
  */
 export const sanitizeWeightInput = (value: string): string => {
   if (!value) return '';
@@ -88,22 +172,22 @@ export const sanitizeWeightInput = (value: string): string => {
   // Remove qualquer caractere que não seja dígito ou vírgula
   normalized = normalized.replace(/[^\d,]/g, '');
 
-  // Se houver vírgula, mantém apenas a primeira e limita a 3 casas decimais
+  // Se houver vírgula, mantém apenas a primeira e limita a parte inteira a 4 dígitos (9999) e 3 casas decimais
   const commaIndex = normalized.indexOf(',');
   if (commaIndex !== -1) {
-    const integerPart = normalized.slice(0, commaIndex);
+    const integerPart = normalized.slice(0, commaIndex).slice(0, 4);
     const decimalPart = normalized.slice(commaIndex + 1).replace(/,/g, '');
     return `${integerPart},${decimalPart.slice(0, 3)}`;
   }
 
-  return normalized;
+  return normalized.slice(0, 4);
 };
 
 /**
  * Sanitiza a entrada de preço para formato de moeda:
  * - Aceita apenas números e uma única vírgula/ponto decimal
  * - Converte ponto em vírgula
- * - Limita estritamente a no máximo 2 dígitos após a vírgula (ex: 44,45)
+ * - Limita estritamente a parte inteira a 5 dígitos (99999) e no máximo 2 dígitos após a vírgula (ex: 99999,99)
  */
 export const sanitizePriceInput = (value: string): string => {
   if (!value) return '';
@@ -114,15 +198,15 @@ export const sanitizePriceInput = (value: string): string => {
   // Remove qualquer caractere que não seja dígito ou vírgula
   normalized = normalized.replace(/[^\d,]/g, '');
 
-  // Se houver vírgula, mantém apenas a primeira e limita a 2 casas decimais
+  // Se houver vírgula, mantém apenas a primeira e limita a 5 dígitos inteiros e 2 casas decimais
   const commaIndex = normalized.indexOf(',');
   if (commaIndex !== -1) {
-    const integerPart = normalized.slice(0, commaIndex);
+    const integerPart = normalized.slice(0, commaIndex).slice(0, 5);
     const decimalPart = normalized.slice(commaIndex + 1).replace(/,/g, '');
     return `${integerPart},${decimalPart.slice(0, 2)}`;
   }
 
-  return normalized;
+  return normalized.slice(0, 5);
 };
 
 /**
@@ -160,7 +244,6 @@ export const parseBatchItemsInput = (text: string): ParsedBatchItem[] => {
     if (!line.trim()) continue;
 
     // Divide a linha por vírgula, exceto quando a vírgula estiver entre dígitos (ex: 1,5 kg de carne)
-    // Usamos regex com lookaround negativo para não quebrar em números decimais como 1,5 ou 0,5
     const parts = line.split(/(?<!\d),(?!\d)/);
     for (const part of parts) {
       const trimmedPart = part.trim();
@@ -177,24 +260,29 @@ export const parseBatchItemsInput = (text: string): ParsedBatchItem[] => {
     if (!trimmed) continue;
 
     // Regex para identificar quantidade no início ex: "2 Leite", "3 Sabão em pó"
-    const match = trimmed.match(/^(\d+)\s+(.+)$/);
+    const match = trimmed.match(/^(\d+(?:[.,]\d+)?)\s+(.+)$/);
 
     if (match && match[2] && match[2].trim()) {
-      const qty = parseInt(match[1], 10);
-      const name = match[2].trim();
-      results.push({
-        name,
-        quantity: isNaN(qty) || qty < 1 ? 1 : qty,
-        category: 'Geral',
-        isWeighted: false,
-      });
+      const qty = validateItemQuantity(match[1], 1);
+      const cleanName = sanitizeItemName(match[2]);
+      if (cleanName) {
+        results.push({
+          name: cleanName,
+          quantity: Math.max(1, Math.min(MAX_ITEM_QUANTITY, Math.round(qty))),
+          category: 'Geral',
+          isWeighted: false,
+        });
+      }
     } else {
-      results.push({
-        name: trimmed,
-        quantity: 1,
-        category: 'Geral',
-        isWeighted: false,
-      });
+      const cleanName = sanitizeItemName(trimmed);
+      if (cleanName) {
+        results.push({
+          name: cleanName,
+          quantity: 1,
+          category: 'Geral',
+          isWeighted: false,
+        });
+      }
     }
   }
 

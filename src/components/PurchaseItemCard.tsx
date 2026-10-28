@@ -6,8 +6,15 @@ import {
   calculateItemSubtotal,
   formatCurrencyBRL,
   ALL_CATEGORIES,
+  MAX_ITEM_NAME_LENGTH,
+  MAX_ITEM_QUANTITY,
+  MIN_ITEM_QUANTITY,
   sanitizePriceInput,
   sanitizeWeightInput,
+  sanitizeItemName,
+  sanitizeItemCategory,
+  validateItemQuantity,
+  validateItemPrice,
 } from '../utils/purchaseHelpers';
 import { MOTION_TOKENS, useMotionConfig } from '../styles/motionSystem';
 
@@ -33,7 +40,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   const motionConfig = useMotionConfig();
   const subtotal = calculateItemSubtotal(item);
   const badgeStyle = getCategoryBadgeStyle(item.category);
-  const cleanItemName = item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, '').trim();
+  const cleanItemName = sanitizeItemName(item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, ''));
 
   // 1. Estados locais para edição inline de NOME
   const [isEditingName, setIsEditingName] = useState(false);
@@ -103,8 +110,8 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
       setQtyInput(
         item.isWeighted
           ? (item.weight !== undefined && item.weight !== null
-              ? sanitizeWeightInput(item.weight.toString())
-              : sanitizeWeightInput(item.quantity.toString()))
+               ? sanitizeWeightInput(item.weight.toString())
+               : sanitizeWeightInput(item.quantity.toString()))
           : item.quantity.toString()
       );
     }
@@ -162,9 +169,10 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   // 1. Salvar Nome Inline
   const handleSaveName = () => {
     setIsEditingName(false);
-    const trimmed = nameInput.trim();
+    const trimmed = sanitizeItemName(nameInput);
     if (trimmed && trimmed !== cleanItemName) {
       onEditItem(purchaseId, item.id, { name: trimmed });
+      setNameInput(trimmed);
     } else {
       setNameInput(cleanItemName);
     }
@@ -174,14 +182,17 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   const handleStepQty = (delta: number) => {
     if (item.isWeighted) {
       const currentVal = item.weight || item.quantity || 1;
-      const nextVal = Math.max(0.001, Math.round((currentVal + delta * 0.1) * 1000) / 1000);
+      const nextVal = validateItemQuantity(
+        Math.min(MAX_ITEM_QUANTITY, Math.max(MIN_ITEM_QUANTITY, currentVal + delta * 0.1)),
+        MIN_ITEM_QUANTITY
+      );
       onEditItem(purchaseId, item.id, {
         weight: nextVal,
         quantity: 1,
       });
     } else {
       const currentQty = item.quantity || 1;
-      const nextQty = Math.max(1, currentQty + delta);
+      const nextQty = Math.min(MAX_ITEM_QUANTITY, Math.max(1, currentQty + delta));
       onEditItem(purchaseId, item.id, {
         quantity: nextQty,
       });
@@ -191,32 +202,35 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   // 3. Salvar Quantidade / Peso Inline
   const handleSaveQty = () => {
     setIsEditingQty(false);
-    const cleaned = sanitizeWeightInput(qtyInput).trim().replace(',', '.');
-    const parsed = parseFloat(cleaned);
+    const cleaned = sanitizeWeightInput(qtyInput).trim();
+    if (!cleaned) return;
+    const validated = validateItemQuantity(cleaned, item.isWeighted ? (item.weight || 1) : (item.quantity || 1));
 
-    if (!isNaN(parsed) && parsed > 0) {
-      if (item.isWeighted) {
-        const roundedWeight = Math.round(parsed * 1000) / 1000;
-        onEditItem(purchaseId, item.id, { weight: roundedWeight, quantity: 1 });
-      } else {
-        onEditItem(purchaseId, item.id, { quantity: Math.max(1, Math.round(parsed)) });
-      }
+    if (item.isWeighted) {
+      onEditItem(purchaseId, item.id, { weight: validated, quantity: 1 });
+    } else {
+      onEditItem(purchaseId, item.id, {
+        quantity: Math.min(MAX_ITEM_QUANTITY, Math.max(1, Math.round(validated))),
+      });
     }
   };
 
   // 4. Salvar Preço Inline
   const handleSavePrice = () => {
     setIsEditingPrice(false);
-    const sanitized = sanitizePriceInput(priceInput);
-    const cleaned = sanitized.trim().replace(',', '.');
-    const parsed = cleaned ? parseFloat(cleaned) : undefined;
-    if (parsed !== undefined && !isNaN(parsed) && parsed >= 0) {
-      const rounded = Math.round(parsed * 100) / 100;
-      onEditItem(purchaseId, item.id, { price: rounded });
-      setPriceInput(sanitized);
-    } else if (cleaned === '') {
+    const sanitized = sanitizePriceInput(priceInput).trim();
+    if (sanitized === '') {
       onEditItem(purchaseId, item.id, { price: undefined });
       setPriceInput('');
+      return;
+    }
+    const validatedPrice = validateItemPrice(sanitized);
+    if (validatedPrice !== undefined) {
+      onEditItem(purchaseId, item.id, { price: validatedPrice });
+      setPriceInput(sanitizePriceInput(validatedPrice.toString()));
+    } else {
+      setPriceInput('');
+      onEditItem(purchaseId, item.id, { price: undefined });
     }
   };
 
@@ -336,8 +350,11 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                 <input
                   ref={nameInputRef}
                   type="text"
+                  maxLength={MAX_ITEM_NAME_LENGTH}
                   value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
+                  onChange={(e) =>
+                    setNameInput(e.target.value.replace(/<[^>]*>/g, '').slice(0, MAX_ITEM_NAME_LENGTH))
+                  }
                   onBlur={handleSaveName}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSaveName();

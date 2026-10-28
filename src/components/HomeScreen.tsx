@@ -21,7 +21,12 @@ import { calculatePurchaseTotal, formatCurrencyBRL } from '../utils/purchaseHelp
 import { Purchase, List } from '../types';
 import { useToast } from './Toast';
 import { User } from '@supabase/supabase-js';
-import { FeedbackModal } from './FeedbackModal';
+import {
+  FeedbackModal,
+  FeedbackCategory,
+  MAX_FEEDBACK_LENGTH,
+  FEEDBACK_SESSION_LOCK_KEY,
+} from './FeedbackModal';
 
 interface HomeScreenProps {
   user?: User | null;
@@ -64,6 +69,75 @@ export function HomeScreen({
   const [timeFilter, setTimeFilter] = useState<'ano' | 'mes' | 'semana'>('mes');
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [hasSentFeedbackInSession, setHasSentFeedbackInSession] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(FEEDBACK_SESSION_LOCK_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Handler de envio de feedback com limite de 1000 caracteres, bloqueio de vazio e trava de sessão única
+  const handleSendFeedback = async ({
+    category,
+    message,
+    email,
+    name,
+  }: {
+    category: FeedbackCategory;
+    message: string;
+    email: string;
+    name: string;
+  }) => {
+    const alreadySentInSession =
+      hasSentFeedbackInSession ||
+      (() => {
+        try {
+          return sessionStorage.getItem(FEEDBACK_SESSION_LOCK_KEY) === 'true';
+        } catch {
+          return false;
+        }
+      })();
+
+    if (alreadySentInSession) {
+      throw new Error('Você já enviou um feedback nesta sessão.');
+    }
+
+    const sanitizedMessage = (message || '').replace(/<[^>]*>/g, '').trim();
+    if (!sanitizedMessage) {
+      throw new Error('A mensagem de feedback não pode estar vazia.');
+    }
+
+    const cappedMessage = sanitizedMessage.slice(0, MAX_FEEDBACK_LENGTH);
+
+    const response = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        category,
+        message: cappedMessage,
+        email: (email || '').trim().slice(0, 120),
+        name: (name || '').trim().slice(0, 80),
+        metadata: {
+          url: window.location.href,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Falha ao enviar feedback.');
+    }
+
+    setHasSentFeedbackInSession(true);
+    try {
+      sessionStorage.setItem(FEEDBACK_SESSION_LOCK_KEY, 'true');
+    } catch {
+      // ignore storage errors
+    }
+  };
 
   // Toast inicial se fornecido
   React.useEffect(() => {
@@ -586,6 +660,8 @@ export function HomeScreen({
         onClose={() => setIsFeedbackModalOpen(false)}
         userEmail={user?.email || ''}
         userName={userName}
+        hasSentInSession={hasSentFeedbackInSession}
+        onSendFeedback={handleSendFeedback}
       />
 
     </div>
