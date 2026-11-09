@@ -49,3 +49,38 @@ html, body {
   height: 0px !important;
   background: transparent !important;
 }
+
+/* Micro-animação de Recompensa (Dopamina) - Spring Pop 350ms */
+@keyframes dopamineCheckboxPop {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35);
+  }
+  45% {
+    transform: scale(1.25);
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes dopamineCheckIconZoom {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-checkbox-spring {
+  animation: dopamineCheckboxPop 350ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-check-icon-pop {
+  animation: dopamineCheckIconZoom 350ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}

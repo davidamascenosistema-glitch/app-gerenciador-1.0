@@ -158,6 +158,48 @@ export function PurchaseScreen({
   const [isPriceWarningModalOpen, setIsPriceWarningModalOpen] = useState(false);
   const [highlightMissingPrices, setHighlightMissingPrices] = useState(false);
 
+  // Estado local temporário para o flash de confirmação (400ms) de item marcado como comprado
+  const [justCheckedId, setJustCheckedId] = useState<string | null>(null);
+  const justCheckedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (justCheckedTimerRef.current) {
+        clearTimeout(justCheckedTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleToggleItemBought = (pId: string, iId: string) => {
+    const targetItem = (purchase?.items || []).find((it) => it.id === iId);
+    const willBeBought = targetItem ? !Boolean(targetItem.bought) : true;
+
+    if (willBeBought) {
+      // 1. Feedback Tátil Nativo (Haptic Feedback)
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(15);
+      }
+      // 3. Flash de confirmação momentâneo de 400ms
+      setJustCheckedId(iId);
+      if (justCheckedTimerRef.current) {
+        clearTimeout(justCheckedTimerRef.current);
+      }
+      justCheckedTimerRef.current = setTimeout(() => {
+        setJustCheckedId((prev) => (prev === iId ? null : prev));
+      }, 400);
+    } else {
+      // 4. Desmarcar Item (bought: false): retorno instantâneo sem flash
+      if (justCheckedTimerRef.current) {
+        clearTimeout(justCheckedTimerRef.current);
+      }
+      setJustCheckedId((prev) => (prev === iId ? null : prev));
+    }
+
+    if (onToggleBought) {
+      onToggleBought(pId, iId);
+    }
+  };
+
   // Desativa o destaque automaticamente assim que todos os itens receberem um preço válido
   useEffect(() => {
     if (highlightMissingPrices) {
@@ -1191,7 +1233,7 @@ export function PurchaseScreen({
                                 key={item.id}
                                 item={item}
                                 purchaseId={purchase.id}
-                                onToggleBought={onToggleBought}
+                                onToggleBought={handleToggleItemBought}
                                 onEditItem={onEditItem}
                                 onRemoveItem={(pId, iId) => {
                                   onRemoveItem(pId, iId);
@@ -1199,6 +1241,7 @@ export function PurchaseScreen({
                                 }}
                                 getCategoryBadgeStyle={getCategoryBadgeStyle}
                                 highlightMissingPrice={highlightMissingPrices}
+                                justCheckedId={justCheckedId}
                               />
                             ))}
                         </AnimatePresence>

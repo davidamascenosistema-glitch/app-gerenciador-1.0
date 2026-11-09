@@ -26,6 +26,7 @@ interface PurchaseItemCardProps {
   onRemoveItem: (purchaseId: string, itemId: string) => void;
   getCategoryBadgeStyle: (category: string) => string;
   highlightMissingPrice?: boolean;
+  justCheckedId?: string | null;
 }
 
 export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
@@ -36,11 +37,65 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   onRemoveItem,
   getCategoryBadgeStyle,
   highlightMissingPrice = false,
+  justCheckedId = null,
 }) => {
   const motionConfig = useMotionConfig();
   const subtotal = calculateItemSubtotal(item);
   const badgeStyle = getCategoryBadgeStyle(item.category);
   const cleanItemName = sanitizeItemName(item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, ''));
+
+  // Estado local temporário para o flash de confirmação (400ms) ao marcar bought = true
+  const [localJustCheckedId, setLocalJustCheckedId] = useState<string | null>(null);
+  const justCheckedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevBoughtRef = useRef<boolean>(Boolean(item.bought));
+
+  useEffect(() => {
+    const wasBought = prevBoughtRef.current;
+    const isNowBought = Boolean(item.bought);
+    prevBoughtRef.current = isNowBought;
+
+    if (!wasBought && isNowBought) {
+      // Transição para bought: true -> ativa flash de confirmação por 400ms
+      setLocalJustCheckedId(item.id);
+      if (justCheckedTimerRef.current) clearTimeout(justCheckedTimerRef.current);
+      justCheckedTimerRef.current = setTimeout(() => {
+        setLocalJustCheckedId(null);
+      }, 400);
+    } else if (wasBought && !isNowBought) {
+      // Desmarcar item (bought: false) -> remove flash instantaneamente
+      if (justCheckedTimerRef.current) clearTimeout(justCheckedTimerRef.current);
+      setLocalJustCheckedId(null);
+    }
+  }, [item.bought, item.id]);
+
+  useEffect(() => {
+    return () => {
+      if (justCheckedTimerRef.current) clearTimeout(justCheckedTimerRef.current);
+    };
+  }, []);
+
+  const isJustChecked =
+    Boolean(item.bought) && (justCheckedId === item.id || localJustCheckedId === item.id);
+
+  const handleToggleBoughtClick = () => {
+    const nextBought = !Boolean(item.bought);
+    if (nextBought) {
+      // 1. Feedback Tátil Nativo (Haptic Feedback) ao marcar como comprado
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(15);
+      }
+      setLocalJustCheckedId(item.id);
+      if (justCheckedTimerRef.current) clearTimeout(justCheckedTimerRef.current);
+      justCheckedTimerRef.current = setTimeout(() => {
+        setLocalJustCheckedId(null);
+      }, 400);
+    } else {
+      // 4. Desmarcar Item (bought: false): retorno instantâneo sem flash
+      if (justCheckedTimerRef.current) clearTimeout(justCheckedTimerRef.current);
+      setLocalJustCheckedId(null);
+    }
+    onToggleBought(purchaseId, item.id);
+  };
 
   // 1. Estados locais para edição inline de NOME
   const [isEditingName, setIsEditingName] = useState(false);
@@ -296,51 +351,50 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: -8, scale: 0.97 }}
-      animate={{ opacity: item.bought ? 0.65 : 1, y: 0, scale: 1 }}
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.92, x: -16, transition: { duration: 0.14 } }}
       transition={{
         layout: motionConfig.layoutSpring,
-        opacity: { duration: 0.14 },
       }}
-      className={`w-full rounded-2xl border transition-colors p-2.5 sm:p-3 flex flex-col gap-2 ${
+      className={`w-full rounded-2xl border p-2.5 sm:p-3 flex flex-col gap-2 ${
         item.bought
-          ? 'bg-zinc-100/70 border-zinc-200/70 text-zinc-500'
-          : 'bg-white border-zinc-200/90 shadow-2xs text-zinc-900'
+          ? isJustChecked
+            ? 'transition-all duration-300 ease-out border-emerald-400 bg-emerald-50/70 scale-[1.01] text-zinc-700'
+            : 'transition-all duration-300 ease-out bg-emerald-50/25 border-emerald-200/60 opacity-80 text-zinc-500'
+          : 'transition-all duration-150 bg-white border-zinc-200 opacity-100 shadow-2xs text-zinc-900'
       }`}
     >
       {/* LINHA 1: Checkbox + Nome (Inline) + Categoria (Dropdown) + Excluir */}
       <div className="flex items-center justify-between gap-1.5">
         <div className="flex items-center space-x-2 min-w-0 flex-1">
-          {/* Checkbox de Comprado com feedback tátil e animação vetorial */}
-          <motion.button
-            whileTap={motionConfig.tap.iconButton}
-            transition={motionConfig.pressSpring}
+          {/* 2. Física Elástica no Checkbox (spring pop cubic-bezier(0.34, 1.56, 0.64, 1) de 350ms) */}
+          <button
             type="button"
-            onClick={() => onToggleBought(purchaseId, item.id)}
+            onClick={handleToggleBoughtClick}
             aria-label={item.bought ? 'Marcar como não comprado' : 'Marcar como comprado'}
-            className="w-8 h-8 min-w-[32px] min-h-[32px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center shrink-0 cursor-pointer rounded-lg hover:bg-zinc-100/80 transition-colors"
+            className="w-8 h-8 min-w-[32px] min-h-[32px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center shrink-0 cursor-pointer rounded-lg hover:bg-zinc-100/80 transition-colors active:scale-95"
           >
-            <motion.div
-              animate={{
-                scale: item.bought ? [0.85, 1.08, 1] : 1,
-                backgroundColor: item.bought ? '#059669' : '#ffffff',
-                borderColor: item.bought ? '#059669' : '#d4d4d8',
-              }}
-              transition={{ duration: 0.18 }}
-              className="w-5 h-5 sm:w-5.5 sm:h-5.5 rounded-md border flex items-center justify-center shadow-2xs"
+            <div
+              className={`w-5 h-5 sm:w-5.5 sm:h-5.5 rounded-md border flex items-center justify-center shadow-2xs transition-all ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+                item.bought
+                  ? `bg-emerald-600 border-emerald-600 duration-[350ms] ${
+                      isJustChecked
+                        ? 'scale-125 ring-4 ring-emerald-500/20 animate-checkbox-spring'
+                        : 'scale-100 ring-0'
+                    }`
+                  : 'bg-white border-zinc-300 scale-100 ring-0 duration-150'
+              }`}
             >
-              {item.bought && (
-                <motion.div
-                  initial={{ scale: 0, rotate: -20 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-                >
-                  <Check className="w-3.5 h-3.5 stroke-[3] text-white" />
-                </motion.div>
-              )}
-            </motion.div>
-          </motion.button>
+              <Check
+                className={`w-3.5 h-3.5 stroke-[3] text-white transition-transform ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+                  item.bought
+                    ? 'scale-100 duration-[350ms] animate-check-icon-pop'
+                    : 'scale-0 duration-150'
+                }`}
+              />
+            </div>
+          </button>
 
           {/* Nome e Badge de Categoria Editáveis Inline */}
           <div className="min-w-0 flex-1">
@@ -370,9 +424,9 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                   type="button"
                   onClick={() => setIsEditingName(true)}
                   title="Toque para editar o nome diretamente"
-                  className={`group text-left text-sm sm:text-base font-bold leading-tight break-words rounded-md px-1 py-0.5 -ml-1 cursor-pointer transition-all border border-dashed border-transparent hover:border-zinc-300 hover:bg-zinc-100/80 active:scale-[0.99] ${
+                  className={`group text-left text-sm sm:text-base font-bold leading-tight break-words rounded-md px-1 py-0.5 -ml-1 cursor-pointer transition-all duration-300 ease-out border border-dashed border-transparent hover:border-zinc-300 hover:bg-zinc-100/80 active:scale-[0.99] ${
                     item.bought
-                      ? 'line-through text-zinc-400 hover:text-zinc-600'
+                      ? 'text-zinc-400 line-through decoration-emerald-500/70 decoration-2 hover:text-zinc-600'
                       : 'text-zinc-900 hover:text-emerald-800'
                   }`}
                 >
@@ -558,24 +612,41 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
 
         {/* 3. Coluna: Preço Unitário / Preço por Kg */}
         {(() => {
-          const isMissingPrice = !item.price || item.price === 0;
-          const isHighlighted = highlightMissingPrice && isMissingPrice;
+          const isMissingPrice = !item.price || Number(item.price) <= 0;
+          const isForceHighlighted = highlightMissingPrice && isMissingPrice;
 
           return (
             <div className="flex flex-col min-w-0 ml-2">
-              <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate ml-1 w-[55.94px]">
-                {item.isWeighted ? 'Preço/kg' : 'Preço/un'}
+              <label
+                className={`flex items-center text-[9.5px] uppercase tracking-wider mb-0.5 truncate ml-1 ${
+                  isMissingPrice ? 'text-amber-600 font-bold' : 'text-zinc-400 font-bold'
+                }`}
+              >
+                {isMissingPrice && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block mr-1 shrink-0" />
+                )}
+                <span>{item.isWeighted ? 'Preço/kg' : 'Preço/un'}</span>
               </label>
               <div
-                className={`h-8 sm:h-8.5 w-full min-w-[70px] flex items-center rounded-lg pl-2 pr-2 ml-[3px] mr-0 transition-all duration-300 ${
-                  isHighlighted
-                    ? 'ring-2 ring-rose-400 bg-rose-50 text-rose-700 animate-pulse border border-rose-300'
-                    : 'bg-zinc-50 hover:bg-zinc-100/70 border border-zinc-200/90 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white'
+                className={`h-8 sm:h-8.5 w-full min-w-[70px] flex items-center rounded-lg pl-2 pr-2 ml-[3px] mr-0 transition-all duration-200 ${
+                  isForceHighlighted
+                    ? 'ring-2 ring-rose-400 bg-rose-50 text-rose-700 animate-pulse border-2 border-rose-400'
+                    : isMissingPrice
+                    ? 'bg-amber-50/90 border-2 border-amber-400/90 text-amber-800 placeholder-amber-400 shadow-sm ring-2 ring-amber-400/15 focus-within:border-amber-500 focus-within:bg-white focus-within:ring-amber-500/30'
+                    : item.bought
+                    ? 'bg-emerald-50/40 border border-emerald-300 text-emerald-900 font-semibold focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white'
+                    : 'bg-zinc-50 border border-zinc-200 text-zinc-900 font-semibold hover:bg-zinc-100/70 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white'
                 }`}
               >
                 <span
                   className={`text-[11px] font-bold mr-1 shrink-0 ${
-                    isHighlighted ? 'text-rose-500' : 'text-zinc-400'
+                    isForceHighlighted
+                      ? 'text-rose-500'
+                      : isMissingPrice
+                      ? 'text-amber-600'
+                      : item.bought
+                      ? 'text-emerald-700'
+                      : 'text-zinc-400'
                   }`}
                 >
                   R$
@@ -604,10 +675,14 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                     }
                   }}
                   placeholder="0,00"
-                  className={`bg-transparent font-bold outline-none transition-all ${
-                    isHighlighted
-                      ? 'text-rose-700 placeholder:text-rose-400'
-                      : 'text-zinc-900 placeholder:text-zinc-400 placeholder:font-normal'
+                  className={`bg-transparent outline-none transition-all duration-200 ${
+                    isForceHighlighted
+                      ? 'text-rose-700 placeholder:text-rose-400 font-bold'
+                      : isMissingPrice
+                      ? 'text-amber-800 placeholder-amber-400 placeholder:text-amber-400 font-bold focus:border-amber-500 focus:bg-white focus:ring-amber-500/30'
+                      : item.bought
+                      ? 'text-emerald-900 font-semibold placeholder:text-zinc-400 placeholder:font-normal'
+                      : 'text-zinc-900 font-semibold placeholder:text-zinc-400 placeholder:font-normal'
                   } ${isLargePrice ? 'w-[38.5625px] text-[11px]' : 'w-full text-xs'}`}
                 />
               </div>
@@ -621,18 +696,22 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
             Subtotal
           </span>
           <div className="h-8 sm:h-8.5 flex items-center justify-end">
-            {hasValidPrice ? (
+            {!(!item.price || Number(item.price) <= 0) ? (
               <span
-                className={`font-black tracking-tight ${
+                className={`tracking-tight transition-all duration-300 ${
                   subtotal >= 100 ? 'text-[12px]' : 'text-[13px]'
                 } ${
-                  item.bought ? 'text-zinc-400 line-through' : 'text-emerald-700'
+                  item.bought
+                    ? 'text-emerald-700 font-semibold bg-emerald-100/60 px-1.5 py-0.5 rounded-md'
+                    : 'text-emerald-700 font-black'
                 }`}
               >
                 {formatCurrencyBRL(subtotal)}
               </span>
             ) : (
-              <span className="text-[11px] text-zinc-400 font-medium">—</span>
+              <span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                Pendente
+              </span>
             )}
           </div>
         </div>
