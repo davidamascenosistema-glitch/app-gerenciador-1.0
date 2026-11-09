@@ -586,4 +586,147 @@ export const groupItemsByCategory = <T extends { category?: string }>(items: T[]
     .sort((a, b) => a.category.localeCompare(b.category, 'pt-BR'));
 };
 
+/**
+ * Fallback de extração local em português para comandos de voz quando offline ou sem API disponível.
+ * Converte números por extenso, extrai preços finais e limpa o nome do produto.
+ */
+export const parseVoiceFallbackLocally = (
+  transcript: string
+): {
+  name: string;
+  quantity: number;
+  price?: number;
+  category: string;
+  isWeighted: boolean;
+} => {
+  let text = stripHtmlAndSanitizeText(transcript, MAX_VOICE_TRANSCRIPT_LENGTH);
+  if (!text) {
+    return {
+      name: 'Item',
+      quantity: 1,
+      category: 'Geral',
+      isWeighted: false,
+    };
+  }
+
+  // Remove comandos verbais comuns no início da frase
+  text = text
+    .replace(
+      /^(?:adicionar|adicione|adiciona|colocar|coloque|coloca|comprar|comprei|botar|bota|insere|inserir|anotar|anota)\s+/i,
+      ''
+    )
+    .trim();
+
+  // Dicionário de números por extenso no início da frase
+  const numberWords: Record<string, number> = {
+    meio: 0.5,
+    meia: 0.5,
+    um: 1,
+    uma: 1,
+    dois: 2,
+    duas: 2,
+    tres: 3,
+    três: 3,
+    quatro: 4,
+    cinco: 5,
+    seis: 6,
+    sete: 7,
+    oito: 8,
+    nove: 9,
+    dez: 10,
+    onze: 11,
+    doze: 12,
+    duzia: 12,
+    dúzia: 12,
+    quinze: 15,
+    vinte: 20,
+    trinta: 30,
+    cinquenta: 50,
+    cem: 100,
+  };
+
+  let quantity = 1;
+  const isWeighted = /\b(kg|quilo|quilos|grama|gramas|\bg\b|pesado|pesada)\b/i.test(text);
+
+  // 1. Extração da quantidade no início (numérico ou por extenso)
+  const numericStartMatch = text.match(/^(\d+(?:[.,]\d+)?)\s*(?:x|de\s+|unidades?\s+|itens?\s+|pct\s+|pacotes?\s+|caixas?\s+)?/i);
+  if (numericStartMatch) {
+    const parsedQty = parseFloat(numericStartMatch[1].replace(',', '.'));
+    if (!isNaN(parsedQty) && parsedQty > 0) {
+      quantity = parsedQty;
+      text = text.slice(numericStartMatch[0].length).trim();
+    }
+  } else {
+    const firstWordMatch = text.match(/^([a-zá-ú]+)\s+/i);
+    if (firstWordMatch) {
+      const firstWord = firstWordMatch[1].toLowerCase();
+      if (numberWords[firstWord] !== undefined) {
+        quantity = numberWords[firstWord];
+        text = text.slice(firstWordMatch[0].length).trim();
+      }
+    }
+  }
+
+  // 2. Extração de preços no final da frase: "por r$ X", "r$ X", "a X reais", "por X reais", "de X reais", etc.
+  // Aceita ponto ou vírgula decimal
+  let price: number | undefined = undefined;
+  const priceRegex = /(?:por\s+r\$|r\$\s*|a\s+|por\s+|custou\s+|custando\s+|de\s+)\s*(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real)?$/i;
+  const priceReaisRegex = /\b(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real)$/i;
+
+  const matchExplicitPrice = text.match(priceRegex);
+  const matchReaisPrice = text.match(priceReaisRegex);
+  const selectedPriceMatch = matchExplicitPrice || matchReaisPrice;
+
+  if (selectedPriceMatch && selectedPriceMatch[1]) {
+    const rawNumStr = selectedPriceMatch[1].replace(',', '.');
+    const parsedPrice = parseFloat(rawNumStr);
+    if (!isNaN(parsedPrice) && parsedPrice > 0) {
+      price = validateItemPrice(parsedPrice);
+      text = text.slice(0, selectedPriceMatch.index).trim();
+    }
+  }
+
+  // 3. Limpeza de unidades e preposições residuais do nome do produto
+  // Ex: "quilo de alcatra" -> "Alcatra", "kg de café" -> "Café", "de leite" -> "Leite"
+  text = text
+    .replace(/^(?:quilos?|kg|gramas?|\bg\b)\s+(?:de\s+|da\s+|do\s+)?/i, '')
+    .replace(/^(?:de\s+|da\s+|do\s+|dos\s+|das\s+)/i, '')
+    .replace(/\b(?:em\s+promo[çc][aã]o|na\s+promo[çc][aã]o|no\s+desconto)\b/gi, '')
+    .trim();
+
+  // Limpa caracteres especiais e capitaliza
+  const safeName = sanitizeItemName(text) || 'Item';
+  const formattedName = safeName.charAt(0).toUpperCase() + safeName.slice(1);
+
+  // Categorização inteligente padrão
+  let category = 'Geral';
+  const lowerName = formattedName.toLowerCase();
+  if (/(?:pão|pães|bolo|torta|biscoito|croissant|padaria|torrada)/i.test(lowerName)) {
+    category = 'Padaria';
+  } else if (/(?:carne|frango|peixe|alcatra|contrafilé|picanha|bife|costela|moída|linguiça|salsicha|açougue|bacon)/i.test(lowerName)) {
+    category = 'Açougue';
+  } else if (/(?:leite|queijo|iogurte|manteiga|requeijão|nata|frios|presunto)/i.test(lowerName)) {
+    category = 'Frios';
+  } else if (/(?:maçã|banana|tomate|alface|cebola|alho|laranja|limão|batata|cenoura|fruta|legume|verdura)/i.test(lowerName)) {
+    category = 'Frutas/Legumes';
+  } else if (/(?:detergente|sabão|amaciante|desinfetante|esponja|água sanitária|limpeza|multiuso)/i.test(lowerName)) {
+    category = 'Limpeza';
+  } else if (/(?:cerveja|refrigerante|suco|água|vinho|energético|vodka|bebida)/i.test(lowerName)) {
+    category = 'Bebidas';
+  } else if (/(?:shampoo|sabonete|pasta de dente|creme dental|escova|desodorante|papel higiênico|higiene)/i.test(lowerName)) {
+    category = 'Higiene';
+  } else if (/(?:arroz|feijão|óleo|açúcar|sal|café|macarrão|farinha|molho|milho|azeite)/i.test(lowerName)) {
+    category = 'Alimentos';
+  }
+
+  return {
+    name: formattedName,
+    quantity: validateItemQuantity(quantity, 1),
+    price,
+    category: sanitizeItemCategory(category, 'Geral'),
+    isWeighted,
+  };
+};
+
+
 
