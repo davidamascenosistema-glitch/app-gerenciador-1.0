@@ -612,38 +612,38 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
 
         {/* 3. Coluna: Preço Unitário / Preço por Kg */}
         {(() => {
-          const isMissingPrice = !item.price || Number(item.price) <= 0;
+          const typedNumeric = parseFloat(priceInput.replace(',', '.'));
+          const hasTypedValidPrice = isEditingPrice && !isNaN(typedNumeric) && typedNumeric > 0;
+          const isMissingPrice = (!item.price || Number(item.price) <= 0) && !hasTypedValidPrice;
           const isForceHighlighted = highlightMissingPrice && isMissingPrice;
 
           return (
             <div className="flex flex-col min-w-0 ml-2">
               <label
-                className={`flex items-center text-[9.5px] uppercase tracking-wider mb-0.5 truncate ml-1 ${
-                  isMissingPrice ? 'text-amber-600 font-bold' : 'text-zinc-400 font-bold'
+                className={`flex items-center text-[9.5px] uppercase tracking-wider mb-0.5 truncate ml-1 transition-colors duration-200 ${
+                  isMissingPrice ? 'text-rose-600 font-bold' : 'text-zinc-400 font-bold'
                 }`}
               >
                 {isMissingPrice && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block mr-1 shrink-0" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse inline-block mr-1 shrink-0" />
                 )}
                 <span>{item.isWeighted ? 'Preço/kg' : 'Preço/un'}</span>
               </label>
               <div
                 className={`h-8 sm:h-8.5 w-full min-w-[70px] flex items-center rounded-lg pl-2 pr-2 ml-[3px] mr-0 transition-all duration-200 ${
-                  isForceHighlighted
-                    ? 'ring-2 ring-rose-400 bg-rose-50 text-rose-700 animate-pulse border-2 border-rose-400'
-                    : isMissingPrice
-                    ? 'bg-amber-50/90 border-2 border-amber-400/90 text-amber-800 placeholder-amber-400 shadow-sm ring-2 ring-amber-400/15 focus-within:border-amber-500 focus-within:bg-white focus-within:ring-amber-500/30'
+                  isMissingPrice
+                    ? `bg-rose-50/90 border-2 border-rose-400 text-rose-600 placeholder-rose-400 shadow-sm ring-2 ring-rose-400/15 focus-within:border-rose-500 focus-within:bg-white focus-within:ring-rose-500/30 ${
+                        isForceHighlighted ? 'animate-pulse' : ''
+                      }`
                     : item.bought
                     ? 'bg-emerald-50/40 border border-emerald-300 text-emerald-900 font-semibold focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white'
                     : 'bg-zinc-50 border border-zinc-200 text-zinc-900 font-semibold hover:bg-zinc-100/70 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white'
                 }`}
               >
                 <span
-                  className={`text-[11px] font-bold mr-1 shrink-0 ${
-                    isForceHighlighted
+                  className={`text-[11px] font-bold mr-1 shrink-0 transition-colors duration-200 ${
+                    isMissingPrice
                       ? 'text-rose-500'
-                      : isMissingPrice
-                      ? 'text-amber-600'
                       : item.bought
                       ? 'text-emerald-700'
                       : 'text-zinc-400'
@@ -676,10 +676,8 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                   }}
                   placeholder="0,00"
                   className={`bg-transparent outline-none transition-all duration-200 ${
-                    isForceHighlighted
-                      ? 'text-rose-700 placeholder:text-rose-400 font-bold'
-                      : isMissingPrice
-                      ? 'text-amber-800 placeholder-amber-400 placeholder:text-amber-400 font-bold focus:border-amber-500 focus:bg-white focus:ring-amber-500/30'
+                    isMissingPrice
+                      ? 'text-rose-600 placeholder-rose-400 placeholder:text-rose-400 font-bold focus:border-rose-500 focus:bg-white focus:ring-rose-500/30'
                       : item.bought
                       ? 'text-emerald-900 font-semibold placeholder:text-zinc-400 placeholder:font-normal'
                       : 'text-zinc-900 font-semibold placeholder:text-zinc-400 placeholder:font-normal'
@@ -696,7 +694,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
             Subtotal
           </span>
           <div className="h-8 sm:h-8.5 flex items-center justify-end">
-            {!(!item.price || Number(item.price) <= 0) ? (
+            {hasValidPrice ? (
               <span
                 className={`tracking-tight transition-all duration-300 ${
                   subtotal >= 100 ? 'text-[12px]' : 'text-[13px]'
@@ -709,9 +707,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                 {formatCurrencyBRL(subtotal)}
               </span>
             ) : (
-              <span className="text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                Pendente
-              </span>
+              <span className="text-[11px] text-zinc-400 font-medium">—</span>
             )}
           </div>
         </div>

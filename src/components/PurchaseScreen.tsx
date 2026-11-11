@@ -69,6 +69,7 @@ import { useToast } from './Toast';
 const getCategoryBadgeStyle = (category: string) => {
   switch (category) {
     case 'Alimentos':
+    case 'Mercearia':
       return 'bg-emerald-100 text-emerald-800 border-emerald-200/80';
     case 'Bebidas':
       return 'bg-blue-100 text-blue-800 border-blue-200/80';
@@ -94,7 +95,8 @@ const getCategoryBadgeStyle = (category: string) => {
 
 const getCategoryAccentBarClass = (category: string) => {
   switch (category) {
-    case 'Alimentos': return 'bg-emerald-400';
+    case 'Alimentos':
+    case 'Mercearia': return 'bg-emerald-400';
     case 'Bebidas': return 'bg-blue-400';
     case 'Limpeza': return 'bg-cyan-400';
     case 'Higiene': return 'bg-purple-400';
@@ -229,6 +231,7 @@ export function PurchaseScreen({
 
   // Voice processing, recording & cooldown (3s debounce) states for Voice-First bar
   const VOICE_COOLDOWN_MS = 3000;
+  const SILENCE_BUFFER_MS = 1400;
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isVoiceCooldown, setIsVoiceCooldown] = useState(false);
@@ -236,6 +239,9 @@ export function PurchaseScreen({
   const recognitionRef = useRef<any>(null);
   const lastVoiceCallTimeRef = useRef<number>(0);
   const voiceCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transcriptBufferRef = useRef<string>('');
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasProcessedRef = useRef<boolean>(false);
 
   const startVoiceCooldown = () => {
     lastVoiceCallTimeRef.current = Date.now();
@@ -251,6 +257,9 @@ export function PurchaseScreen({
 
   useEffect(() => {
     return () => {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -266,8 +275,7 @@ export function PurchaseScreen({
 
   /**
    * Processa a intenção de voz do usuário utilizando a API do Gemini com Processamento
-   * de Linguagem Natural (NLP), aplicando sanitização anti-Prompt Injection, validação matemática
-   * e cooldown mínimo de 3 segundos entre chamadas consecutivas.
+   * de Linguagem Natural (NLP) quando online, ou o extrator local instantâneo quando offline.
    */
   const processVoiceIntentWithAI = async (transcript: string) => {
     if (!transcript || !transcript.trim()) return;
@@ -285,6 +293,40 @@ export function PurchaseScreen({
 
     if (!purchase || !purchase.id) {
       showToast('Nenhuma compra ativa para adicionar o item');
+      return;
+    }
+
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+    // 2. Atalho Instantâneo quando Offline (!navigator.onLine):
+    // Não tenta fetch('/api/voice-parse') nem aguarda 3 segundos de timeout
+    if (isOffline) {
+      const localParsed = parseVoiceFallbackLocally(sanitizedTranscript);
+      if (!localParsed) {
+        showToast('Diga o nome do produto. Ex: 3 bananas por 5 reais', 3500);
+        return;
+      }
+
+      startVoiceCooldown();
+
+      if (onAddItem) {
+        onAddItem(purchase.id, {
+          name: localParsed.name,
+          category: localParsed.category,
+          quantity: localParsed.quantity,
+          isWeighted: localParsed.isWeighted,
+          price: localParsed.price,
+          bought: Boolean(localParsed.price && localParsed.price > 0),
+        });
+
+        const formattedQty = localParsed.isWeighted
+          ? `${localParsed.quantity} kg`
+          : `${localParsed.quantity} un`;
+        const formattedPrice = localParsed.price
+          ? ` por ${formatCurrencyBRL(localParsed.price)}`
+          : '';
+        showToast(`"${localParsed.name}" (${formattedQty}${formattedPrice}) adicionado!`, 3500);
+      }
       return;
     }
 
@@ -362,10 +404,16 @@ export function PurchaseScreen({
         parsedItem = parseVoiceFallbackLocally(sanitizedTranscript);
       }
 
+      if (!parsedItem || !parsedItem.name) {
+        showToast('Diga o nome do produto. Ex: 3 bananas por 5 reais', 3500);
+        return;
+      }
+
       // Validação rigorosa dos dados extraídos:
       const nameStr = sanitizeItemName(parsedItem.name);
       if (!nameStr) {
-        throw new Error('Nome do item inválido');
+        showToast('Diga o nome do produto. Ex: 3 bananas por 5 reais', 3500);
+        return;
       }
       const qty = validateItemQuantity(parsedItem.quantity, 1);
       const rawValidatedPrice = validateItemPrice(parsedItem.price);
@@ -392,6 +440,10 @@ export function PurchaseScreen({
       console.error('Erro no assistente de voz, aplicando fallback local de contingência:', err);
       if (onAddItem && purchase && purchase.id) {
         const localParsed = parseVoiceFallbackLocally(sanitizedTranscript);
+        if (!localParsed) {
+          showToast('Diga o nome do produto. Ex: 3 bananas por 5 reais', 3500);
+          return;
+        }
         onAddItem(purchase.id, {
           name: localParsed.name,
           category: localParsed.category,
@@ -422,6 +474,10 @@ export function PurchaseScreen({
     }
 
     if (isRecording) {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -430,6 +486,13 @@ export function PurchaseScreen({
         }
       }
       setIsRecording(false);
+      // Se havia texto acumulado quando o usuário parou manualmente, processa uma única vez
+      if (!hasProcessedRef.current && transcriptBufferRef.current.trim()) {
+        hasProcessedRef.current = true;
+        const fullTranscript = transcriptBufferRef.current.trim();
+        transcriptBufferRef.current = '';
+        processVoiceIntentWithAI(fullTranscript);
+      }
       return;
     }
 
@@ -444,10 +507,17 @@ export function PurchaseScreen({
     }
 
     try {
+      transcriptBufferRef.current = '';
+      hasProcessedRef.current = false;
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+
       const recognition = new SpeechRecognition();
       recognition.lang = 'pt-BR';
-      recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.continuous = true;
+      recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
@@ -455,19 +525,59 @@ export function PurchaseScreen({
       };
 
       recognition.onresult = (event: any) => {
-        const transcript = event.results?.[0]?.[0]?.transcript || '';
-        if (transcript.trim()) {
-          processVoiceIntentWithAI(transcript.trim());
+        const accumulated = Array.from(event.results || [])
+          .map((r: any) => r?.[0]?.transcript || '')
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (accumulated) {
+          transcriptBufferRef.current = accumulated;
         }
+
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+        }
+
+        silenceTimerRef.current = setTimeout(() => {
+          silenceTimerRef.current = null;
+          if (!hasProcessedRef.current && transcriptBufferRef.current.trim()) {
+            hasProcessedRef.current = true;
+            const fullTranscript = transcriptBufferRef.current.trim();
+            transcriptBufferRef.current = '';
+            try {
+              recognition.stop();
+            } catch {
+              // ignore
+            }
+            setIsRecording(false);
+            processVoiceIntentWithAI(fullTranscript);
+          }
+        }, SILENCE_BUFFER_MS);
       };
 
       recognition.onerror = (event: any) => {
         console.warn('Speech recognition error:', event?.error);
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
         setIsRecording(false);
       };
 
       recognition.onend = () => {
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
         setIsRecording(false);
+
+        if (!hasProcessedRef.current && transcriptBufferRef.current.trim()) {
+          hasProcessedRef.current = true;
+          const fullTranscript = transcriptBufferRef.current.trim();
+          transcriptBufferRef.current = '';
+          processVoiceIntentWithAI(fullTranscript);
+        }
       };
 
       recognitionRef.current = recognition;

@@ -588,7 +588,8 @@ export const groupItemsByCategory = <T extends { category?: string }>(items: T[]
 
 /**
  * Fallback de extração local em português para comandos de voz quando offline ou sem API disponível.
- * Converte números por extenso, extrai preços finais e limpa o nome do produto.
+ * Converte números por extenso (com suporte completo a acentos), extrai preços no meio/final da frase,
+ * rejeita frases que contenham apenas números isolados sem produto (retornando null) e categoriza via dicionário local.
  */
 export const parseVoiceFallbackLocally = (
   transcript: string
@@ -598,15 +599,10 @@ export const parseVoiceFallbackLocally = (
   price?: number;
   category: string;
   isWeighted: boolean;
-} => {
+} | null => {
   let text = stripHtmlAndSanitizeText(transcript, MAX_VOICE_TRANSCRIPT_LENGTH);
   if (!text) {
-    return {
-      name: 'Item',
-      quantity: 1,
-      category: 'Geral',
-      isWeighted: false,
-    };
+    return null;
   }
 
   // Remove comandos verbais comuns no início da frase
@@ -617,7 +613,11 @@ export const parseVoiceFallbackLocally = (
     )
     .trim();
 
-  // Dicionário de números por extenso no início da frase
+  if (!text) {
+    return null;
+  }
+
+  // Dicionário de números por extenso no início da frase (com e sem acento)
   const numberWords: Record<string, number> = {
     meio: 0.5,
     meia: 0.5,
@@ -645,11 +645,22 @@ export const parseVoiceFallbackLocally = (
     cem: 100,
   };
 
+  // Se a frase inteira capturada for apenas um número isolado (dígito ou por extenso) sem nome de produto (ex: "3" ou "Três")
+  const normalizedWhole = text.toLowerCase().replace(/[.,!?]/g, '').trim();
+  if (
+    /^\d+(?:[.,]\d+)?$/.test(normalizedWhole) ||
+    numberWords[normalizedWhole] !== undefined
+  ) {
+    return null;
+  }
+
   let quantity = 1;
   const isWeighted = /\b(kg|quilo|quilos|grama|gramas|\bg\b|pesado|pesada)\b/i.test(text);
 
-  // 1. Extração da quantidade no início (numérico ou por extenso)
-  const numericStartMatch = text.match(/^(\d+(?:[.,]\d+)?)\s*(?:x|de\s+|unidades?\s+|itens?\s+|pct\s+|pacotes?\s+|caixas?\s+)?/i);
+  // 1. Extração da quantidade no início (numérico ou por extenso com suporte completo a acentos [a-zA-ZÀ-ÿ]+)
+  const numericStartMatch = text.match(
+    /^(\d+(?:[.,]\d+)?)\s*(?:x\s*|de\s+|unidades?\s+|un\s+|itens?\s+|pct\s+|pacotes?\s+)?/i
+  );
   if (numericStartMatch) {
     const parsedQty = parseFloat(numericStartMatch[1].replace(',', '.'));
     if (!isNaN(parsedQty) && parsedQty > 0) {
@@ -657,7 +668,7 @@ export const parseVoiceFallbackLocally = (
       text = text.slice(numericStartMatch[0].length).trim();
     }
   } else {
-    const firstWordMatch = text.match(/^([a-zá-ú]+)\s+/i);
+    const firstWordMatch = text.match(/^([a-zA-ZÀ-ÿ]+)(?:\s+|$)/);
     if (firstWordMatch) {
       const firstWord = firstWordMatch[1].toLowerCase();
       if (numberWords[firstWord] !== undefined) {
@@ -667,56 +678,103 @@ export const parseVoiceFallbackLocally = (
     }
   }
 
-  // 2. Extração de preços no final da frase: "por r$ X", "r$ X", "a X reais", "por X reais", "de X reais", etc.
-  // Aceita ponto ou vírgula decimal
+  // 2. Extração de preços com ou sem "R$" no meio ou final da frase:
+  // Exemplos: "por r$ 5", "por 5 reais", "a 5,99", "r$ 10,50", "5 reais", "de 8 conto"
   let price: number | undefined = undefined;
-  const priceRegex = /(?:por\s+r\$|r\$\s*|a\s+|por\s+|custou\s+|custando\s+|de\s+)\s*(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real)?$/i;
-  const priceReaisRegex = /\b(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real)$/i;
+  const priceWithPrefixOrCurrencyRegex =
+    /(?:(?:\b(?:por|a|de|custou|custando)\s+)(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real|conto|contos|pila|pilas)?|(?:r\$\s*)(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real|conto|contos|pila|pilas)?|(?:\b(?:por|a|de|custou|custando)\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real|conto|contos|pila|pilas))\b/i;
 
-  const matchExplicitPrice = text.match(priceRegex);
-  const matchReaisPrice = text.match(priceReaisRegex);
-  const selectedPriceMatch = matchExplicitPrice || matchReaisPrice;
-
-  if (selectedPriceMatch && selectedPriceMatch[1]) {
-    const rawNumStr = selectedPriceMatch[1].replace(',', '.');
-    const parsedPrice = parseFloat(rawNumStr);
-    if (!isNaN(parsedPrice) && parsedPrice > 0) {
-      price = validateItemPrice(parsedPrice);
-      text = text.slice(0, selectedPriceMatch.index).trim();
+  const priceMatch = text.match(priceWithPrefixOrCurrencyRegex);
+  if (priceMatch) {
+    const capturedValue = priceMatch[1] || priceMatch[2] || priceMatch[3];
+    if (capturedValue) {
+      const parsedPrice = parseFloat(capturedValue.replace(',', '.'));
+      if (!isNaN(parsedPrice) && parsedPrice > 0) {
+        price = validateItemPrice(parsedPrice);
+        text = (
+          text.slice(0, priceMatch.index) +
+          ' ' +
+          text.slice((priceMatch.index || 0) + priceMatch[0].length)
+        ).trim();
+      }
     }
   }
 
   // 3. Limpeza de unidades e preposições residuais do nome do produto
-  // Ex: "quilo de alcatra" -> "Alcatra", "kg de café" -> "Café", "de leite" -> "Leite"
+  // Ex: "quilo de alcatra" -> "Alcatra", "kg de café" -> "Café", "de banana" -> "Banana"
   text = text
-    .replace(/^(?:quilos?|kg|gramas?|\bg\b)\s+(?:de\s+|da\s+|do\s+)?/i, '')
+    .replace(/^(?:quilos?|kg|gramas?|\bg\b|unidades?|un)\s+(?:de\s+|da\s+|do\s+)?/i, '')
     .replace(/^(?:de\s+|da\s+|do\s+|dos\s+|das\s+)/i, '')
+    .replace(/\b(?:por|a|de|custou|custando|r\$)\s*$/i, '')
     .replace(/\b(?:em\s+promo[çc][aã]o|na\s+promo[çc][aã]o|no\s+desconto)\b/gi, '')
+    .replace(/\s+/g, ' ')
     .trim();
 
-  // Limpa caracteres especiais e capitaliza
-  const safeName = sanitizeItemName(text) || 'Item';
-  const formattedName = safeName.charAt(0).toUpperCase() + safeName.slice(1);
+  // Verifica novamente se o que sobrou após remover quantidade/preço está vazio ou é apenas um número isolado
+  const remainingClean = sanitizeItemName(text);
+  const remainingLower = remainingClean.toLowerCase().replace(/[.,!?]/g, '').trim();
+  if (
+    !remainingClean ||
+    !remainingLower ||
+    /^\d+(?:[.,]\d+)?$/.test(remainingLower) ||
+    numberWords[remainingLower] !== undefined
+  ) {
+    return null;
+  }
 
-  // Categorização inteligente padrão
+  const formattedName =
+    remainingClean.charAt(0).toUpperCase() + remainingClean.slice(1);
+
+  // 4. Dicionário local rápido de categorias por palavra-chave para funcionamento offline
+  const CATEGORY_KEYWORDS: Array<{ category: string; regex: RegExp }> = [
+    {
+      category: 'Frutas/Legumes',
+      regex:
+        /\b(?:banana|bananas|maçã|maca|maçãs|macas|tomate|tomates|batata|batatas|cebola|cebolas|alface|cenoura|cenouras|laranja|laranjas|limão|limao|limões|limoes|alho|abacate|abacaxi|manga|morango|morangos|uva|uvas|pera|melancia|mamão|mamao|pepino|pimentão|pimentao|brócolis|brocolis|couve|repolho|rúcula|rucula|espinafre|abobrinha|berinjela|chuchu|beterraba|mandioca|inhame|fruta|frutas|verdura|verduras|legume|legumes)\b/i,
+    },
+    {
+      category: 'Frios',
+      regex:
+        /\b(?:leite|queijo|mussarela|muçarela|presunto|manteiga|margarina|iogurte|requeijão|requeijao|peito de peru|mortadela|salame|ricota|creme de leite|nata|frios|laticínio|laticinios)\b/i,
+    },
+    {
+      category: 'Açougue',
+      regex:
+        /\b(?:carne|frango|linguiça|linguica|peixe|bife|alcatra|picanha|contrafilé|contrafile|patinho|acém|acem|costela|moída|moida|salsicha|bacon|filé|file|tilápia|tilapia|camarão|camarao|porco|lombo|pernil|fígado|figado|açougue|acougue)\b/i,
+    },
+    {
+      category: 'Padaria',
+      regex:
+        /\b(?:pão|pao|pães|paes|bolo|biscoito|biscoitos|bolacha|bolachas|torrada|torradas|sonho|croissant|rosca|baguete|broa|padaria)\b/i,
+    },
+    {
+      category: 'Limpeza',
+      regex:
+        /\b(?:detergente|sabão|sabao|amaciante|água sanitária|agua sanitaria|desinfetante|esponja|bucha|palha de aço|saco de lixo|multiuso|limpa vidro|lustra móveis|álcool|alcool|vassoura|rodo|pano|inseticida|limpeza)\b/i,
+    },
+    {
+      category: 'Higiene',
+      regex:
+        /\b(?:shampoo|xampu|condicionador|sabonete|creme dental|pasta de dente|escova de dente|escova|fio dental|papel higiênico|papel higienico|desodorante|absorvente|cotonete|cotonetes|fralda|fraldas|lenço umedecido|protetor solar|repelente|higiene)\b/i,
+    },
+    {
+      category: 'Bebidas',
+      regex:
+        /\b(?:refrigerante|refrigerantes|coca|guaraná|guarana|suco|sucos|cerveja|cervejas|água|agua|vinho|energético|energetico|isotônico|isotonico|chá|cha|vodka|whisky|cachaça|cachaca|bebida|bebidas)\b/i,
+    },
+    {
+      category: 'Mercearia',
+      regex:
+        /\b(?:arroz|feijão|feijao|macarrão|macarrao|óleo|oleo|azeite|café|cafe|açúcar|acucar|sal|farinha|molho|extrato|milho|ervilha|atum|sardinha|aveia|granola|achocolatado|leite condensado|maionese|ketchup|mostarda|vinagre|pipoca|chocolate|bombom|ovo|ovos|mercearia)\b/i,
+    },
+  ];
+
   let category = 'Geral';
-  const lowerName = formattedName.toLowerCase();
-  if (/(?:pão|pães|bolo|torta|biscoito|croissant|padaria|torrada)/i.test(lowerName)) {
-    category = 'Padaria';
-  } else if (/(?:carne|frango|peixe|alcatra|contrafilé|picanha|bife|costela|moída|linguiça|salsicha|açougue|bacon)/i.test(lowerName)) {
-    category = 'Açougue';
-  } else if (/(?:leite|queijo|iogurte|manteiga|requeijão|nata|frios|presunto)/i.test(lowerName)) {
-    category = 'Frios';
-  } else if (/(?:maçã|banana|tomate|alface|cebola|alho|laranja|limão|batata|cenoura|fruta|legume|verdura)/i.test(lowerName)) {
-    category = 'Frutas/Legumes';
-  } else if (/(?:detergente|sabão|amaciante|desinfetante|esponja|água sanitária|limpeza|multiuso)/i.test(lowerName)) {
-    category = 'Limpeza';
-  } else if (/(?:cerveja|refrigerante|suco|água|vinho|energético|vodka|bebida)/i.test(lowerName)) {
-    category = 'Bebidas';
-  } else if (/(?:shampoo|sabonete|pasta de dente|creme dental|escova|desodorante|papel higiênico|higiene)/i.test(lowerName)) {
-    category = 'Higiene';
-  } else if (/(?:arroz|feijão|óleo|açúcar|sal|café|macarrão|farinha|molho|milho|azeite)/i.test(lowerName)) {
-    category = 'Alimentos';
+  for (const entry of CATEGORY_KEYWORDS) {
+    if (entry.regex.test(formattedName)) {
+      category = entry.category;
+      break;
+    }
   }
 
   return {
@@ -727,6 +785,7 @@ export const parseVoiceFallbackLocally = (
     isWeighted,
   };
 };
+
 
 
 
