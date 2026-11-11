@@ -157,7 +157,7 @@ Instruções cruciais:
 6. is_weighted ("is_weighted"): Retorne true se o produto foi pedido por peso (kg, quilo, gramas, g) ou for item típico de feira/açougue. Caso contrário retorne false.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-2.5-flash',
       contents: `Frase dita pelo usuário: "${sanitizedTranscript}"`,
       config: {
         systemInstruction,

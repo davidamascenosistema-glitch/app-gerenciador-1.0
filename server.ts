@@ -172,8 +172,7 @@ async function startServer() {
 
   // Executa generateContent com modelos resilientes de alta disponibilidade
   async function generateContentWithFallback(ai: GoogleGenAI, request: any) {
-    // gemini-3.1-flash-lite tem a mais alta disponibilidade e latência ultrarrápida para tarefas de extração
-    const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+    const candidateModels = ['gemini-2.5-flash', 'gemini-3.1-flash-lite'];
     let lastError: any = null;
 
     for (const model of candidateModels) {

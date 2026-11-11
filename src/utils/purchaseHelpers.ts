@@ -605,6 +605,23 @@ export const parseVoiceFallbackLocally = (
     return null;
   }
 
+  // Limpeza de Segurança contra Repetições ("Gagueira" do Android SpeechRecognition)
+  // Ex: "três três pães três pães" -> "três pães"
+  let prevText = '';
+  let safetyIterations = 0;
+  while (prevText !== text && safetyIterations < 6) {
+    prevText = text;
+    text = text
+      .replace(/\b(\w+(?:\s+\w+){0,3})\s+\1\b/gi, '$1')
+      .replace(
+        /(^|\s)([a-zA-ZÀ-ÿ0-9]+(?:\s+[a-zA-ZÀ-ÿ0-9]+){0,3})\s+\2(?=\s|$|[.,!?])/gi,
+        '$1$2'
+      )
+      .replace(/\s+/g, ' ')
+      .trim();
+    safetyIterations++;
+  }
+
   // Remove comandos verbais comuns no início da frase
   text = text
     .replace(
@@ -678,11 +695,37 @@ export const parseVoiceFallbackLocally = (
     }
   }
 
+  // Repete a limpeza de duplicação caso a remoção da quantidade exponha palavras repetidas adjacentes
+  prevText = '';
+  safetyIterations = 0;
+  while (prevText !== text && safetyIterations < 4) {
+    prevText = text;
+    text = text
+      .replace(/\b(\w+(?:\s+\w+){0,3})\s+\1\b/gi, '$1')
+      .replace(
+        /(^|\s)([a-zA-ZÀ-ÿ0-9]+(?:\s+[a-zA-ZÀ-ÿ0-9]+){0,3})\s+\2(?=\s|$|[.,!?])/gi,
+        '$1$2'
+      )
+      .replace(/\s+/g, ' ')
+      .trim();
+    safetyIterations++;
+  }
+
+  // Normaliza centavos falados como "7 reais e 50 centavos" ou "por 7 e 50" -> "por 7,50 reais"
+  text = text.replace(
+    /(\b(?:por|a|r\$)\s*\d+|\d+\s*reais?)\s+e\s+(\d{1,2})\s*(?:centavos?)?\b/gi,
+    (_, prefix, cents) => {
+      const cleanPrefix = prefix.replace(/\s*reais?$/i, '');
+      const paddedCents = cents.length === 1 ? `${cents}0` : cents;
+      return `${cleanPrefix},${paddedCents} reais`;
+    }
+  );
+
   // 2. Extração de preços com ou sem "R$" no meio ou final da frase:
-  // Exemplos: "por r$ 5", "por 5 reais", "a 5,99", "r$ 10,50", "5 reais", "de 8 conto"
+  // Exemplos: "por 7 reais", "por r$ 7,50", "por 5", "a 5,99", "r$ 10,50", "5 reais"
   let price: number | undefined = undefined;
   const priceWithPrefixOrCurrencyRegex =
-    /(?:(?:\b(?:por|a|de|custou|custando)\s+)(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real|conto|contos|pila|pilas)?|(?:r\$\s*)(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real|conto|contos|pila|pilas)?|(?:\b(?:por|a|de|custou|custando)\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real|conto|contos|pila|pilas))\b/i;
+    /(?:(?:\b(?:por|a|de|custou|custando)\s+)?(?:r\$\s*)(\d+(?:[.,]\d{1,2})?)(?!\s*[.,]\d)\s*(?:reais|real|conto|contos|pila|pilas)?|(?:\b(?:por|a|de|custou|custando)\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)(?!\s*[.,]\d)\s*(?:reais|real|conto|contos|pila|pilas)\b|(?:\b(?:por|a|custou|custando)\s+)(\d+(?:[.,]\d{1,2})?)(?!\s*[.,]\d)\s*$)/i;
 
   const priceMatch = text.match(priceWithPrefixOrCurrencyRegex);
   if (priceMatch) {
@@ -705,8 +748,9 @@ export const parseVoiceFallbackLocally = (
   text = text
     .replace(/^(?:quilos?|kg|gramas?|\bg\b|unidades?|un)\s+(?:de\s+|da\s+|do\s+)?/i, '')
     .replace(/^(?:de\s+|da\s+|do\s+|dos\s+|das\s+)/i, '')
-    .replace(/\b(?:por|a|de|custou|custando|r\$)\s*$/i, '')
     .replace(/\b(?:em\s+promo[çc][aã]o|na\s+promo[çc][aã]o|no\s+desconto)\b/gi, '')
+    .replace(/\s+(?:por|a|de|custou|custando|r\$)$/i, '')
+    .replace(/\s+(?:por|a|de)$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 

@@ -516,7 +516,7 @@ export function PurchaseScreen({
 
       const recognition = new SpeechRecognition();
       recognition.lang = 'pt-BR';
-      recognition.continuous = true;
+      recognition.continuous = false;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
@@ -525,14 +525,24 @@ export function PurchaseScreen({
       };
 
       recognition.onresult = (event: any) => {
-        const accumulated = Array.from(event.results || [])
-          .map((r: any) => r?.[0]?.transcript || '')
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim();
+        if (!event.results || event.results.length === 0) return;
 
-        if (accumulated) {
-          transcriptBufferRef.current = accumulated;
+        const lastResult = event.results[event.results.length - 1];
+        const currentTranscript = (lastResult?.[0]?.transcript || '').replace(/\s+/g, ' ').trim();
+
+        if (currentTranscript) {
+          const previousTranscript = transcriptBufferRef.current.trim();
+          if (
+            !previousTranscript ||
+            currentTranscript.toLowerCase().startsWith(previousTranscript.toLowerCase()) ||
+            event.results.length === 1
+          ) {
+            transcriptBufferRef.current = currentTranscript;
+          } else if (
+            !previousTranscript.toLowerCase().includes(currentTranscript.toLowerCase())
+          ) {
+            transcriptBufferRef.current = currentTranscript;
+          }
         }
 
         if (silenceTimerRef.current) {
@@ -553,7 +563,7 @@ export function PurchaseScreen({
             setIsRecording(false);
             processVoiceIntentWithAI(fullTranscript);
           }
-        }, SILENCE_BUFFER_MS);
+        }, 1200);
       };
 
       recognition.onerror = (event: any) => {
