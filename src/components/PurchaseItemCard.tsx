@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Check, Trash2, ChevronDown } from 'lucide-react';
+import { Check, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Item } from '../types';
 import {
@@ -12,11 +12,10 @@ import {
   sanitizePriceInput,
   sanitizeWeightInput,
   sanitizeItemName,
-  sanitizeItemCategory,
   validateItemQuantity,
   validateItemPrice,
 } from '../utils/purchaseHelpers';
-import { MOTION_TOKENS, useMotionConfig } from '../styles/motionSystem';
+import { useMotionConfig } from '../styles/motionSystem';
 
 interface PurchaseItemCardProps {
   item: Item;
@@ -27,6 +26,10 @@ interface PurchaseItemCardProps {
   getCategoryBadgeStyle: (category: string) => string;
   highlightMissingPrice?: boolean;
   justCheckedId?: string | null;
+  isExpanded?: boolean;
+  focusPriceOnExpand?: boolean;
+  onExpand?: (focusPrice?: boolean) => void;
+  onCollapse?: () => void;
 }
 
 export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
@@ -38,11 +41,16 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   getCategoryBadgeStyle,
   highlightMissingPrice = false,
   justCheckedId = null,
+  isExpanded = false,
+  focusPriceOnExpand = false,
+  onExpand,
+  onCollapse,
 }) => {
   const motionConfig = useMotionConfig();
   const subtotal = calculateItemSubtotal(item);
   const badgeStyle = getCategoryBadgeStyle(item.category);
   const cleanItemName = sanitizeItemName(item.name.replace(/\s*\((?:kg|un|unidade)\)/gi, ''));
+  const cardRef = useRef<HTMLDivElement>(null);
 
   // Estado local temporário para o flash de confirmação (400ms) ao marcar bought = true
   const [localJustCheckedId, setLocalJustCheckedId] = useState<string | null>(null);
@@ -55,14 +63,12 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
     prevBoughtRef.current = isNowBought;
 
     if (!wasBought && isNowBought) {
-      // Transição para bought: true -> ativa flash de confirmação por 400ms
       setLocalJustCheckedId(item.id);
       if (justCheckedTimerRef.current) clearTimeout(justCheckedTimerRef.current);
       justCheckedTimerRef.current = setTimeout(() => {
         setLocalJustCheckedId(null);
       }, 400);
     } else if (wasBought && !isNowBought) {
-      // Desmarcar item (bought: false) -> remove flash instantaneamente
       if (justCheckedTimerRef.current) clearTimeout(justCheckedTimerRef.current);
       setLocalJustCheckedId(null);
     }
@@ -77,10 +83,12 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   const isJustChecked =
     Boolean(item.bought) && (justCheckedId === item.id || localJustCheckedId === item.id);
 
-  const handleToggleBoughtClick = () => {
+  const handleToggleBoughtClick = (e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
     const nextBought = !Boolean(item.bought);
     if (nextBought) {
-      // 1. Feedback Tátil Nativo (Haptic Feedback) ao marcar como comprado
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate(15);
       }
@@ -90,7 +98,6 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
         setLocalJustCheckedId(null);
       }, 400);
     } else {
-      // 4. Desmarcar Item (bought: false): retorno instantâneo sem flash
       if (justCheckedTimerRef.current) clearTimeout(justCheckedTimerRef.current);
       setLocalJustCheckedId(null);
     }
@@ -126,7 +133,6 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   );
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
-  // Guarda os últimos valores válidos para que ao alternar entre Unidade e Peso os valores nunca se percam ou fiquem zerados
   const lastKnownQtyRef = useRef<number>(
     item.quantity && item.quantity >= 1 ? item.quantity : 1
   );
@@ -143,7 +149,6 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
     }
   }, [item.quantity, item.weight]);
 
-  // Sincronizar estados locais se o item mudar externamente
   useEffect(() => {
     if (!isEditingName) {
       setNameInput(cleanItemName);
@@ -165,14 +170,13 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
       setQtyInput(
         item.isWeighted
           ? (item.weight !== undefined && item.weight !== null
-               ? sanitizeWeightInput(item.weight.toString())
-               : sanitizeWeightInput(item.quantity.toString()))
+              ? sanitizeWeightInput(item.weight.toString())
+              : sanitizeWeightInput(item.quantity.toString()))
           : item.quantity.toString()
       );
     }
   }, [item.quantity, item.weight, item.isWeighted, isEditingQty]);
 
-  // Focar o input correspondente quando entrar no modo de edição inline
   useEffect(() => {
     if (isEditingName && nameInputRef.current) {
       nameInputRef.current.focus();
@@ -193,6 +197,36 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
       qtyInputRef.current.select();
     }
   }, [isEditingQty]);
+
+  // Se expandiu tocando na pílula de preço, foca automaticamente no input de preço
+  useEffect(() => {
+    if (item.bought && isExpanded && focusPriceOnExpand) {
+      const timer = setTimeout(() => {
+        setIsEditingPrice(true);
+        priceInputRef.current?.focus();
+        priceInputRef.current?.select();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [item.bought, isExpanded, focusPriceOnExpand]);
+
+  // Recolhe automaticamente quando o usuário toca fora do card expandido
+  useEffect(() => {
+    if (!item.bought || !isExpanded || !onCollapse) return;
+
+    const handleClickOutsideCard = (e: MouseEvent | TouchEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        onCollapse();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutsideCard);
+    document.addEventListener('touchstart', handleClickOutsideCard);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutsideCard);
+      document.removeEventListener('touchstart', handleClickOutsideCard);
+    };
+  }, [item.bought, isExpanded, onCollapse]);
 
   // Fechar o dropdown de categorias ao clicar fora ou pressionar Escape
   useEffect(() => {
@@ -259,7 +293,10 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
     setIsEditingQty(false);
     const cleaned = sanitizeWeightInput(qtyInput).trim();
     if (!cleaned) return;
-    const validated = validateItemQuantity(cleaned, item.isWeighted ? (item.weight || 1) : (item.quantity || 1));
+    const validated = validateItemQuantity(
+      cleaned,
+      item.isWeighted ? (item.weight || 1) : (item.quantity || 1)
+    );
 
     if (item.isWeighted) {
       onEditItem(purchaseId, item.id, { weight: validated, quantity: 1 });
@@ -294,7 +331,6 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
     const nextIsWeighted = !Boolean(item.isWeighted);
 
     if (nextIsWeighted) {
-      // Alternando para PESO (kg)
       const targetWeight =
         item.weight && item.weight > 0
           ? item.weight
@@ -314,7 +350,6 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
       });
       setQtyInput(sanitizeWeightInput(roundedWeight.toString()));
     } else {
-      // Alternando para UNIDADE
       const targetQty =
         item.quantity && item.quantity >= 1
           ? item.quantity
@@ -333,23 +368,125 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
     }
   };
 
-  const handleSetPricingMode = (weighted: boolean) => {
-    if (weighted !== Boolean(item.isWeighted)) {
-      handleTogglePricingMode();
-    }
-  };
-
   const hasValidPrice = item.price !== undefined && item.price !== null && item.price > 0;
+  const isItemMissingPrice = !item.price || Number(item.price) <= 0;
 
-  // Ativa formatação compacta (width 38.5625px e fonte 11px) automaticamente quando preço for >= 100 ou com 6+ dígitos (ex: 100,00)
   const isLargePrice = (() => {
     if (priceInput.length >= 6) return true;
     const num = parseFloat(priceInput.replace(',', '.'));
     return !isNaN(num) && num >= 100;
   })();
 
+  // Card Minimizado quando comprado (item.bought === true) e NÃO expandido temporariamente
+  if (item.bought && !isExpanded) {
+    const qtyValue = item.isWeighted
+      ? Math.round(Number(item.weight ?? item.quantity ?? 1) * 1000) / 1000
+      : item.quantity || 1;
+    const qtyBadgeText = item.isWeighted ? `${qtyValue} kg` : `${qtyValue} un`;
+    const subtotalBadgeText = formatCurrencyBRL(hasValidPrice ? subtotal : 0);
+
+    return (
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.92, x: -16, transition: { duration: 0.14 } }}
+        transition={{
+          layout: motionConfig.layoutSpring,
+        }}
+        className={`w-full py-3 px-3.5 rounded-2xl flex items-center justify-between gap-3 transition-all duration-300 ${
+          isJustChecked
+            ? 'border border-emerald-400 bg-emerald-50/70 scale-[1.01]'
+            : 'bg-emerald-50/40 border border-emerald-200/80'
+        }`}
+      >
+        {/* Bloco Esquerdo: Checkbox verde (desmarca) + Nome do produto (expande sem desmarcar) */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleBoughtClick(e);
+            }}
+            aria-label="Marcar como não comprado"
+            title="Desmarcar item"
+            className="w-6 h-6 rounded-md border bg-emerald-600 border-emerald-600 flex items-center justify-center shrink-0 shadow-2xs cursor-pointer active:scale-95 transition-all duration-[350ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+          >
+            <Check
+              className={`w-4 h-4 stroke-[3] text-white transition-transform duration-[350ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] scale-100 ${
+                isJustChecked ? 'animate-check-icon-pop' : ''
+              }`}
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExpand?.(false);
+            }}
+            title="Toque para expandir e editar este item"
+            className="min-w-0 flex-1 text-left cursor-pointer truncate text-base font-medium text-zinc-500 line-through hover:text-zinc-700 transition-colors"
+          >
+            {cleanItemName}
+          </button>
+        </div>
+
+        {/* Bloco Direito (Badges Separadas Clicáveis para Expandir + Lixeira) */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Pílula de Quantidade: expande o card sem desmarcar */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExpand?.(false);
+            }}
+            title="Toque para editar a quantidade"
+            className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-50 border border-emerald-200/80 text-xs font-semibold text-zinc-600 whitespace-nowrap cursor-pointer transition-colors active:scale-95"
+          >
+            {qtyBadgeText}
+          </button>
+
+          {/* Pílula de Preço/Subtotal: expande e foca no preço; alerta em rosa se estiver sem preço */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExpand?.(true);
+            }}
+            title="Toque para editar o preço"
+            className={`px-2.5 py-1 rounded-lg text-sm whitespace-nowrap cursor-pointer transition-colors active:scale-95 ${
+              isItemMissingPrice
+                ? 'bg-rose-50 border border-rose-400 text-rose-600 font-bold'
+                : 'bg-emerald-100/80 hover:bg-emerald-200/70 text-emerald-800 font-bold'
+            }`}
+          >
+            {subtotalBadgeText}
+          </button>
+
+          {/* Botão de lixeira */}
+          <motion.button
+            whileTap={motionConfig.tap.iconButton}
+            transition={motionConfig.pressSpring}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemoveItem(purchaseId, item.id);
+            }}
+            title="Remover item"
+            aria-label="Remover item"
+            className="p-2 text-zinc-400 hover:text-rose-500 rounded-lg transition-colors flex items-center justify-center cursor-pointer shrink-0"
+          >
+            <Trash2 className="w-4 h-4" />
+          </motion.button>
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
+      ref={cardRef}
       layout
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -357,21 +494,22 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
       transition={{
         layout: motionConfig.layoutSpring,
       }}
-      className={`w-full rounded-2xl border p-2.5 sm:p-3 flex flex-col gap-2 ${
+      className={`w-full rounded-2xl border p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 ${
         item.bought
-          ? isJustChecked
-            ? 'transition-all duration-300 ease-out border-emerald-400 bg-emerald-50/70 scale-[1.01] text-zinc-700'
-            : 'transition-all duration-300 ease-out bg-emerald-50/25 border-emerald-200/60 opacity-80 text-zinc-500'
-          : 'transition-all duration-150 bg-white border-zinc-200 opacity-100 shadow-2xs text-zinc-900'
+          ? 'bg-emerald-50/35 border-emerald-300 shadow-sm text-zinc-900'
+          : 'bg-white border-zinc-200 opacity-100 shadow-2xs text-zinc-900'
       }`}
     >
-      {/* LINHA 1: Checkbox + Nome (Inline) + Categoria (Dropdown) + Excluir */}
+      {/* LINHA 1: Checkbox + Nome (Inline) + Categoria (Dropdown) + Recolher ▲ (se comprado) + Excluir */}
       <div className="flex items-center justify-between gap-1.5">
         <div className="flex items-center space-x-2 min-w-0 flex-1">
-          {/* 2. Física Elástica no Checkbox (spring pop cubic-bezier(0.34, 1.56, 0.64, 1) de 350ms) */}
+          {/* 2. Física Elástica no Checkbox */}
           <button
             type="button"
-            onClick={handleToggleBoughtClick}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleBoughtClick(e);
+            }}
             aria-label={item.bought ? 'Marcar como não comprado' : 'Marcar como comprado'}
             className="w-8 h-8 min-w-[32px] min-h-[32px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center shrink-0 cursor-pointer rounded-lg hover:bg-zinc-100/80 transition-colors active:scale-95"
           >
@@ -411,7 +549,10 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                   }
                   onBlur={handleSaveName}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveName();
+                    if (e.key === 'Enter') {
+                      handleSaveName();
+                      if (item.bought && isExpanded) onCollapse?.();
+                    }
                     if (e.key === 'Escape') {
                       setNameInput(cleanItemName);
                       setIsEditingName(false);
@@ -426,7 +567,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                   title="Toque para editar o nome diretamente"
                   className={`group text-left text-sm sm:text-base font-bold leading-tight break-words rounded-md px-1 py-0.5 -ml-1 cursor-pointer transition-all duration-300 ease-out border border-dashed border-transparent hover:border-zinc-300 hover:bg-zinc-100/80 active:scale-[0.99] ${
                     item.bought
-                      ? 'text-zinc-400 line-through decoration-emerald-500/70 decoration-2 hover:text-zinc-600'
+                      ? 'text-zinc-600 line-through decoration-emerald-500/70 decoration-2 hover:text-zinc-800'
                       : 'text-zinc-900 hover:text-emerald-800'
                   }`}
                 >
@@ -492,23 +633,40 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
           </div>
         </div>
 
-        {/* Lado Direito: Botão Excluir */}
-        <motion.button
-          whileTap={motionConfig.tap.iconButton}
-          transition={motionConfig.pressSpring}
-          type="button"
-          onClick={() => onRemoveItem(purchaseId, item.id)}
-          title="Remover item"
-          aria-label="Remover item"
-          className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
-        >
-          <Trash2 className="w-4 h-4" />
-        </motion.button>
+        {/* Lado Direito: Botão Recolher ▲ (se comprado e expandido) + Botão Excluir */}
+        <div className="flex items-center gap-1 shrink-0">
+          {item.bought && isExpanded && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCollapse?.();
+              }}
+              className="px-2 py-1 rounded-lg bg-emerald-100/90 hover:bg-emerald-200 text-emerald-800 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors active:scale-95"
+              title="Recolher item"
+            >
+              <span>Recolher</span>
+              <ChevronUp className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          <motion.button
+            whileTap={motionConfig.tap.iconButton}
+            transition={motionConfig.pressSpring}
+            type="button"
+            onClick={() => onRemoveItem(purchaseId, item.id)}
+            title="Remover item"
+            aria-label="Remover item"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+          >
+            <Trash2 className="w-4 h-4" />
+          </motion.button>
+        </div>
       </div>
 
       {/* LINHA 2: MARCADOR (UNID. / PESO) + QUANTIDADE/PESO + PREÇO + SUBTOTAL COM PROPORÇÕES EQUILIBRADAS */}
       <div className="grid grid-cols-[auto_1.2fr_1fr_auto] items-end gap-1.5 sm:gap-2 pt-0.5">
-        {/* 1. Marcador de Modalidade: Unidade vs Peso (kg) - Controle Fixo Sempre Interativo */}
+        {/* 1. Marcador de Modalidade: Unidade vs Peso (kg) */}
         <div className="flex flex-col shrink-0">
           <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5 truncate">
             Tipo
@@ -568,7 +726,10 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                 }}
                 onBlur={handleSaveQty}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveQty();
+                  if (e.key === 'Enter') {
+                    handleSaveQty();
+                    if (item.bought && isExpanded) onCollapse?.();
+                  }
                   if (e.key === 'Escape') setIsEditingQty(false);
                 }}
                 className="flex-1 min-w-0 text-center text-[11px] font-bold bg-white text-zinc-900 border border-emerald-500 rounded py-0.5 outline-none shadow-2xs h-full"
@@ -636,7 +797,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                         isForceHighlighted ? 'animate-pulse' : ''
                       }`
                     : item.bought
-                    ? 'bg-emerald-50/40 border border-emerald-300 text-emerald-900 font-semibold focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white'
+                    ? 'bg-white border border-emerald-300 text-emerald-900 font-semibold focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white'
                     : 'bg-zinc-50 border border-zinc-200 text-zinc-900 font-semibold hover:bg-zinc-100/70 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 focus-within:bg-white'
                 }`}
               >
@@ -663,6 +824,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
                     if (e.key === 'Enter') {
                       handleSavePrice();
                       priceInputRef.current?.blur();
+                      if (item.bought && isExpanded) onCollapse?.();
                     }
                     if (e.key === 'Escape') {
                       setPriceInput(
@@ -715,4 +877,3 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
     </motion.div>
   );
 };
-

@@ -80,7 +80,7 @@ export function BatchAddModal({ isOpen, onClose, onSubmit }: BatchAddModalProps)
                 rows={6}
                 required
                 autoFocus
-                placeholder={`leite, carne, 2 pães\nou\n2 Leite\n1 Arroz 5kg\nCafé`}
+                placeholder={`2 Arroz\nFeijão\n3 Leite\nou separados por vírgula: 2 Arroz, Feijão, 3 Leite`}
                 value={batchText}
                 onChange={(e) => setBatchText(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-sm font-medium text-zinc-900 placeholder-zinc-400 font-mono transition-all outline-none"
@@ -93,9 +93,8 @@ export function BatchAddModal({ isOpen, onClose, onSubmit }: BatchAddModalProps)
                 <span>Dica de preenchimento rápido:</span>
               </div>
               <p>
-                Você pode digitar itens separados por vírgula (ex:{' '}
-                <code className="bg-emerald-100 px-1 rounded font-bold text-emerald-950">leite, carne</code>) ou por linha. Se quiser, inclua a quantidade no início (ex:{' '}
-                <code className="bg-emerald-100 px-1 rounded font-bold text-emerald-950">2 Leite, 3 Sabão</code>).
+                Você pode digitar itens separados por linha ou vírgula (ex:{' '}
+                <code className="bg-emerald-100 px-1 rounded font-bold text-emerald-950">2 Arroz, Feijão, 3 Leite</code>).
               </p>
             </div>
           </div>
@@ -119,8 +118,8 @@ export function BatchAddModal({ isOpen, onClose, onSubmit }: BatchAddModalProps)
               className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-2xs transition-colors min-h-[44px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {parsedItems.length > 1
-                ? `Adicionar ${parsedItems.length} Itens`
-                : 'Adicionar Itens'}
+                ? `Adicionar Tudo (${parsedItems.length})`
+                : 'Adicionar Tudo'}
             </motion.button>
           </div>
         </form>

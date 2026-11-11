@@ -164,6 +164,10 @@ export function PurchaseScreen({
   const [justCheckedId, setJustCheckedId] = useState<string | null>(null);
   const justCheckedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Estado para controlar qual item minimizado (bought === true) está temporariamente expandido para edição
+  const [expandedBoughtItemId, setExpandedBoughtItemId] = useState<string | null>(null);
+  const [focusPriceOnExpand, setFocusPriceOnExpand] = useState<boolean>(false);
+
   useEffect(() => {
     return () => {
       if (justCheckedTimerRef.current) {
@@ -183,6 +187,7 @@ export function PurchaseScreen({
       }
       // 3. Flash de confirmação momentâneo de 400ms
       setJustCheckedId(iId);
+      setExpandedBoughtItemId((prev) => (prev === iId ? null : prev));
       if (justCheckedTimerRef.current) {
         clearTimeout(justCheckedTimerRef.current);
       }
@@ -195,6 +200,7 @@ export function PurchaseScreen({
         clearTimeout(justCheckedTimerRef.current);
       }
       setJustCheckedId((prev) => (prev === iId ? null : prev));
+      setExpandedBoughtItemId((prev) => (prev === iId ? null : prev));
     }
 
     if (onToggleBought) {
@@ -1348,22 +1354,36 @@ export function PurchaseScreen({
 
                         <AnimatePresence mode="popLayout" initial={false}>
                           {!collapsedSections.includes(section.category) &&
-                            section.items.map((item) => (
-                              <PurchaseItemCard
-                                key={item.id}
-                                item={item}
-                                purchaseId={purchase.id}
-                                onToggleBought={handleToggleItemBought}
-                                onEditItem={onEditItem}
-                                onRemoveItem={(pId, iId) => {
-                                  onRemoveItem(pId, iId);
-                                  showToast(`"${item.name}" removido da lista`);
-                                }}
-                                getCategoryBadgeStyle={getCategoryBadgeStyle}
-                                highlightMissingPrice={highlightMissingPrices}
-                                justCheckedId={justCheckedId}
-                              />
-                            ))}
+                            [...section.items]
+                              .sort((a, b) => Number(Boolean(a.bought)) - Number(Boolean(b.bought)))
+                              .map((item) => (
+                                <PurchaseItemCard
+                                  key={item.id}
+                                  item={item}
+                                  purchaseId={purchase.id}
+                                  onToggleBought={handleToggleItemBought}
+                                  onEditItem={onEditItem}
+                                  onRemoveItem={(pId, iId) => {
+                                    onRemoveItem(pId, iId);
+                                    showToast(`"${item.name}" removido da lista`);
+                                  }}
+                                  getCategoryBadgeStyle={getCategoryBadgeStyle}
+                                  highlightMissingPrice={highlightMissingPrices}
+                                  justCheckedId={justCheckedId}
+                                  isExpanded={expandedBoughtItemId === item.id}
+                                  focusPriceOnExpand={
+                                    expandedBoughtItemId === item.id && focusPriceOnExpand
+                                  }
+                                  onExpand={(shouldFocusPrice) => {
+                                    setExpandedBoughtItemId(item.id);
+                                    setFocusPriceOnExpand(Boolean(shouldFocusPrice));
+                                  }}
+                                  onCollapse={() => {
+                                    setExpandedBoughtItemId(null);
+                                    setFocusPriceOnExpand(false);
+                                  }}
+                                />
+                              ))}
                         </AnimatePresence>
                       </motion.div>
                     ))

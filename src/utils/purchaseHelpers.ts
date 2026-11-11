@@ -711,34 +711,90 @@ export const parseVoiceFallbackLocally = (
     safetyIterations++;
   }
 
-  // Normaliza centavos falados como "7 reais e 50 centavos" ou "por 7 e 50" -> "por 7,50 reais"
-  text = text.replace(
-    /(\b(?:por|a|r\$)\s*\d+|\d+\s*reais?)\s+e\s+(\d{1,2})\s*(?:centavos?)?\b/gi,
-    (_, prefix, cents) => {
-      const cleanPrefix = prefix.replace(/\s*reais?$/i, '');
-      const paddedCents = cents.length === 1 ? `${cents}0` : cents;
-      return `${cleanPrefix},${paddedCents} reais`;
-    }
-  );
-
-  // 2. Extração de preços com ou sem "R$" no meio ou final da frase:
-  // Exemplos: "por 7 reais", "por r$ 7,50", "por 5", "a 5,99", "r$ 10,50", "5 reais"
+  // 2. Extração de preços (Reais + Centavos, Apenas Centavos, ou Reais/Decimais)
   let price: number | undefined = undefined;
-  const priceWithPrefixOrCurrencyRegex =
-    /(?:(?:\b(?:por|a|de|custou|custando)\s+)?(?:r\$\s*)(\d+(?:[.,]\d{1,2})?)(?!\s*[.,]\d)\s*(?:reais|real|conto|contos|pila|pilas)?|(?:\b(?:por|a|de|custou|custando)\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)(?!\s*[.,]\d)\s*(?:reais|real|conto|contos|pila|pilas)\b|(?:\b(?:por|a|custou|custando)\s+)(\d+(?:[.,]\d{1,2})?)(?!\s*[.,]\d)\s*$)/i;
 
-  const priceMatch = text.match(priceWithPrefixOrCurrencyRegex);
-  if (priceMatch) {
-    const capturedValue = priceMatch[1] || priceMatch[2] || priceMatch[3];
-    if (capturedValue) {
-      const parsedPrice = parseFloat(capturedValue.replace(',', '.'));
-      if (!isNaN(parsedPrice) && parsedPrice > 0) {
-        price = validateItemPrice(parsedPrice);
+  // 2a. Padrão Composto: Reais + Centavos (ex: "por 4 reais e 50 centavos", "a 4 e 50", "r$ 4 e 50")
+  const reaisAndCentavosRegex =
+    /(?:\b(?:por|a|de|custou|custando)\s+)?(?:r\$\s*)?(\d+)\s*(?:reais|real|conto|contos|pila|pilas)\s+e\s+(\d{1,2})\s*(?:centavos|centavo|cts)?\b|(?:\b(?:por|a|custou|custando)\s+|r\$\s*)(\d+)\s+e\s+(\d{1,2})(?:\s*(?:centavos|centavo|cts))?\b/i;
+
+  const compoundMatch = text.match(reaisAndCentavosRegex);
+  if (compoundMatch) {
+    const reaisStr = compoundMatch[1] || compoundMatch[3];
+    const centsStr = compoundMatch[2] || compoundMatch[4];
+    if (reaisStr !== undefined && centsStr !== undefined) {
+      const reaisVal = parseInt(reaisStr, 10);
+      const centsVal = parseInt(centsStr, 10);
+      if (!isNaN(reaisVal) && !isNaN(centsVal)) {
+        const computedPrice = Math.round((reaisVal + centsVal / 100) * 100) / 100;
+        if (computedPrice > 0) {
+          price = validateItemPrice(computedPrice);
+          text = (
+            text.slice(0, compoundMatch.index) +
+            ' ' +
+            text.slice((compoundMatch.index || 0) + compoundMatch[0].length)
+          ).trim();
+        }
+      }
+    }
+  }
+
+  // 2b. Padrão Apenas Centavos (ex: "5 pães por 70 centavos", "a 50 centavos", "de 90 centavos")
+  if (price === undefined) {
+    const centavosWordsMap: Record<string, number> = {
+      cinco: 5,
+      dez: 10,
+      quinze: 15,
+      vinte: 20,
+      trinta: 30,
+      quarenta: 40,
+      cinquenta: 50,
+      sessenta: 60,
+      setenta: 70,
+      oitenta: 80,
+      noventa: 90,
+    };
+
+    const onlyCentavosRegex =
+      /(?:\b(?:por|a|de|custou|custando)\s+)?(?:r\$\s*)?(\d{1,2}|cinco|dez|quinze|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa)\s*(?:centavos|centavo|cts)\b/i;
+
+    const centavosMatch = text.match(onlyCentavosRegex);
+    if (centavosMatch && centavosMatch[1]) {
+      const rawToken = centavosMatch[1].toLowerCase();
+      const centsNum =
+        centavosWordsMap[rawToken] !== undefined
+          ? centavosWordsMap[rawToken]
+          : parseInt(rawToken, 10);
+      if (!isNaN(centsNum) && centsNum > 0) {
+        const computedCentsPrice = Math.round((centsNum / 100) * 100) / 100;
+        price = validateItemPrice(computedCentsPrice);
         text = (
-          text.slice(0, priceMatch.index) +
+          text.slice(0, centavosMatch.index) +
           ' ' +
-          text.slice((priceMatch.index || 0) + priceMatch[0].length)
+          text.slice((centavosMatch.index || 0) + centavosMatch[0].length)
         ).trim();
+      }
+    }
+  }
+
+  // 2c. Padrão Reais / Decimal (ex: "por 7 reais", "por r$ 7,50", "por 5", "a 5,99", "r$ 10,50", "5 reais")
+  if (price === undefined) {
+    const priceWithPrefixOrCurrencyRegex =
+      /(?:(?:\b(?:por|a|de|custou|custando)\s+)?(?:r\$\s*)(\d+(?:[.,]\d{1,2})?)(?!\s*[.,]\d)\s*(?:reais|real|conto|contos|pila|pilas)?|(?:\b(?:por|a|de|custou|custando)\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)(?!\s*[.,]\d)\s*(?:reais|real|conto|contos|pila|pilas)\b|(?:\b(?:por|a|custou|custando)\s+)(\d+(?:[.,]\d{1,2})?)(?!\s*[.,]\d)\s*$)/i;
+
+    const priceMatch = text.match(priceWithPrefixOrCurrencyRegex);
+    if (priceMatch) {
+      const capturedValue = priceMatch[1] || priceMatch[2] || priceMatch[3];
+      if (capturedValue) {
+        const parsedPrice = parseFloat(capturedValue.replace(',', '.'));
+        if (!isNaN(parsedPrice) && parsedPrice > 0) {
+          price = validateItemPrice(parsedPrice);
+          text = (
+            text.slice(0, priceMatch.index) +
+            ' ' +
+            text.slice((priceMatch.index || 0) + priceMatch[0].length)
+          ).trim();
+        }
       }
     }
   }
@@ -748,8 +804,9 @@ export const parseVoiceFallbackLocally = (
   text = text
     .replace(/^(?:quilos?|kg|gramas?|\bg\b|unidades?|un)\s+(?:de\s+|da\s+|do\s+)?/i, '')
     .replace(/^(?:de\s+|da\s+|do\s+|dos\s+|das\s+)/i, '')
+    .replace(/\b(?:por|a|de|custou|custando)?\s*\d+\s*(?:centavos|centavo|cts)\b/gi, '')
     .replace(/\b(?:em\s+promo[çc][aã]o|na\s+promo[çc][aã]o|no\s+desconto)\b/gi, '')
-    .replace(/\s+(?:por|a|de|custou|custando|r\$)$/i, '')
+    .replace(/\s+(?:por|a|de|custou|custando|r\$|centavos|centavo)$/i, '')
     .replace(/\s+(?:por|a|de)$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
