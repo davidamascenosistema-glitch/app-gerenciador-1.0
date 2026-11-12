@@ -371,6 +371,35 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
   const hasValidPrice = item.price !== undefined && item.price !== null && item.price > 0;
   const isItemMissingPrice = !item.price || Number(item.price) <= 0;
 
+  const getCategoryLeftBorderClass = (category: string) => {
+    switch (category) {
+      case 'Alimentos':
+      case 'Mercearia':
+        return 'border-l-emerald-400';
+      case 'Bebidas':
+        return 'border-l-blue-400';
+      case 'Limpeza':
+        return 'border-l-cyan-400';
+      case 'Higiene':
+        return 'border-l-purple-400';
+      case 'Açougue':
+        return 'border-l-rose-400';
+      case 'Frutas/Legumes':
+        return 'border-l-lime-400';
+      case 'Frios':
+        return 'border-l-orange-400';
+      case 'Padaria':
+        return 'border-l-amber-400';
+      case 'Hortifruti':
+        return 'border-l-teal-400';
+      case 'Geral':
+      default:
+        return 'border-l-zinc-400';
+    }
+  };
+
+  const categoryLeftBorder = getCategoryLeftBorderClass(item.category);
+
   const isLargePrice = (() => {
     if (priceInput.length >= 6) return true;
     const num = parseFloat(priceInput.replace(',', '.'));
@@ -394,14 +423,14 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
         transition={{
           layout: motionConfig.layoutSpring,
         }}
-        className={`w-full py-3 px-3.5 rounded-2xl flex items-center justify-between gap-3 transition-all duration-300 ${
+        className={`w-full py-2.5 px-3 rounded-2xl flex items-center justify-between gap-2 transition-all duration-300 border border-l-4 ${categoryLeftBorder} ${
           isJustChecked
-            ? 'border border-emerald-400 bg-emerald-50/70 scale-[1.01]'
-            : 'bg-emerald-50/40 border border-emerald-200/80'
+            ? 'border-emerald-400 bg-emerald-50/70 scale-[1.01]'
+            : 'bg-white/95 border-emerald-200/80'
         }`}
       >
-        {/* Bloco Esquerdo: Checkbox verde (desmarca) + Nome do produto (expande sem desmarcar) */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+        {/* Bloco Esquerdo: Checkbox verde (desmarca) + Nome do produto com maior destaque e espaço */}
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <button
             type="button"
             onClick={(e) => {
@@ -410,10 +439,10 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
             }}
             aria-label="Marcar como não comprado"
             title="Desmarcar item"
-            className="w-6 h-6 rounded-md border bg-emerald-600 border-emerald-600 flex items-center justify-center shrink-0 shadow-2xs cursor-pointer active:scale-95 transition-all duration-[350ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+            className="w-5.5 h-5.5 rounded-md border bg-emerald-600 border-emerald-600 flex items-center justify-center shrink-0 shadow-2xs cursor-pointer active:scale-95 transition-all duration-[350ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]"
           >
             <Check
-              className={`w-4 h-4 stroke-[3] text-white transition-transform duration-[350ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] scale-100 ${
+              className={`w-3.5 h-3.5 stroke-[3] text-white transition-transform duration-[350ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] scale-100 ${
                 isJustChecked ? 'animate-check-icon-pop' : ''
               }`}
             />
@@ -426,14 +455,14 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
               onExpand?.(false);
             }}
             title="Toque para expandir e editar este item"
-            className="min-w-0 flex-1 text-left cursor-pointer truncate text-base font-medium text-zinc-500 line-through hover:text-zinc-700 transition-colors"
+            className="min-w-0 flex-1 text-left cursor-pointer text-[15px] sm:text-base font-bold text-zinc-700 leading-snug line-clamp-2 break-words line-through decoration-emerald-500/60 decoration-1 hover:text-zinc-900 transition-colors"
           >
             {cleanItemName}
           </button>
         </div>
 
-        {/* Bloco Direito (Badges Separadas Clicáveis para Expandir + Lixeira) */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Bloco Direito (Badges mais compactas para priorizar o nome + Lixeira) */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Pílula de Quantidade: expande o card sem desmarcar */}
           <button
             type="button"
@@ -442,7 +471,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
               onExpand?.(false);
             }}
             title="Toque para editar a quantidade"
-            className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-50 border border-emerald-200/80 text-xs font-semibold text-zinc-600 whitespace-nowrap cursor-pointer transition-colors active:scale-95"
+            className="px-2 py-0.5 rounded-md bg-zinc-50 hover:bg-emerald-50 border border-zinc-200/90 text-[11px] font-semibold text-zinc-600 whitespace-nowrap cursor-pointer transition-colors active:scale-95"
           >
             {qtyBadgeText}
           </button>
@@ -455,7 +484,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
               onExpand?.(true);
             }}
             title="Toque para editar o preço"
-            className={`px-2.5 py-1 rounded-lg text-sm whitespace-nowrap cursor-pointer transition-colors active:scale-95 ${
+            className={`px-2 py-0.5 rounded-md text-xs whitespace-nowrap cursor-pointer transition-colors active:scale-95 ${
               isItemMissingPrice
                 ? 'bg-rose-50 border border-rose-400 text-rose-600 font-bold'
                 : 'bg-emerald-100/80 hover:bg-emerald-200/70 text-emerald-800 font-bold'
@@ -475,9 +504,9 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
             }}
             title="Remover item"
             aria-label="Remover item"
-            className="p-2 text-zinc-400 hover:text-rose-500 rounded-lg transition-colors flex items-center justify-center cursor-pointer shrink-0"
+            className="p-1.5 text-zinc-400 hover:text-rose-500 rounded-lg transition-colors flex items-center justify-center cursor-pointer shrink-0"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
           </motion.button>
         </div>
       </motion.div>
@@ -494,9 +523,9 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
       transition={{
         layout: motionConfig.layoutSpring,
       }}
-      className={`w-full rounded-2xl border p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 ${
+      className={`w-full rounded-2xl border border-l-4 ${categoryLeftBorder} p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 ${
         item.bought
-          ? 'bg-emerald-50/35 border-emerald-300 shadow-sm text-zinc-900'
+          ? 'bg-white border-emerald-300 shadow-sm text-zinc-900'
           : 'bg-white border-zinc-200 opacity-100 shadow-2xs text-zinc-900'
       }`}
     >

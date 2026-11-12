@@ -227,6 +227,35 @@ export const ListItemCard: React.FC<ListItemCardProps> = ({
     }
   };
 
+  const getCategoryLeftBorderClass = (category: string) => {
+    switch (category) {
+      case 'Alimentos':
+      case 'Mercearia':
+        return 'border-l-emerald-400';
+      case 'Bebidas':
+        return 'border-l-blue-400';
+      case 'Limpeza':
+        return 'border-l-cyan-400';
+      case 'Higiene':
+        return 'border-l-purple-400';
+      case 'Açougue':
+        return 'border-l-rose-400';
+      case 'Frutas/Legumes':
+        return 'border-l-lime-400';
+      case 'Frios':
+        return 'border-l-orange-400';
+      case 'Padaria':
+        return 'border-l-amber-400';
+      case 'Hortifruti':
+        return 'border-l-teal-400';
+      case 'Geral':
+      default:
+        return 'border-l-zinc-400';
+    }
+  };
+
+  const categoryLeftBorder = getCategoryLeftBorderClass(item.category);
+
   return (
     <motion.div
       layout
@@ -236,7 +265,7 @@ export const ListItemCard: React.FC<ListItemCardProps> = ({
       transition={{
         layout: motionConfig.layoutSpring,
       }}
-      className="w-full rounded-2xl border p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 bg-white border-zinc-200 opacity-100 shadow-2xs text-zinc-900"
+      className={`w-full rounded-2xl border border-l-4 ${categoryLeftBorder} p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 bg-white border-zinc-200 opacity-100 shadow-2xs text-zinc-900`}
     >
       {/* LINHA 1: Nome (Inline) + Categoria (Dropdown) + Excluir */}
       <div className="flex items-center justify-between gap-1.5">

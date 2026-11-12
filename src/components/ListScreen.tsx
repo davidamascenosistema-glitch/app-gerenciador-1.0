@@ -93,6 +93,60 @@ const getCategoryAccentBarClass = (category: string) => {
   }
 };
 
+const getCategorySectionContainerClass = (category: string) => {
+  switch (category) {
+    case 'Alimentos':
+    case 'Mercearia':
+      return 'bg-emerald-50/60 border-emerald-200/70';
+    case 'Bebidas':
+      return 'bg-blue-50/60 border-blue-200/70';
+    case 'Limpeza':
+      return 'bg-cyan-50/60 border-cyan-200/70';
+    case 'Higiene':
+      return 'bg-purple-50/60 border-purple-200/70';
+    case 'Açougue':
+      return 'bg-rose-50/60 border-rose-200/70';
+    case 'Frutas/Legumes':
+      return 'bg-lime-50/60 border-lime-200/70';
+    case 'Frios':
+      return 'bg-orange-50/60 border-orange-200/70';
+    case 'Padaria':
+      return 'bg-amber-50/60 border-amber-200/70';
+    case 'Hortifruti':
+      return 'bg-teal-50/60 border-teal-200/70';
+    case 'Geral':
+    default:
+      return 'bg-zinc-100/90 border-zinc-200/80';
+  }
+};
+
+const getCategoryHeaderClass = (category: string) => {
+  switch (category) {
+    case 'Alimentos':
+    case 'Mercearia':
+      return 'bg-emerald-500/15 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-950';
+    case 'Bebidas':
+      return 'bg-blue-500/15 hover:bg-blue-500/20 border-blue-500/30 text-blue-950';
+    case 'Limpeza':
+      return 'bg-cyan-500/15 hover:bg-cyan-500/20 border-cyan-500/30 text-cyan-950';
+    case 'Higiene':
+      return 'bg-purple-500/15 hover:bg-purple-500/20 border-purple-500/30 text-purple-950';
+    case 'Açougue':
+      return 'bg-rose-500/15 hover:bg-rose-500/20 border-rose-500/30 text-rose-950';
+    case 'Frutas/Legumes':
+      return 'bg-lime-500/15 hover:bg-lime-500/20 border-lime-500/30 text-lime-950';
+    case 'Frios':
+      return 'bg-orange-500/15 hover:bg-orange-500/20 border-orange-500/30 text-orange-950';
+    case 'Padaria':
+      return 'bg-amber-500/15 hover:bg-amber-500/20 border-amber-500/30 text-amber-950';
+    case 'Hortifruti':
+      return 'bg-teal-500/15 hover:bg-teal-500/20 border-teal-500/30 text-teal-950';
+    case 'Geral':
+    default:
+      return 'bg-zinc-500/15 hover:bg-zinc-500/20 border-zinc-500/30 text-zinc-900';
+  }
+};
+
 const normalizeText = (text: string) =>
   text
     .toLowerCase()
@@ -992,61 +1046,92 @@ export function ListScreen({
                     </p>
                   </motion.div>
                 ) : (
-                  visibleSections.map((section) => (
-                    <motion.div
-                      key={section.category}
-                      layout
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0, transition: { duration: 0.12 } }}
-                      className="space-y-2"
-                    >
-                      {/* Header do Accordion da Categoria com Barra Colorida Lateral */}
-                      <button
-                        type="button"
-                        onClick={() => toggleSectionCollapse(section.category)}
-                        className="flex items-center gap-2 px-1 pt-1.5 pb-0.5 w-full cursor-pointer"
+                  visibleSections.map((section) => {
+                    const isCollapsed = collapsedSections.includes(section.category);
+                    return (
+                      <motion.div
+                        key={section.category}
+                        layout
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0, transition: { duration: 0.12 } }}
+                        className={`transition-all duration-200 ${
+                          isCollapsed
+                            ? 'p-0 bg-transparent border border-transparent shadow-none mb-2 rounded-lg'
+                            : `rounded-2xl p-1.5 mb-3 border shadow-sm space-y-2 ${getCategorySectionContainerClass(
+                                section.category
+                              )}`
+                        }`}
                       >
-                        <span
-                          className={`w-1 h-3.5 rounded-full shrink-0 ${getCategoryAccentBarClass(
-                            section.category
-                          )}`}
-                        />
-                        <span className="text-[11px] font-bold text-zinc-600 uppercase tracking-wide">
-                          {section.category}
-                        </span>
-                        <span className="text-[11px] text-zinc-400 font-medium">
-                          {section.items.length}
-                        </span>
-                        <motion.span
-                          animate={{
-                            rotate: collapsedSections.includes(section.category) ? -90 : 0,
-                          }}
-                          transition={motionConfig.spring}
-                          className="ml-auto text-zinc-400"
+                        {/* Header do Accordion da Categoria com Faixa Unificada e Seta Circular */}
+                        <button
+                          type="button"
+                          onClick={() => toggleSectionCollapse(section.category)}
+                          aria-expanded={!isCollapsed}
+                          className={`w-full flex items-center justify-between gap-2 border cursor-pointer transition-all duration-200 group ${
+                            isCollapsed
+                              ? 'py-1 px-2.5 rounded-lg opacity-90'
+                              : 'py-1.5 px-2.5 rounded-xl'
+                          } ${getCategoryHeaderClass(section.category)}`}
                         >
-                          <ChevronDown className="w-3.5 h-3.5" />
-                        </motion.span>
-                      </button>
-
-                      <AnimatePresence mode="popLayout" initial={false}>
-                        {!collapsedSections.includes(section.category) &&
-                          section.items.map((item) => (
-                            <ListItemCard
-                              key={item.id}
-                              item={item}
-                              listId={list.id}
-                              onEditItem={onEditItem}
-                              onRemoveItem={(lId, iId) => {
-                                onRemoveItem(lId, iId);
-                                showToast(`"${item.name}" removido da lista`);
-                              }}
-                              getCategoryBadgeStyle={getCategoryBadgeStyle}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`w-1 ${
+                                isCollapsed ? 'h-3.5' : 'h-4'
+                              } rounded-full shrink-0 transition-all duration-200 ${getCategoryAccentBarClass(
+                                section.category
+                              )}`}
                             />
-                          ))}
-                      </AnimatePresence>
-                    </motion.div>
-                  ))
+                            <span
+                              className={`${
+                                isCollapsed ? 'text-[11px]' : 'text-xs'
+                              } font-bold uppercase tracking-wide truncate transition-all duration-200`}
+                            >
+                              {section.category}
+                            </span>
+                            <span
+                              className={`bg-white text-zinc-800 font-bold shadow-xs rounded-full shrink-0 transition-all duration-200 ${
+                                isCollapsed
+                                  ? 'px-1.5 py-0 text-[10px]'
+                                  : 'px-1.5 py-0.5 text-[11px]'
+                              }`}
+                            >
+                              {section.items.length}
+                            </span>
+                          </div>
+
+                          <span
+                            className={`${
+                              isCollapsed ? 'w-5 h-5' : 'w-6 h-6'
+                            } rounded-full bg-white shadow-sm border border-zinc-200/80 flex items-center justify-center text-zinc-700 font-bold shrink-0 ml-auto transition-all duration-200`}
+                          >
+                            <ChevronDown
+                              className={`${
+                                isCollapsed ? 'w-3 h-3 -rotate-90' : 'w-3.5 h-3.5 rotate-0'
+                              } stroke-[2.5] transition-all duration-200`}
+                            />
+                          </span>
+                        </button>
+
+                        <AnimatePresence mode="popLayout" initial={false}>
+                          {!isCollapsed &&
+                            section.items.map((item) => (
+                              <ListItemCard
+                                key={item.id}
+                                item={item}
+                                listId={list.id}
+                                onEditItem={onEditItem}
+                                onRemoveItem={(lId, iId) => {
+                                  onRemoveItem(lId, iId);
+                                  showToast(`"${item.name}" removido da lista`);
+                                }}
+                                getCategoryBadgeStyle={getCategoryBadgeStyle}
+                              />
+                            ))}
+                        </AnimatePresence>
+                      </motion.div>
+                    );
+                  })
                 )}
               </AnimatePresence>
             </div>
