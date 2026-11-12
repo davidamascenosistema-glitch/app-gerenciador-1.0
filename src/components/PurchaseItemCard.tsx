@@ -718,7 +718,7 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
               }`}
             />
             <span className="text-[10.5px] sm:text-[11px] font-bold tracking-tight whitespace-nowrap">
-              {item.isWeighted ? 'Peso (kg)' : '• Unidade'}
+              {item.isWeighted ? 'Peso (kg)' : 'Unidade'}
             </span>
           </motion.button>
         </div>
@@ -808,16 +808,16 @@ export const PurchaseItemCard: React.FC<PurchaseItemCardProps> = ({
           const isForceHighlighted = highlightMissingPrice && isMissingPrice;
 
           return (
-            <div className="flex flex-col min-w-0 ml-2">
+            <div className="flex flex-col min-w-0 ml-1">
               <label
-                className={`flex items-center text-[9.5px] uppercase tracking-wider mb-0.5 truncate ml-1 transition-colors duration-200 ${
+                className={`flex items-center text-[9.5px] uppercase tracking-tight mb-0.5 whitespace-nowrap transition-colors duration-200 ${
                   isMissingPrice ? 'text-rose-600 font-bold' : 'text-zinc-400 font-bold'
                 }`}
               >
                 {isMissingPrice && (
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse inline-block mr-1 shrink-0" />
                 )}
-                <span>{item.isWeighted ? 'Preço/kg' : 'Preço/un'}</span>
+                <span className="whitespace-nowrap">{item.isWeighted ? 'Preço/kg' : 'Preço/un'}</span>
               </label>
               <div
                 className={`h-8 sm:h-8.5 w-full min-w-[70px] flex items-center rounded-lg pl-2 pr-2 ml-[3px] mr-0 transition-all duration-200 ${

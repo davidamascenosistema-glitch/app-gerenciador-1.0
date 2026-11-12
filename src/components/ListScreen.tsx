@@ -162,6 +162,7 @@ interface ListScreenProps {
   onSaveList?: (list: List) => Promise<boolean | void> | void;
   onUpdateName: (listId: string, name: string) => void;
   onAddItem: (listId: string, itemData: Omit<ListItem, 'id'>) => void;
+  onAddItemsBatch?: (listId: string, itemsData: Array<Omit<ListItem, 'id'>>) => Promise<void> | void;
   onEditItem: (listId: string, itemId: string, updates: Partial<ListItem>) => void;
   onRemoveItem: (listId: string, itemId: string) => void;
   onDeleteList: (listId: string) => void;
@@ -176,6 +177,7 @@ export function ListScreen({
   onSaveList,
   onUpdateName,
   onAddItem,
+  onAddItemsBatch,
   onEditItem,
   onRemoveItem,
   onDeleteList,
@@ -635,21 +637,29 @@ export function ListScreen({
     showToast(`"${safeName}" adicionado à lista`);
   };
 
-  // Adicionar em lote
+  // Adicionar em lote com persistência imediata em list_items
   const handleSubmitBatch = (batchText: string) => {
     const parsed = parseBatchItemsInput(batchText);
     if (parsed.length === 0) return;
 
-    parsed.forEach((item) => {
+    const batchItems: Array<Omit<ListItem, 'id'>> = parsed.map((item) => {
       const isWeighted = Boolean(item.isWeighted);
-      onAddItem(list.id, {
+      return {
         name: item.name,
         category: item.category || 'Geral',
         quantity: item.quantity || 1,
         isWeighted,
-        weight: isWeighted ? 1 : undefined,
-      });
+        weight: isWeighted ? (item.quantity || 1) : undefined,
+      };
     });
+
+    if (onAddItemsBatch) {
+      onAddItemsBatch(list.id, batchItems);
+    } else {
+      batchItems.forEach((item) => {
+        onAddItem(list.id, item);
+      });
+    }
 
     showToast(
       `${parsed.length} ${parsed.length === 1 ? 'item adicionado' : 'itens adicionados'} à lista`
@@ -986,7 +996,7 @@ export function ListScreen({
           className="bg-emerald-50 border-2 border-emerald-500/80 text-emerald-800 font-semibold rounded-xl px-4 py-2.5 flex items-center justify-center gap-2 shadow-sm w-full mb-3 hover:bg-emerald-100/80 active:scale-[0.99] transition-all cursor-pointer"
         >
           <Plus className="w-4 h-4 text-emerald-700 stroke-[2.5]" />
-          <span>+ Adicionar em Lote</span>
+          <span>Adicionar em Lote</span>
         </button>
 
         <div className="space-y-3">

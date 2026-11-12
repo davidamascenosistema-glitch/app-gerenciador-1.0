@@ -234,6 +234,7 @@ function MainApp() {
         }}
         onUpdateName={purchasesHook.updatePurchaseName}
         onAddItem={purchasesHook.addItemToPurchase}
+        onImportItems={purchasesHook.importItemsToPurchase}
         onEditItem={purchasesHook.editItemInPurchase}
         onRemoveItem={purchasesHook.removeItemFromPurchase}
         onToggleBought={purchasesHook.toggleItemBought}
@@ -259,6 +260,7 @@ function MainApp() {
         }}
         onUpdateName={listsHook.updateListName}
         onAddItem={listsHook.addItemToList}
+        onAddItemsBatch={listsHook.addItemsBatchToList}
         onEditItem={listsHook.editListItem}
         onRemoveItem={listsHook.removeItemFromList}
         onDeleteList={(id) => {

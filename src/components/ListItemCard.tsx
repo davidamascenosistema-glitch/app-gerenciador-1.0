@@ -407,7 +407,7 @@ export const ListItemCard: React.FC<ListItemCardProps> = ({
               }`}
             />
             <span className="text-[11px] font-bold tracking-tight whitespace-nowrap">
-              {item.isWeighted ? 'Peso (kg)' : '• Unidade'}
+              {item.isWeighted ? 'Peso (kg)' : 'Unidade'}
             </span>
           </motion.button>
         </div>

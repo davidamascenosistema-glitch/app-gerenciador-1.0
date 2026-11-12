@@ -173,6 +173,10 @@ interface PurchaseScreenProps {
   onDiscardPurchase?: (purchaseId: string) => void;
   onUpdateName?: (purchaseId: string, name: string) => void;
   onAddItem?: (purchaseId: string, itemData: Omit<Item, 'id' | 'bought'> & { bought?: boolean }) => void;
+  onImportItems?: (
+    purchaseId: string,
+    itemsData: Array<Omit<Item, 'id' | 'bought'> & { bought?: boolean }>
+  ) => Promise<void> | void;
   onEditItem?: (purchaseId: string, itemId: string, updatedData: Partial<Omit<Item, 'id'>>) => void;
   onRemoveItem?: (purchaseId: string, itemId: string) => void;
   onToggleBought?: (purchaseId: string, itemId: string) => void;
@@ -188,6 +192,7 @@ export function PurchaseScreen({
   onDiscardPurchase,
   onUpdateName,
   onAddItem,
+  onImportItems,
   onEditItem,
   onRemoveItem,
   onToggleBought,
@@ -714,7 +719,7 @@ export function PurchaseScreen({
   };
 
   const handleImportList = (list: List) => {
-    if (!purchase || !onAddItem) return;
+    if (!purchase || (!onImportItems && !onAddItem)) return;
     const itemsToImport = list.items || [];
     if (itemsToImport.length === 0) {
       showToast(`A lista "${list.name}" não possui itens cadastrados.`);
@@ -722,21 +727,28 @@ export function PurchaseScreen({
       return;
     }
 
-    itemsToImport.forEach((item) => {
-      onAddItem(purchase.id, {
+    const formattedItems: Array<Omit<Item, 'id' | 'bought'> & { bought?: boolean }> =
+      itemsToImport.map((item) => ({
         name: item.name,
         category: item.category || 'Geral',
-        quantity: item.quantity ?? (item.isWeighted ? 1 : 1),
+        quantity: Number(item.quantity) || 1,
         weight: item.weight,
-        isWeighted: Boolean(item.isWeighted),
-        price: item.price,
+        isWeighted: Boolean(item.isWeighted || (item as any).is_weighted),
+        price: item.price != null ? Number(item.price) : 0,
         bought: false,
         pricingModeSource: item.pricingModeSource ?? null,
+      }));
+
+    if (onImportItems) {
+      onImportItems(purchase.id, formattedItems);
+    } else if (onAddItem) {
+      formattedItems.forEach((item) => {
+        onAddItem(purchase.id, item);
       });
-    });
+    }
 
     setIsImportModalOpen(false);
-    const count = itemsToImport.length;
+    const count = formattedItems.length;
     showToast(`${count} ${count === 1 ? 'item importado' : 'itens importados'} da lista "${list.name}"!`);
   };
 
@@ -871,12 +883,18 @@ export function PurchaseScreen({
     const parsed = parseBatchItemsInput(batchText);
     if (parsed.length === 0) return;
 
-    parsed.forEach((item) => {
-      onAddItem(purchase.id, {
-        ...item,
-        bought: false,
+    const batchItems = parsed.map((item) => ({
+      ...item,
+      bought: false,
+    }));
+
+    if (onImportItems) {
+      onImportItems(purchase.id, batchItems);
+    } else if (onAddItem) {
+      batchItems.forEach((item) => {
+        onAddItem(purchase.id, item);
       });
-    });
+    }
 
     showToast(`${parsed.length} ${parsed.length === 1 ? 'item adicionado' : 'itens adicionados'} à lista`);
   };
