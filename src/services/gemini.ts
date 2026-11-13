@@ -1,3 +1,7 @@
+import { parseVoiceFallbackLocally } from '../utils/purchaseHelpers';
+
+export const GEMINI_VOICE_MODEL = 'gemini-2.5-flash';
+
 export interface ParsedVoiceItem {
   name: string;
   quantity: number;
@@ -14,6 +18,18 @@ export { parseReceiptImage, type ExtractedReceiptItem } from './geminiService';
  * Heurística de fallback em português caso a API do Gemini esteja temporariamente indisponível ou sem chave
  */
 function fallbackParseVoiceCommand(transcript: string): ParsedVoiceItem {
+  const local = parseVoiceFallbackLocally(transcript);
+  if (local) {
+    return {
+      name: local.name,
+      quantity: local.isWeighted ? 1 : local.quantity,
+      price: local.price ?? null,
+      is_weighted: local.isWeighted,
+      weight: local.isWeighted ? local.quantity : null,
+      category: local.category,
+    };
+  }
+
   const text = transcript.trim().toLowerCase();
 
   // Detecção de peso
@@ -100,14 +116,16 @@ function fallbackParseVoiceCommand(transcript: string): ParsedVoiceItem {
 }
 
 /**
- * Transforma a transcrição de voz em um item de compra estruturado usando o Google Gemini.
- *
- * @param transcript Frase capturada pelo microfone (ex: "10 pães 1 real", "dois leites de cinco e trinta")
- * @returns Item estruturado com nome, quantidade, preço (se houver), is_weighted, weight e categoria.
+ * Transforma a transcrição de voz em um item de compra estruturado usando o Google Gemini ('gemini-2.5-flash').
+ * Se estiver offline (!navigator.onLine), aciona imediatamente o parser local sem requisição de rede.
  */
 export async function parseVoiceCommand(transcript: string): Promise<ParsedVoiceItem> {
   if (!transcript || !transcript.trim()) {
     throw new Error('Transcrição de voz vazia.');
+  }
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return fallbackParseVoiceCommand(transcript);
   }
 
   const prompt = `
@@ -134,7 +152,6 @@ Frase: "${transcript}"
 JSON:
 `;
 
-  // Envia essa string prompt diretamente para a função de geração (rota backend /api/voice-parse)
   try {
     const endpoint = typeof window !== 'undefined' ? '/api/voice-parse' : 'http://localhost:3000/api/voice-parse';
     const res = await fetch(endpoint, {
@@ -142,7 +159,11 @@ JSON:
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ transcript: transcript.trim(), prompt }),
+      body: JSON.stringify({
+        transcript: transcript.trim(),
+        prompt,
+        model: GEMINI_VOICE_MODEL,
+      }),
     });
 
     if (res.ok) {
@@ -196,6 +217,5 @@ JSON:
     console.warn('Erro de rede ao chamar /api/voice-parse, utilizando heurística local:', apiErr);
   }
 
-  // Fallback heurístico inteligente em português caso o backend esteja inacessível
   return fallbackParseVoiceCommand(transcript);
 }

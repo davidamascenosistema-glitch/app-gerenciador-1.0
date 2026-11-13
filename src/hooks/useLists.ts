@@ -36,10 +36,16 @@ const saveToLocal = (newLists: List[]) => {
   }
 };
 
+const isValidUUID = (val?: string): boolean =>
+  Boolean(
+    val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
+  );
+
 export function useLists(userId?: string | null) {
   const [lists, setListsState] = useState<List[]>(loadLocalLists);
   const [loading, setLoading] = useState<boolean>(false);
   const listsRef = useRef<List[]>(lists);
+  const pendingListCreationsRef = useRef<Map<string, Promise<string>>>(new Map());
 
   const setLists = useCallback((action: List[] | ((prev: List[]) => List[])) => {
     setListsState((prev) => {
@@ -49,6 +55,11 @@ export function useLists(userId?: string | null) {
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    listsRef.current = lists;
+    saveToLocal(lists);
+  }, [lists]);
 
   /**
    * Converte db list item para ListItem
@@ -69,7 +80,7 @@ export function useLists(userId?: string | null) {
         : undefined;
 
     return {
-      id: String(dbItem.id),
+      id: String(dbItem.id || fallbackSource?.id || crypto.randomUUID()),
       listId: dbItem.list_id ? String(dbItem.list_id) : fallbackSource?.listId,
       name: dbItem.name || fallbackSource?.name || '',
       category: dbItem.category || fallbackSource?.category || 'Geral',
@@ -98,17 +109,27 @@ export function useLists(userId?: string | null) {
   };
 
   /**
-   * Helper resiliente para inserir itens em `list_items` no Supabase.
-   * Nunca envia `id` temporário, `user_id`, `price` ou `bought`.
-   * Tenta o payload com `is_weighted` e `weight`; se houver erro de coluna (PGRST204 / 42703),
-   * faz fallback imediato para `{ list_id, name, category, quantity }`.
+   * Helper resiliente para inserir itens em lote ou individualmente em `list_items` no Supabase.
+   * Inclui explicitamente o UUID v4 gerado no cliente (`id: item.id`) para que o estado do React
+   * e o banco compartilhem exatamente o mesmo ID desde o primeiro milissegundo.
    */
   const insertListItemsWithFallback = useCallback(
     async (targetListId: string, itemsToInsert: ListItem[]): Promise<ListItem[] | null> => {
       if (!isSupabaseConfigured() || itemsToInsert.length === 0) return null;
 
-      const fullPayloads = itemsToInsert.map((item) => ({
-        list_id: targetListId,
+      // Aguarda caso a lista pai ainda esteja sendo gravada na tabela `lists`
+      const pendingParent = pendingListCreationsRef.current.get(targetListId);
+      const resolvedListId = pendingParent ? await pendingParent : targetListId;
+
+      const normalizedItems = itemsToInsert.map((item) => ({
+        ...item,
+        id: isValidUUID(item.id) ? item.id : crypto.randomUUID(),
+        listId: resolvedListId,
+      }));
+
+      const fullPayloads = normalizedItems.map((item) => ({
+        id: item.id,
+        list_id: resolvedListId,
         name: sanitizeItemName(item.name) || 'Item',
         category: sanitizeItemCategory(item.category, 'Geral'),
         quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
@@ -128,11 +149,12 @@ export function useLists(userId?: string | null) {
 
       if (insertErr) {
         console.warn(
-          'Fallback em list_items: tentando inserir apenas colunas universais (list_id, name, category, quantity):',
+          'Fallback em list_items: tentando inserir colunas básicas com UUID do cliente (id, list_id, name, category, quantity):',
           insertErr?.message || insertErr
         );
-        const minimalPayloads = itemsToInsert.map((item) => ({
-          list_id: targetListId,
+        const minimalPayloads = normalizedItems.map((item) => ({
+          id: item.id,
+          list_id: resolvedListId,
           name: sanitizeItemName(item.name) || 'Item',
           category: sanitizeItemCategory(item.category, 'Geral'),
           quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
@@ -148,17 +170,33 @@ export function useLists(userId?: string | null) {
       }
 
       if (insertErr) {
-        console.error('Erro ao inserir itens na tabela list_items do Supabase:', insertErr);
-        return null;
+        // Último fallback caso algum ID já exista (upsert)
+        const minimalPayloads = normalizedItems.map((item) => ({
+          id: item.id,
+          list_id: resolvedListId,
+          name: sanitizeItemName(item.name) || 'Item',
+          category: sanitizeItemCategory(item.category, 'Geral'),
+          quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
+        }));
+        const upsertRes = await supabase
+          .from('list_items')
+          .upsert(minimalPayloads, { onConflict: 'id' })
+          .select();
+
+        if (upsertRes.error) {
+          console.error('Erro ao inserir itens na tabela list_items do Supabase:', insertErr);
+          return null;
+        }
+        insertedRows = upsertRes.data;
       }
 
       if (insertedRows && insertedRows.length > 0) {
         return insertedRows.map((row: any, idx: number) =>
-          mapDbListItemToAppItem(row, itemsToInsert[idx])
+          mapDbListItemToAppItem(row, normalizedItems[idx])
         );
       }
 
-      return null;
+      return normalizedItems;
     },
     []
   );
@@ -190,7 +228,6 @@ export function useLists(userId?: string | null) {
       }
 
       if (!listsData || listsData.length === 0) {
-        // Se o banco retornou 0 listas, mas o localStorage possui listas com itens, preserva-as
         if (localListsSnapshot.length > 0) {
           setLists(localListsSnapshot);
         } else {
@@ -235,16 +272,16 @@ export function useLists(userId?: string | null) {
         const dbItemsForList = itemsByListId.get(dbListId) || [];
         const appList = mapDbListToAppList(dbList, dbItemsForList);
 
+        const matchingLocal =
+          localListsSnapshot.find((loc) => String(loc.id) === dbListId) ||
+          listsRef.current.find((loc) => String(loc.id) === dbListId);
+
         // Proteção contra apagamento: se o banco trouxe 0 itens mas o localStorage tem itens para esta lista
         if (appList.items.length === 0) {
-          const matchingLocal =
-            localListsSnapshot.find((loc) => String(loc.id) === dbListId) ||
-            listsRef.current.find((loc) => String(loc.id) === dbListId);
-
           if (matchingLocal && matchingLocal.items && matchingLocal.items.length > 0) {
-            // Preserva metadados locais de peso/isWeighted e agenda auto-sync para o Supabase
             appList.items = matchingLocal.items.map((it) => ({
               ...it,
+              id: isValidUUID(it.id) ? it.id : crypto.randomUUID(),
               listId: dbListId,
             }));
             listsNeedingAutoSync.push({
@@ -252,27 +289,21 @@ export function useLists(userId?: string | null) {
               localItems: appList.items,
             });
           }
-        } else {
-          // Mescla metadados locais (isWeighted / weight) caso o banco não possua essas colunas
-          const matchingLocal =
-            localListsSnapshot.find((loc) => String(loc.id) === dbListId) ||
-            listsRef.current.find((loc) => String(loc.id) === dbListId);
-          if (matchingLocal && matchingLocal.items && matchingLocal.items.length > 0) {
-            appList.items = appList.items.map((dbIt) => {
-              const localMatch = matchingLocal.items.find(
-                (locIt) =>
-                  locIt.id === dbIt.id ||
-                  locIt.name.trim().toLowerCase() === dbIt.name.trim().toLowerCase()
-              );
-              if (!localMatch) return dbIt;
-              return {
-                ...dbIt,
-                isWeighted: dbIt.isWeighted || Boolean(localMatch.isWeighted),
-                weight: dbIt.weight ?? localMatch.weight,
-                pricingModeSource: dbIt.pricingModeSource ?? localMatch.pricingModeSource ?? null,
-              };
-            });
-          }
+        } else if (matchingLocal && matchingLocal.items && matchingLocal.items.length > 0) {
+          appList.items = appList.items.map((dbIt) => {
+            const localMatch = matchingLocal.items.find(
+              (locIt) =>
+                locIt.id === dbIt.id ||
+                locIt.name.trim().toLowerCase() === dbIt.name.trim().toLowerCase()
+            );
+            if (!localMatch) return dbIt;
+            return {
+              ...dbIt,
+              isWeighted: dbIt.isWeighted || Boolean(localMatch.isWeighted),
+              weight: dbIt.weight ?? localMatch.weight,
+              pricingModeSource: dbIt.pricingModeSource ?? localMatch.pricingModeSource ?? null,
+            };
+          });
         }
 
         return appList;
@@ -280,7 +311,7 @@ export function useLists(userId?: string | null) {
 
       setLists(loadedLists);
 
-      // Reenvia automaticamente para o Supabase quaisquer listas que estavam vazias no banco mas tinham itens no localStorage
+      // Auto-sync: reenvia automaticamente para o Supabase quaisquer listas que estavam vazias no banco mas tinham itens no localStorage
       if (listsNeedingAutoSync.length > 0) {
         for (const { listId, localItems } of listsNeedingAutoSync) {
           const syncedItems = await insertListItemsWithFallback(listId, localItems);
@@ -305,7 +336,7 @@ export function useLists(userId?: string | null) {
   }, [userId, fetchListsFromSupabase]);
 
   /**
-   * Cria uma nova lista planejada (template)
+   * Cria uma nova lista planejada com UUID v4 gerado no cliente e ordem estrita Pai -> Filhos
    */
   const createList = async (params: CreateListParams | string): Promise<List> => {
     const rawName = typeof params === 'string' ? params : (params?.name || '');
@@ -316,12 +347,12 @@ export function useLists(userId?: string | null) {
     const finalName = listName;
     const initialItems = typeof params === 'object' && params.items ? params.items : [];
 
-    const tempListId = crypto.randomUUID();
+    const newListId = crypto.randomUUID();
     const now = new Date().toISOString();
 
     const formattedItems: ListItem[] = initialItems.map((item) => ({
-      id: `temp-${crypto.randomUUID()}`,
-      listId: tempListId,
+      id: isValidUUID((item as any).id) ? (item as any).id : crypto.randomUUID(),
+      listId: newListId,
       name: item.name ? item.name.trim() : 'Item',
       category: item.category || 'Geral',
       quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
@@ -331,7 +362,7 @@ export function useLists(userId?: string | null) {
     }));
 
     const newList: List = {
-      id: tempListId,
+      id: newListId,
       name: finalName,
       createdAt: now,
       items: formattedItems,
@@ -340,50 +371,64 @@ export function useLists(userId?: string | null) {
     setLists((prev) => [newList, ...prev]);
 
     if (isSupabaseConfigured() && userId) {
-      try {
-        let actualId: string = tempListId;
-        let listSavedSuccessfully = false;
+      const parentCreationPromise = (async (): Promise<string> => {
+        try {
+          let actualId: string = newListId;
 
-        const { data: insertedWithId, error: errWithId } = await supabase
-          .from('lists')
-          .insert({
-            id: tempListId,
-            name: finalName,
-            user_id: userId,
-          })
-          .select('id');
-
-        if (!errWithId && insertedWithId && insertedWithId[0]?.id) {
-          listSavedSuccessfully = true;
-          actualId = String(insertedWithId[0].id);
-        } else {
-          const { data: insertedWithoutId, error: errWithoutId } = await supabase
+          // 1. Grava primeiro na tabela pai `lists` com o UUID gerado no cliente
+          const { data: insertedWithId, error: errWithId } = await supabase
             .from('lists')
             .insert({
+              id: newListId,
               name: finalName,
               user_id: userId,
             })
             .select('id');
 
-          if (!errWithoutId && insertedWithoutId && insertedWithoutId[0]?.id) {
-            listSavedSuccessfully = true;
-            actualId = String(insertedWithoutId[0].id);
+          if (!errWithId && insertedWithId && insertedWithId[0]?.id) {
+            actualId = String(insertedWithId[0].id);
           } else {
-            console.error('Erro ao criar lista na tabela lists do Supabase:', errWithoutId || errWithId);
+            const { data: insertedWithoutId, error: errWithoutId } = await supabase
+              .from('lists')
+              .insert({
+                name: finalName,
+                user_id: userId,
+              })
+              .select('id');
+
+            if (!errWithoutId && insertedWithoutId && insertedWithoutId[0]?.id) {
+              actualId = String(insertedWithoutId[0].id);
+            } else {
+              console.error(
+                'Erro ao criar lista na tabela lists do Supabase:',
+                errWithoutId || errWithId
+              );
+            }
           }
-        }
 
-        if (listSavedSuccessfully && actualId !== tempListId) {
-          newList.id = actualId;
-          formattedItems.forEach((it) => {
-            it.listId = actualId;
-          });
-          setLists((prev) =>
-            prev.map((l) => (l.id === tempListId ? { ...newList, id: actualId } : l))
-          );
-        }
+          if (actualId !== newListId) {
+            newList.id = actualId;
+            formattedItems.forEach((it) => {
+              it.listId = actualId;
+            });
+            setLists((prev) =>
+              prev.map((l) => (l.id === newListId ? { ...newList, id: actualId } : l))
+            );
+          }
 
-        if (listSavedSuccessfully && formattedItems.length > 0) {
+          return actualId;
+        } finally {
+          pendingListCreationsRef.current.delete(newListId);
+        }
+      })();
+
+      pendingListCreationsRef.current.set(newListId, parentCreationPromise);
+
+      try {
+        // 2. Aguarda obrigatoriamente a gravação na tabela pai `lists` antes de inserir os itens em `list_items`
+        const actualId = await parentCreationPromise;
+
+        if (formattedItems.length > 0) {
           const syncedItems = await insertListItemsWithFallback(actualId, formattedItems);
           if (syncedItems && syncedItems.length > 0) {
             newList.items = syncedItems;
@@ -438,18 +483,17 @@ export function useLists(userId?: string | null) {
   };
 
   /**
-   * Adiciona um item a uma lista existente e grava imediatamente em list_items no Supabase,
-   * substituindo o ID temporário pelo UUID real retornado pelo banco.
+   * Adiciona um item individual a uma lista existente usando UUID v4 gerado no cliente
    */
   const addItemToList = async (
     listId: string,
-    itemData: Omit<ListItem, 'id'>
+    itemData: Omit<ListItem, 'id'> & { id?: string }
   ): Promise<void> => {
     const safeName = sanitizeItemName(itemData.name);
     if (!safeName) return;
     const safeCategory = sanitizeItemCategory(itemData.category, 'Geral');
 
-    const tempItemId = `temp-${crypto.randomUUID()}`;
+    const newItemId = isValidUUID(itemData.id) ? itemData.id! : crypto.randomUUID();
     const isWeighted = Boolean(itemData.isWeighted);
 
     let parsedWeight: number | undefined = undefined;
@@ -462,7 +506,7 @@ export function useLists(userId?: string | null) {
     const validQty = Math.max(1, Math.round(validateItemQuantity(itemData.quantity, 1)));
 
     const newItem: ListItem = {
-      id: tempItemId,
+      id: newItemId,
       listId,
       name: safeName,
       category: safeCategory,
@@ -485,7 +529,7 @@ export function useLists(userId?: string | null) {
     if (isSupabaseConfigured()) {
       try {
         const insertedItems = await insertListItemsWithFallback(listId, [newItem]);
-        if (insertedItems && insertedItems[0]?.id) {
+        if (insertedItems && insertedItems[0]?.id && insertedItems[0].id !== newItemId) {
           const officialItem = insertedItems[0];
           setLists((prev) =>
             prev.map((l) => {
@@ -493,7 +537,7 @@ export function useLists(userId?: string | null) {
               return {
                 ...l,
                 items: l.items.map((it) =>
-                  it.id === tempItemId ? { ...it, ...officialItem, id: officialItem.id } : it
+                  it.id === newItemId ? { ...it, ...officialItem, id: officialItem.id } : it
                 ),
               };
             })
@@ -506,12 +550,12 @@ export function useLists(userId?: string | null) {
   };
 
   /**
-   * Adiciona múltiplos itens em lote a uma lista existente e faz bulk insert em list_items,
-   * substituindo todos os IDs temporários pelos UUIDs reais do Supabase.
+   * Adiciona múltiplos itens em lote a uma lista existente com 1 único bulk insert em `list_items`
+   * e UUIDs v4 gerados no cliente.
    */
   const addItemsBatchToList = async (
     listId: string,
-    itemsData: Array<Omit<ListItem, 'id'>>
+    itemsData: Array<Omit<ListItem, 'id'> & { id?: string }>
   ): Promise<void> => {
     if (!itemsData || itemsData.length === 0) return;
 
@@ -530,7 +574,7 @@ export function useLists(userId?: string | null) {
           : undefined;
 
       preparedItems.push({
-        id: `temp-${crypto.randomUUID()}`,
+        id: isValidUUID(itemData.id) ? itemData.id! : crypto.randomUUID(),
         listId,
         name: safeName,
         category: safeCategory,
@@ -543,6 +587,7 @@ export function useLists(userId?: string | null) {
 
     if (preparedItems.length === 0) return;
 
+    // Atualiza o estado do React e localStorage de uma só vez
     setLists((prev) =>
       prev.map((l) => {
         if (l.id !== listId) return l;
@@ -553,21 +598,21 @@ export function useLists(userId?: string | null) {
       })
     );
 
+    // Faz 1 único comando bulk insert no Supabase
     if (isSupabaseConfigured()) {
       try {
         const insertedItems = await insertListItemsWithFallback(listId, preparedItems);
         if (insertedItems && insertedItems.length > 0) {
-          const tempIds = new Set(preparedItems.map((p) => p.id));
+          const clientIds = preparedItems.map((p) => p.id);
           setLists((prev) =>
             prev.map((l) => {
               if (l.id !== listId) return l;
-              let replaceIdx = 0;
               return {
                 ...l,
                 items: l.items.map((it) => {
-                  if (tempIds.has(it.id) && insertedItems[replaceIdx]) {
-                    const official = insertedItems[replaceIdx++];
-                    return { ...it, ...official, id: official.id };
+                  const idx = clientIds.indexOf(it.id);
+                  if (idx !== -1 && insertedItems[idx]) {
+                    return { ...it, ...insertedItems[idx], id: insertedItems[idx].id };
                   }
                   return it;
                 }),
@@ -624,8 +669,6 @@ export function useLists(userId?: string | null) {
       sanitizedUpdates.quantity = Math.max(1, Math.round(validateItemQuantity(updates.quantity, 1)));
     }
 
-    let updatedItemSnapshot: ListItem | null = null;
-
     setLists((prev) =>
       prev.map((l) => {
         if (l.id !== listId) return l;
@@ -643,7 +686,6 @@ export function useLists(userId?: string | null) {
               updatedItem.weight =
                 updatedItem.quantity && updatedItem.quantity > 0 ? updatedItem.quantity : 1;
             }
-            updatedItemSnapshot = updatedItem;
             return updatedItem;
           }),
         };
@@ -652,30 +694,12 @@ export function useLists(userId?: string | null) {
 
     if (isSupabaseConfigured()) {
       try {
-        // Se o item ainda tinha um ID temporário, insere-o no banco e substitui pelo UUID real
-        if (String(itemId).startsWith('temp-') && updatedItemSnapshot) {
-          const inserted = await insertListItemsWithFallback(listId, [updatedItemSnapshot]);
-          if (inserted && inserted[0]?.id) {
-            const official = inserted[0];
-            setLists((prev) =>
-              prev.map((l) => {
-                if (l.id !== listId) return l;
-                return {
-                  ...l,
-                  items: l.items.map((it) =>
-                    it.id === itemId ? { ...it, ...official, id: official.id } : it
-                  ),
-                };
-              })
-            );
-          }
-          return;
-        }
-
         const fullDbUpdates: Record<string, any> = {};
         if (sanitizedUpdates.name !== undefined) fullDbUpdates.name = sanitizedUpdates.name;
-        if (sanitizedUpdates.category !== undefined) fullDbUpdates.category = sanitizedUpdates.category;
-        if (sanitizedUpdates.quantity !== undefined) fullDbUpdates.quantity = sanitizedUpdates.quantity;
+        if (sanitizedUpdates.category !== undefined)
+          fullDbUpdates.category = sanitizedUpdates.category;
+        if (sanitizedUpdates.quantity !== undefined)
+          fullDbUpdates.quantity = sanitizedUpdates.quantity;
         if (sanitizedUpdates.isWeighted !== undefined) {
           fullDbUpdates.is_weighted = sanitizedUpdates.isWeighted;
         }
@@ -720,10 +744,6 @@ export function useLists(userId?: string | null) {
    * Remove um item de uma lista existente
    */
   const removeItemFromList = async (listId: string, itemId: string): Promise<void> => {
-    const itemToRemove = listsRef.current
-      .find((l) => l.id === listId)
-      ?.items.find((i) => i.id === itemId);
-
     setLists((prev) =>
       prev.map((l) => {
         if (l.id !== listId) return l;
@@ -736,17 +756,9 @@ export function useLists(userId?: string | null) {
 
     if (isSupabaseConfigured()) {
       try {
-        if (!String(itemId).startsWith('temp-')) {
-          const { error } = await supabase.from('list_items').delete().eq('id', itemId);
-          if (error) {
-            console.error('Erro ao remover item de list_items no Supabase:', error);
-          }
-        } else if (itemToRemove?.name) {
-          await supabase
-            .from('list_items')
-            .delete()
-            .eq('list_id', listId)
-            .eq('name', itemToRemove.name);
+        const { error } = await supabase.from('list_items').delete().eq('id', itemId);
+        if (error) {
+          console.error('Erro ao remover item de list_items no Supabase:', error);
         }
       } catch (err) {
         console.error('Exceção ao remover item da lista no Supabase:', err);
@@ -760,39 +772,44 @@ export function useLists(userId?: string | null) {
 
   /**
    * Sincroniza 100% dos itens da lista na tabela 'list_items' do Supabase (ao clicar em Salvar).
-   * Apaga os list_items antigos daquele list_id e insere a lista atualizada com .insert().select(),
-   * substituindo os IDs temporários pelos UUIDs reais do banco.
    */
   const saveListItems = async (listId: string, itemsToSave: ListItem[]): Promise<boolean> => {
-    // Atualiza imediatamente o localStorage e o estado
+    const normalizedItems = (itemsToSave || []).map((it) => ({
+      ...it,
+      id: isValidUUID(it.id) ? it.id : crypto.randomUUID(),
+      listId,
+    }));
+
     setLists((prev) =>
-      prev.map((l) => (l.id === listId ? { ...l, items: itemsToSave } : l))
+      prev.map((l) => (l.id === listId ? { ...l, items: normalizedItems } : l))
     );
 
     if (!isSupabaseConfigured()) return true;
 
     try {
-      // Remove os list_items antigos daquele list_id para sincronização limpa
+      const pendingParent = pendingListCreationsRef.current.get(listId);
+      const resolvedListId = pendingParent ? await pendingParent : listId;
+
       const { error: deleteErr } = await supabase
         .from('list_items')
         .delete()
-        .eq('list_id', listId);
+        .eq('list_id', resolvedListId);
 
       if (deleteErr) {
         console.error('Erro ao limpar list_items anteriores antes de sincronizar:', deleteErr);
       }
 
-      if (!itemsToSave || itemsToSave.length === 0) {
+      if (normalizedItems.length === 0) {
         return true;
       }
 
-      const syncedItems = await insertListItemsWithFallback(listId, itemsToSave);
+      const syncedItems = await insertListItemsWithFallback(resolvedListId, normalizedItems);
       if (!syncedItems) {
         return false;
       }
 
       setLists((prev) =>
-        prev.map((l) => (l.id === listId ? { ...l, items: syncedItems } : l))
+        prev.map((l) => (l.id === resolvedListId ? { ...l, items: syncedItems } : l))
       );
 
       return true;

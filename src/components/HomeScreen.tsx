@@ -1,17 +1,20 @@
 import React, { useState, useMemo } from 'react';
-import { 
+import {
   Settings,
   Star,
   MessageSquare,
   TrendingUp,
   ShoppingCart,
-  DollarSign,
+  ShoppingBag,
   ClipboardList,
   X,
   Check,
   Sparkles,
-  BarChart2,
-  ArrowRight
+  BarChart3,
+  ArrowRight,
+  CheckCircle2,
+  Receipt,
+  Store,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, AreaChart, Area } from 'recharts';
@@ -21,6 +24,7 @@ import { calculatePurchaseTotal, formatCurrencyBRL } from '../utils/purchaseHelp
 import { Purchase, List } from '../types';
 import { useToast } from './Toast';
 import { User } from '@supabase/supabase-js';
+import { AnimatedCurrency } from './AnimatedCurrency';
 import {
   FeedbackModal,
   FeedbackCategory,
@@ -36,7 +40,11 @@ interface HomeScreenProps {
   onNavigateToLists?: () => void;
   onOpenList?: (listId: string) => void;
   onNavigateToPurchase?: (purchaseId: string) => void;
-  onNavigateToAnalytics?: () => void;
+  onStartNewPurchase?: () => void;
+  onStartPurchaseFromList?: (list: List) => void;
+  onSelectFinishedPurchase?: (purchase: Purchase) => void;
+  onNavigateToHistory?: () => void;
+  onNavigateToAnalytics?: (period?: 'week' | 'month' | 'year' | 'all') => void;
   onNavigateToProfile?: () => void;
   initialToastMessage?: string;
 }
@@ -49,6 +57,10 @@ export function HomeScreen({
   onNavigateToLists,
   onOpenList,
   onNavigateToPurchase,
+  onStartNewPurchase,
+  onStartPurchaseFromList,
+  onSelectFinishedPurchase,
+  onNavigateToHistory,
   onNavigateToAnalytics,
   onNavigateToProfile,
   initialToastMessage,
@@ -57,10 +69,12 @@ export function HomeScreen({
   const localPurchasesHook = usePurchases(user?.id);
   const purchasesHook = externalPurchasesHook || localPurchasesHook;
 
-  const { 
-    getPendingPurchases, 
-    getFinishedPurchases, 
-    discardPurchase 
+  const {
+    getPendingPurchases,
+    getFinishedPurchases,
+    createPurchase,
+    createPurchaseFromList,
+    discardPurchase,
   } = purchasesHook;
 
   const { showToast } = useToast();
@@ -147,12 +161,18 @@ export function HomeScreen({
   }, [initialToastMessage, showToast]);
 
   // Identificação do Usuário
-  const userName = 
-    user?.user_metadata?.name || 
-    user?.user_metadata?.full_name || 
+  const userName =
+    user?.user_metadata?.name ||
+    user?.user_metadata?.full_name ||
     (user?.email ? user.email.split('@')[0] : 'Usuário');
-    
-  const userInitial = (user?.email || userName || 'U').charAt(0).toUpperCase();
+
+  const shortUserName = useMemo(() => {
+    const clean = String(userName || 'Usuário').trim();
+    if (!clean) return 'Usuário';
+    return clean.split(/\s+/)[0];
+  }, [userName]);
+
+  const userInitial = (userName || user?.email || 'U').charAt(0).toUpperCase();
 
   // Compras pendentes e finalizadas
   const pendingPurchases = (getPendingPurchases() || []).sort((a, b) => {
@@ -161,21 +181,22 @@ export function HomeScreen({
     return dateB - dateA;
   });
 
-  const activePendingPurchase = pendingPurchases.length > 0 ? pendingPurchases[0] : null;
+  const pendingPurchase = pendingPurchases.length > 0 ? pendingPurchases[0] : null;
   const finishedPurchases = externalFinishedPurchases || getFinishedPurchases() || [];
+  const latestFinishedPurchase = finishedPurchases.length > 0 ? finishedPurchases[0] : null;
 
-  // Dados para o Mini Dashboard (Sparkline de Gastos Recentes)
+  // Dados para o Mini Gráfico (Sparkline de Evolução)
   const sparklineData = useMemo(() => {
     if (!finishedPurchases || finishedPurchases.length === 0) return [];
-    
-    // Ordenar compras por data mais antiga para mais recente para desenhar a linha do tempo cronológica
+
     const sorted = [...finishedPurchases].sort((a, b) => {
-      const dateA = a.finishedAt || a.createdAt ? new Date(a.finishedAt || a.createdAt || '').getTime() : 0;
-      const dateB = b.finishedAt || b.createdAt ? new Date(b.finishedAt || b.createdAt || '').getTime() : 0;
+      const dateA =
+        a.finishedAt || a.createdAt ? new Date(a.finishedAt || a.createdAt || '').getTime() : 0;
+      const dateB =
+        b.finishedAt || b.createdAt ? new Date(b.finishedAt || b.createdAt || '').getTime() : 0;
       return dateA - dateB;
     });
 
-    // Pegar até as últimas 8 compras finalizadas
     const recent = sorted.slice(-8);
 
     return recent.map((p, idx) => ({
@@ -185,13 +206,7 @@ export function HomeScreen({
     }));
   }, [finishedPurchases]);
 
-  // Somatório das compras recentes (ou do mês atual se houver)
-  const recentPurchasesTotal = useMemo(() => {
-    if (sparklineData.length === 0) return 0;
-    return sparklineData.reduce((acc, item) => acc + item.total, 0);
-  }, [sparklineData]);
-
-  // Cálculo das estatísticas com base no filtro de período
+  // Cálculo das estatísticas com base no filtro de período (Semana / Mês / Ano)
   const stats = useMemo(() => {
     const now = new Date();
     const filtered = finishedPurchases.filter((p) => {
@@ -215,309 +230,502 @@ export function HomeScreen({
     const count = filtered.length;
     const avg = count > 0 ? total / count : 0;
 
-    return { total, count, avg };
+    // Caso exista apenas 1 compra no período filtrado, calcula a divisão por categorias dessa compra
+    let singlePurchaseCategories: Array<{
+      category: string;
+      amount: number;
+      percent: number;
+      color: string;
+    }> = [];
+
+    if (count === 1) {
+      const singlePurchase = filtered[0];
+      const catMap: Record<string, number> = {};
+      let catTotal = 0;
+
+      for (const item of singlePurchase.items || []) {
+        if (!item) continue;
+        const unitMultiplier = item.isWeighted
+          ? Number(item.weight ?? item.quantity ?? 1)
+          : Number(item.quantity ?? 1);
+        const subtotal = (Number(item.price) || 0) * (unitMultiplier > 0 ? unitMultiplier : 1);
+        if (subtotal <= 0) continue;
+        const cat = (item.category && item.category.trim()) || 'Geral';
+        catMap[cat] = (catMap[cat] || 0) + subtotal;
+        catTotal += subtotal;
+      }
+
+      const categoryColors: Record<string, string> = {
+        Alimentos: '#10b981',
+        Mercearia: '#10b981',
+        Bebidas: '#0ea5e9',
+        Limpeza: '#06b6d4',
+        Higiene: '#8b5cf6',
+        Açougue: '#f43f5e',
+        'Frutas/Legumes': '#84cc16',
+        Hortifruti: '#14b8a6',
+        Frios: '#f97316',
+        Padaria: '#f59e0b',
+        Geral: '#64748b',
+      };
+      const fallbackColors = ['#10b981', '#0ea5e9', '#f59e0b', '#8b5cf6', '#f43f5e'];
+
+      singlePurchaseCategories = Object.entries(catMap)
+        .map(([category, amount], idx) => ({
+          category,
+          amount,
+          percent: catTotal > 0 ? Math.round((amount / catTotal) * 100) : 0,
+          color: categoryColors[category] || fallbackColors[idx % fallbackColors.length],
+        }))
+        .filter((c) => c.percent > 0)
+        .sort((a, b) => b.amount - a.amount);
+    }
+
+    return { total, count, avg, filtered, singlePurchaseCategories };
   }, [finishedPurchases, timeFilter]);
 
-  return (
-    <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 flex flex-col justify-between selection:bg-emerald-500 selection:text-white font-sans relative">
-      
-      {/* ========================================================================= */}
-      {/* 1. HEADER DE PERFIL (FUNDO VERDE ESCURO)                                   */}
-      {/* ========================================================================= */}
-      <header className="w-full bg-emerald-900 text-white rounded-b-3xl shadow-md relative overflow-hidden pb-6 pt-5 sm:pt-6 px-4">
-        {/* Subtle background glow effect */}
-        <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-emerald-700/30 blur-2xl pointer-events-none" />
-        <div className="absolute -bottom-10 -left-10 w-40 h-40 rounded-full bg-emerald-600/20 blur-xl pointer-events-none" />
+  const getMappedAnalyticsPeriod = (): 'week' | 'month' | 'year' => {
+    if (timeFilter === 'semana') return 'week';
+    if (timeFilter === 'ano') return 'year';
+    return 'month';
+  };
 
-        <div className="w-full max-w-md md:max-w-xl mx-auto relative z-10">
-          {/* Canto Superior Direito: Engrenagem (Settings) */}
-          <div className="flex justify-end mb-1">
+  // Handler para iniciar nova compra rapidamente quando não há compra em andamento
+  const handleQuickStartPurchase = () => {
+    if (onStartNewPurchase) {
+      onStartNewPurchase();
+      return;
+    }
+    pendingPurchases.forEach((p) => discardPurchase(p.id));
+    const created = createPurchase({
+      name: 'Nova Compra',
+      status: 'pending',
+      origin: 'list',
+      items: [],
+    });
+    onNavigateToPurchase?.(created.id);
+  };
+
+  // Handler para iniciar compra diretamente a partir de uma lista na seção "Minhas Listas"
+  const handleBuyFromList = (e: React.MouseEvent, list: List) => {
+    e.stopPropagation();
+    if (onStartPurchaseFromList) {
+      onStartPurchaseFromList(list);
+      return;
+    }
+    if (createPurchaseFromList && onNavigateToPurchase) {
+      pendingPurchases.forEach((p) => discardPurchase(p.id));
+      const created = createPurchaseFromList(list);
+      onNavigateToPurchase(created.id);
+      showToast(`Compra iniciada com a lista "${list.name}"!`);
+      return;
+    }
+    onOpenList?.(list.id);
+  };
+
+  // Métricas da compra em andamento (se existir)
+  const pendingTotalItems = pendingPurchase?.items ? pendingPurchase.items.length : 0;
+  const pendingBoughtItems = pendingPurchase?.items
+    ? pendingPurchase.items.filter((i) => i.bought).length
+    : 0;
+  const pendingProgressPercent =
+    pendingTotalItems > 0 ? Math.min(100, Math.round((pendingBoughtItems / pendingTotalItems) * 100)) : 0;
+  const pendingPartialTotal = pendingPurchase ? calculatePurchaseTotal(pendingPurchase) : 0;
+
+  return (
+    <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 flex flex-col selection:bg-emerald-500 selection:text-white font-sans relative pb-28">
+      {/* ========================================================================= */}
+      {/* 1. TOP BAR COMPACTA E ELEGANTE (FIXA NO TOPO)                             */}
+      {/* ========================================================================= */}
+      <header className="w-full bg-white/95 backdrop-blur-md border-b border-zinc-100 fixed top-0 left-0 right-0 z-30 shadow-2xs">
+        <div className="w-full max-w-md md:max-w-xl mx-auto px-4 pt-3.5 pb-3 flex items-center justify-between gap-2">
+          {/* Esquerda: Avatar + Saudação + Badge Seja Premium */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              onClick={onNavigateToProfile}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onNavigateToProfile?.();
+                }
+              }}
+              aria-label="Abrir perfil"
+              className="w-10 h-10 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shadow-xs shrink-0 select-none cursor-pointer active:scale-95 transition-transform"
+            >
+              {userInitial}
+            </div>
+
+            <div className="min-w-0 flex flex-col items-start">
+              <h1 className="text-sm font-bold text-zinc-900 truncate max-w-[180px] sm:max-w-[240px] leading-tight">
+                Olá, {shortUserName}
+              </h1>
+              <button
+                type="button"
+                onClick={() => showToast('EM BREVE')}
+                className="mt-0.5 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100/80 border border-amber-200/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1 transition-colors cursor-pointer active:scale-95"
+              >
+                <span>★ Seja Premium</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Direita: Botão Feedback + Botão Configurações/Perfil */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsFeedbackModalOpen(true)}
+              className="px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-zinc-600" />
+              <span>Feedback</span>
+            </button>
+
             <button
               type="button"
               onClick={onNavigateToProfile}
               aria-label="Configurações de Perfil"
-              className="w-10 h-10 rounded-xl bg-emerald-800/80 hover:bg-emerald-700 active:bg-emerald-600 text-emerald-100 hover:text-white flex items-center justify-center transition-colors cursor-pointer min-h-[44px] min-w-[44px] active:scale-95"
+              className="w-9 h-9 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 flex items-center justify-center transition-colors cursor-pointer active:scale-95"
             >
-              <Settings className="w-5 h-5" />
+              <Settings className="w-4 h-4" />
             </button>
-          </div>
-
-          {/* Centro: Avatar Circular e Nome */}
-          <div className="flex flex-col items-center text-center min-w-0 max-w-full">
-            <div className="w-16 h-16 rounded-full bg-white text-emerald-900 font-extrabold text-2xl flex items-center justify-center shadow-lg border-2 border-emerald-400/40 select-none">
-              {userInitial}
-            </div>
-            <h1 className="text-lg sm:text-xl font-bold text-white mt-2.5 tracking-tight leading-snug truncate max-w-full px-2">
-              {userName}
-            </h1>
-
-            {/* Dois botões menores centralizados */}
-            <div className="flex flex-col items-center space-y-1.5 mt-3">
-              {/* Botão Branco: Assinar Premium > */}
-              <button
-                type="button"
-                onClick={() => showToast('EM BREVE')}
-                className="bg-white hover:bg-zinc-100 active:scale-95 text-emerald-950 font-bold text-xs px-4 py-1.5 rounded-full shadow-sm flex items-center space-x-1.5 transition-all cursor-pointer min-h-[32px]"
-              >
-                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                <span>Assinar Premium &gt;</span>
-              </button>
-
-              {/* Botão Fantasma: Enviar Feedback */}
-              <button
-                type="button"
-                onClick={() => setIsFeedbackModalOpen(true)}
-                className="text-emerald-100/90 hover:text-white hover:bg-emerald-800/60 active:scale-95 font-semibold text-xs px-3 py-1 rounded-full transition-all flex items-center space-x-1.5 cursor-pointer min-h-[28px]"
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Enviar Feedback</span>
-              </button>
-            </div>
           </div>
         </div>
       </header>
 
       {/* ========================================================================= */}
-      {/* CONTEÚDO PRINCIPAL DO DASHBOARD                                            */}
+      {/* CONTEÚDO PRINCIPAL DO DASHBOARD                                           */}
       {/* ========================================================================= */}
-      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-4 pt-4 pb-28 sm:pb-32 flex flex-col space-y-5">
-
+      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-4 pt-[78px] flex flex-col space-y-4">
         {/* ========================================================================= */}
-        {/* MINI DASHBOARD / SPARKLINE (GASTOS RECENTES - ACESSO ÀS ANÁLISES)         */}
+        {/* 2. BLOCO DINÂMICO DE AÇÃO PRINCIPAL NO TOPO (PRIORIDADE OPERACIONAL)      */}
         {/* ========================================================================= */}
-        <motion.div
-          whileTap={motionConfig.shouldReduceMotion ? {} : { scale: 0.985 }}
-          onClick={() => {
-            if (onNavigateToAnalytics) {
-              onNavigateToAnalytics();
-            } else {
-              showToast('Acesse a aba Gerenciador para ver as Análises completas');
-            }
-          }}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onNavigateToAnalytics?.();
-            }
-          }}
-          className="w-full bg-gradient-to-br from-white to-emerald-50/50 hover:to-emerald-100/50 border border-emerald-100/90 rounded-2xl p-4 shadow-sm transition-all cursor-pointer relative overflow-hidden group focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-        >
-          {/* Fundo decorativo sutil */}
-          <div className="absolute top-0 right-0 -mt-3 -mr-3 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-emerald-500/10 transition-colors" />
-
-          <div className="flex items-start justify-between relative z-10">
-            <div className="flex-1 min-w-0 pr-3">
-              <div className="flex items-center space-x-1.5 text-zinc-500">
-                <BarChart2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">
-                  Gastos Recentes
-                </span>
-                <span className="inline-flex items-center text-[10px] font-semibold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded-full">
-                  Análises
-                </span>
-              </div>
-              <div className="mt-1 flex items-baseline space-x-2">
-                <span className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
-                  {formatCurrencyBRL(recentPurchasesTotal)}
-                </span>
-                {sparklineData.length > 0 && (
-                  <span className="text-[11px] font-medium text-zinc-400">
-                    últimas {sparklineData.length} {sparklineData.length === 1 ? 'compra' : 'compras'}
+        <section aria-label="Ação Principal">
+          {pendingPurchase ? (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-gradient-to-br from-emerald-600 via-emerald-600 to-teal-700 text-white rounded-2xl p-4 shadow-md shadow-emerald-900/10"
+            >
+              {/* Topo do card: Badge + Nome da compra/mercado */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <span className="inline-flex items-center text-[10px] font-extrabold uppercase tracking-wider bg-white/15 border border-white/20 px-2 py-0.5 rounded-full text-emerald-50">
+                    <span>COMPRA EM ANDAMENTO</span>
                   </span>
-                )}
-              </div>
-            </div>
+                  <h2 className="text-base sm:text-lg font-extrabold text-white mt-1.5 truncate leading-tight">
+                    {pendingPurchase.name || 'Compra em andamento'}
+                  </h2>
+                  {pendingPurchase.storeName && (
+                    <p className="text-xs text-emerald-100/90 font-medium flex items-center gap-1 mt-0.5 truncate">
+                      <Store className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{pendingPurchase.storeName}</span>
+                    </p>
+                  )}
+                </div>
 
-            <div className="flex items-center space-x-1 text-emerald-600 group-hover:text-emerald-700 font-semibold text-xs transition-colors shrink-0 pt-0.5">
-              <span>Ver painel</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-            </div>
-          </div>
-
-          {/* Minigráfico de Tendência (Sparkline) */}
-          <div className="mt-2.5 h-[60px] w-full relative">
-            {sparklineData.length > 1 ? (
-              <ResponsiveContainer width="100%" height={60}>
-                <AreaChart data={sparklineData} margin={{ top: 4, right: 2, left: 2, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="homeSparklineGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#059669" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#059669" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <Area
-                    type="monotone"
-                    dataKey="total"
-                    stroke="#059669"
-                    strokeWidth={2.5}
-                    fill="url(#homeSparklineGradient)"
-                    dot={false}
-                    activeDot={false}
-                    isAnimationActive={!motionConfig.shouldReduceMotion}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full w-full flex items-center justify-between text-zinc-400 text-xs px-1">
-                <div className="flex items-center space-x-1.5">
-                  <TrendingUp className="w-4 h-4 text-emerald-500/70" />
-                  <span className="text-[11px]">
-                    {sparklineData.length === 1
-                      ? 'Finalize mais compras para ver a curva de tendência'
-                      : 'Finalize compras para visualizar seus gráficos de gastos'}
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-100/80 block">
+                    Subtotal
+                  </span>
+                  <span className="text-base sm:text-lg font-extrabold text-white tracking-tight">
+                    <AnimatedCurrency value={pendingPartialTotal} />
                   </span>
                 </div>
               </div>
+
+              {/* Meio: Barra de progresso visual + X de Y itens no carrinho */}
+              <div className="mt-3">
+                <div className="bg-white/20 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-white h-full rounded-full transition-all duration-300"
+                    style={{ width: `${pendingProgressPercent}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Rodapé/Direita do card: Progresso textual + Botão Retomar Compra */}
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-emerald-50">
+                  {pendingBoughtItems} de {pendingTotalItems}{' '}
+                  {pendingTotalItems === 1 ? 'item' : 'itens'} no carrinho
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateToPurchase?.(pendingPurchase.id)}
+                  className="bg-white hover:bg-emerald-50 active:scale-95 text-emerald-800 font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs transition-all cursor-pointer shrink-0"
+                >
+                  Retomar Compra →
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2.5">
+              {/* Card 1: Nova Compra */}
+              <motion.button
+                type="button"
+                whileTap={motionConfig.tap.card}
+                onClick={handleQuickStartPurchase}
+                className="bg-white hover:bg-emerald-50/40 border border-zinc-200/90 hover:border-emerald-300 rounded-2xl p-3.5 text-left shadow-2xs transition-all cursor-pointer flex flex-col justify-between group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-emerald-100/80 text-emerald-700 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                  <ShoppingCart className="w-4 h-4" />
+                </div>
+                <div className="mt-3">
+                  <h2 className="text-sm font-bold text-zinc-900 group-hover:text-emerald-800 transition-colors leading-tight">
+                    Começar Compra
+                  </h2>
+                  <p className="text-[11px] text-zinc-500 font-medium mt-0.5 leading-snug">
+                    Do zero ou por voz
+                  </p>
+                </div>
+              </motion.button>
+
+              {/* Card 2: Planejar Lista */}
+              <motion.button
+                type="button"
+                whileTap={motionConfig.tap.card}
+                onClick={onNavigateToLists}
+                className="bg-white hover:bg-emerald-50/40 border border-zinc-200/90 hover:border-emerald-300 rounded-2xl p-3.5 text-left shadow-2xs transition-all cursor-pointer flex flex-col justify-between group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-zinc-100 text-emerald-700 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
+                  <ClipboardList className="w-4 h-4" />
+                </div>
+                <div className="mt-3">
+                  <h2 className="text-sm font-bold text-zinc-900 group-hover:text-emerald-800 transition-colors leading-tight">
+                    Minhas Listas
+                  </h2>
+                  <p className="text-[11px] text-zinc-500 font-medium mt-0.5 leading-snug">
+                    Criar ou usar molde
+                  </p>
+                </div>
+              </motion.button>
+            </div>
+          )}
+        </section>
+
+        {/* ========================================================================= */}
+        {/* 3. WIDGET UNIFICADO "RESUMO FINANCEIRO" (BENTO CARD ÚNICO)                */}
+        {/* ========================================================================= */}
+        <section aria-label="Resumo de Gastos">
+          <div className="bg-white border border-zinc-200/90 rounded-3xl p-4 shadow-2xs">
+            {/* Cabeçalho do Card: Título à esquerda + Seletor Semana | Mês | Ano à direita */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
+                  <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
+                </div>
+                <h3 className="text-xs sm:text-sm font-bold text-zinc-800 truncate">
+                  Resumo de Gastos
+                </h3>
+              </div>
+
+              {/* Seletor Segmentado Compacto: Semana | Mês | Ano */}
+              <div className="bg-zinc-100 p-0.5 rounded-xl text-[11px] font-bold flex items-center shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setTimeFilter('semana')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    timeFilter === 'semana'
+                      ? 'bg-white text-emerald-700 shadow-2xs font-bold'
+                      : 'text-zinc-500 hover:text-zinc-800 font-semibold'
+                  }`}
+                >
+                  Semana
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimeFilter('mes')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    timeFilter === 'mes'
+                      ? 'bg-white text-emerald-700 shadow-2xs font-bold'
+                      : 'text-zinc-500 hover:text-zinc-800 font-semibold'
+                  }`}
+                >
+                  Mês
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimeFilter('ano')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    timeFilter === 'ano'
+                      ? 'bg-white text-emerald-700 shadow-2xs font-bold'
+                      : 'text-zinc-500 hover:text-zinc-800 font-semibold'
+                  }`}
+                >
+                  Ano
+                </button>
+              </div>
+            </div>
+
+            {/* Corpo Principal: Valor Total do Período + Link Ver análises → */}
+            <div className="mt-3.5 flex items-baseline justify-between gap-2">
+              <div>
+                <span className="text-[11px] font-medium text-zinc-400 block">
+                  Total no período
+                </span>
+                <div className="text-2xl sm:text-3xl font-extrabold text-zinc-900 tracking-tight mt-0.5">
+                  <AnimatedCurrency value={stats.total} />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (onNavigateToAnalytics) {
+                    onNavigateToAnalytics(getMappedAnalyticsPeriod());
+                  } else {
+                    showToast('Acesse a aba Gerenciador para ver as Análises completas');
+                  }
+                }}
+                className="text-xs font-bold text-emerald-700 hover:text-emerald-800 transition-colors cursor-pointer shrink-0 py-1 px-2 -mr-2 rounded-lg hover:bg-emerald-50/70"
+              >
+                Ver análises →
+              </button>
+            </div>
+
+            {/* Sub-grid Interno (2 Colunas Compactas): Compras no período e Ticket Médio */}
+            <div className="grid grid-cols-2 gap-2.5 mt-3.5 pt-3 border-t border-zinc-100">
+              {/* Coluna 1: Compras no período */}
+              <div className="bg-zinc-50/80 border border-zinc-100 rounded-2xl p-3 flex flex-col justify-between min-w-0">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                  <ShoppingBag className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="truncate">Realizadas</span>
+                </div>
+                <div className="text-sm sm:text-base font-extrabold text-zinc-900 truncate mt-1.5 leading-tight">
+                  {stats.count} {stats.count === 1 ? 'compra' : 'compras'}
+                </div>
+              </div>
+
+              {/* Coluna 2: Ticket Médio */}
+              <div className="bg-zinc-50/80 border border-zinc-100 rounded-2xl p-3 flex flex-col justify-between min-w-0">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="truncate">Ticket Médio</span>
+                </div>
+                <div className="text-sm sm:text-base font-extrabold text-zinc-900 truncate mt-1.5 leading-tight">
+                  <AnimatedCurrency value={stats.avg} />
+                </div>
+              </div>
+            </div>
+
+            {/* Rodapé inteligente: Curva de evolução (2+ compras), Barra de categorias (1 compra) ou Mensagem (0 compras) */}
+            {stats.count === 1 && stats.singlePurchaseCategories.length > 0 ? (
+              <div className="mt-3 pt-2.5 border-t border-zinc-100 space-y-1.5">
+                {/* Mini-barra horizontal multicolorida */}
+                <div className="w-full h-2 rounded-full bg-zinc-100 overflow-hidden flex gap-0.5">
+                  {stats.singlePurchaseCategories.map((cat) => (
+                    <div
+                      key={cat.category}
+                      className="h-full first:rounded-l-full last:rounded-r-full transition-all duration-300"
+                      style={{
+                        width: `${Math.max(6, cat.percent)}%`,
+                        backgroundColor: cat.color,
+                      }}
+                      title={`${cat.category}: ${cat.percent}%`}
+                    />
+                  ))}
+                </div>
+
+                {/* Legenda compacta das principais categorias */}
+                <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-[11px] font-semibold text-zinc-600">
+                  {stats.singlePurchaseCategories.slice(0, 3).map((cat, idx, arr) => (
+                    <React.Fragment key={cat.category}>
+                      <span className="inline-flex items-center gap-1">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: cat.color }}
+                        />
+                        <span className="text-zinc-700 font-bold">{cat.category}</span>
+                        <span className="text-zinc-400 font-semibold">{cat.percent}%</span>
+                      </span>
+                      {idx < arr.length - 1 && <span className="text-zinc-300">•</span>}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            ) : sparklineData.length >= 2 ? (
+              <div className="mt-3 pt-2.5 border-t border-zinc-100">
+                <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400 mb-1 px-0.5">
+                  <span>Curva de evolução (últimas {sparklineData.length} compras)</span>
+                </div>
+                <div className="h-[52px] w-full">
+                  <ResponsiveContainer width="100%" height={52}>
+                    <AreaChart data={sparklineData} margin={{ top: 4, right: 2, left: 2, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="homeSparklineGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#059669" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#059669" stopOpacity={0.0} />
+                        </linearGradient>
+                      </defs>
+                      <Area
+                        type="monotone"
+                        dataKey="total"
+                        stroke="#059669"
+                        strokeWidth={2.2}
+                        fill="url(#homeSparklineGradient)"
+                        dot={false}
+                        activeDot={false}
+                        isAnimationActive={!motionConfig.shouldReduceMotion}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 pt-2.5 border-t border-zinc-100 flex items-center gap-1.5 text-[11px] font-medium text-zinc-400">
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-500/80 shrink-0" />
+                <span>Finalize mais compras para liberar o gráfico de evolução</span>
+              </div>
             )}
-          </div>
-        </motion.div>
-
-        {/* ========================================================================= */}
-        {/* 2. SEÇÃO DE ESTATÍSTICAS (FILTRO E CARDS)                                 */}
-        {/* ========================================================================= */}
-        <section aria-label="Estatísticas Financeiras">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
-              Filtrar por último:
-            </span>
-          </div>
-
-          {/* Segmented Control (Ano, Mês, Semana) */}
-          <div className="bg-zinc-200/70 p-1 rounded-xl flex items-center border border-zinc-200/90 shadow-2xs">
-            <button
-              type="button"
-              onClick={() => setTimeFilter('ano')}
-              className={`flex-1 py-1.5 text-xs rounded-lg transition-all text-center cursor-pointer min-h-[34px] ${
-                timeFilter === 'ano'
-                  ? 'bg-white text-emerald-700 font-bold shadow-2xs'
-                  : 'text-zinc-600 hover:text-zinc-900 font-medium'
-              }`}
-            >
-              Ano
-            </button>
-            <button
-              type="button"
-              onClick={() => setTimeFilter('mes')}
-              className={`flex-1 py-1.5 text-xs rounded-lg transition-all text-center cursor-pointer min-h-[34px] ${
-                timeFilter === 'mes'
-                  ? 'bg-white text-emerald-700 font-bold shadow-2xs'
-                  : 'text-zinc-600 hover:text-zinc-900 font-medium'
-              }`}
-            >
-              Mês
-            </button>
-            <button
-              type="button"
-              onClick={() => setTimeFilter('semana')}
-              className={`flex-1 py-1.5 text-xs rounded-lg transition-all text-center cursor-pointer min-h-[34px] ${
-                timeFilter === 'semana'
-                  ? 'bg-white text-emerald-700 font-bold shadow-2xs'
-                  : 'text-zinc-600 hover:text-zinc-900 font-medium'
-              }`}
-            >
-              Semana
-            </button>
-          </div>
-
-          {/* Três cards menores dispostos horizontalmente num grid */}
-          <div className="grid grid-cols-3 gap-2.5 sm:gap-3 mt-3">
-            {/* Card 1: Média */}
-            <div className="bg-white border border-zinc-200/90 rounded-2xl p-3 shadow-2xs flex flex-col justify-between min-h-[90px]">
-              <div className="text-zinc-400">
-                <TrendingUp className="w-4 h-4" />
-              </div>
-              <div className="mt-2">
-                <span className="text-[11px] font-medium text-zinc-500 block leading-tight">
-                  Média
-                </span>
-                <span className="text-xs sm:text-sm font-bold text-zinc-900 truncate block mt-0.5">
-                  {formatCurrencyBRL(stats.avg)}
-                </span>
-              </div>
-            </div>
-
-            {/* Card 2: Compras */}
-            <div className="bg-white border border-zinc-200/90 rounded-2xl p-3 shadow-2xs flex flex-col justify-between min-h-[90px]">
-              <div className="text-zinc-400">
-                <ShoppingCart className="w-4 h-4" />
-              </div>
-              <div className="mt-2">
-                <span className="text-[11px] font-medium text-zinc-500 block leading-tight">
-                  Compras
-                </span>
-                <span className="text-xs sm:text-sm font-bold text-zinc-900 truncate block mt-0.5">
-                  {stats.count}
-                </span>
-              </div>
-            </div>
-
-            {/* Card 3: Total (Fundo Verde Escuro em Destaque) */}
-            <div className="bg-emerald-900 border border-emerald-800 rounded-2xl p-3 shadow-2xs flex flex-col justify-between min-h-[90px] text-white">
-              <div className="text-emerald-300">
-                <DollarSign className="w-4 h-4" />
-              </div>
-              <div className="mt-2">
-                <span className="text-[11px] font-medium text-emerald-200 block leading-tight">
-                  Total
-                </span>
-                <span className="text-xs sm:text-sm font-bold text-white truncate block mt-0.5">
-                  {formatCurrencyBRL(stats.total)}
-                </span>
-              </div>
-            </div>
           </div>
         </section>
 
-
         {/* ========================================================================= */}
-        {/* 4. SEÇÃO "MINHAS LISTAS" (PRÉVIA DA GESTÃO)                               */}
+        {/* 4. SEÇÃO "MINHAS LISTAS" COM BOTÃO DE AÇÃO DIRETA                         */}
         {/* ========================================================================= */}
-        <section aria-label="Minhas Listas" className="space-y-3">
+        <section aria-label="Minhas Listas" className="space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <ClipboardList className="w-4 h-4 text-emerald-600" />
               <h3 className="text-sm sm:text-base font-bold text-zinc-900 tracking-tight">
                 Minhas Listas
               </h3>
-              {lists.length > 0 && (
-                <span className="text-[11px] font-semibold text-zinc-400">
-                  ({lists.length})
-                </span>
-              )}
+              <span className="text-xs font-semibold text-zinc-400">
+                ({lists.length})
+              </span>
             </div>
 
             <button
               type="button"
               onClick={onNavigateToLists}
-              className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 transition-colors flex items-center space-x-1 cursor-pointer py-1 px-1.5 -mr-1.5 rounded-lg hover:bg-emerald-50/60"
+              className="text-xs font-bold text-emerald-700 hover:text-emerald-800 transition-colors cursor-pointer py-1 px-1.5 -mr-1.5 rounded-lg hover:bg-emerald-50/60"
             >
-              <span>Ver mais</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              Ver todas →
             </button>
           </div>
 
-          {/* Cards de Prévia das Listas (limita a até 3 para evitar scroll excessivo) */}
           {lists.length === 0 ? (
             <div className="bg-white border border-zinc-200/90 rounded-2xl p-4 text-center shadow-2xs">
               <p className="text-xs text-zinc-500">
-                Nenhuma lista de compras cadastrada ainda.
+                Nenhuma lista planejada cadastrada ainda.
               </p>
               <button
                 type="button"
                 onClick={onNavigateToLists}
-                className="mt-2 text-xs font-bold text-emerald-700 hover:text-emerald-800 transition-colors inline-flex items-center space-x-1 cursor-pointer"
+                className="mt-2 text-xs font-bold text-emerald-700 hover:text-emerald-800 transition-colors inline-flex items-center gap-1 cursor-pointer"
               >
-                <span>Criar lista na Gestão</span>
+                <span>Criar primeira lista</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               {lists.slice(0, 3).map((list) => {
                 const count = list.items ? list.items.length : 0;
-                const previewItems = (list.items || []).slice(0, 3);
+                const previewItems = (list.items || []).slice(0, 4);
                 return (
                   <div
                     key={list.id}
@@ -537,10 +745,11 @@ export function HomeScreen({
                         else onNavigateToLists?.();
                       }
                     }}
-                    className="w-full bg-white border border-zinc-200/90 hover:border-emerald-300 rounded-2xl p-3.5 shadow-2xs hover:shadow-xs transition-all cursor-pointer flex items-center justify-between group text-left"
+                    className="w-full bg-white border border-zinc-200/90 hover:border-emerald-300 rounded-2xl p-3.5 shadow-2xs hover:shadow-xs transition-all cursor-pointer flex items-center justify-between gap-3 group text-left"
                   >
-                    <div className="flex-1 min-w-0 pr-3">
-                      <div className="flex items-center space-x-2">
+                    {/* À esquerda: Nome da lista, badge de quantidade e prévia dos itens */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
                         <h4 className="text-sm font-bold text-zinc-900 group-hover:text-emerald-700 transition-colors truncate">
                           {list.name}
                         </h4>
@@ -552,18 +761,24 @@ export function HomeScreen({
                       {previewItems.length > 0 ? (
                         <p className="text-xs text-zinc-400 font-medium truncate mt-1">
                           {previewItems.map((it) => it.name).join(', ')}
-                          {count > 3 ? ` +${count - 3}` : ''}
+                          {count > 4 ? '...' : ''}
                         </p>
                       ) : (
                         <p className="text-xs text-zinc-400 font-medium truncate mt-1">
-                          Lista vazia
+                          Lista vazia — toque para adicionar itens
                         </p>
                       )}
                     </div>
 
-                    <div className="text-zinc-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all shrink-0">
-                      <ArrowRight className="w-4 h-4" />
-                    </div>
+                    {/* À direita: Botão rápido de ação Comprar */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleBuyFromList(e, list)}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 border border-emerald-200/80 text-xs font-bold flex items-center gap-1 shrink-0 transition-colors cursor-pointer active:scale-95"
+                    >
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      <span>Comprar</span>
+                    </button>
                   </div>
                 );
               })}
@@ -571,6 +786,101 @@ export function HomeScreen({
           )}
         </section>
 
+        {/* ========================================================================= */}
+        {/* 5. SEÇÃO COMPACTA "ÚLTIMA COMPRA REALIZADA" (ACESSO RÁPIDO AO RECIBO)      */}
+        {/* ========================================================================= */}
+        {latestFinishedPurchase && (
+          <section aria-label="Última Compra Realizada" className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Receipt className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-sm sm:text-base font-bold text-zinc-900 tracking-tight">
+                  Última Compra Realizada
+                </h3>
+              </div>
+
+              {onNavigateToHistory && (
+                <button
+                  type="button"
+                  onClick={onNavigateToHistory}
+                  className="text-xs font-bold text-emerald-700 hover:text-emerald-800 transition-colors cursor-pointer py-1 px-1.5 -mr-1.5 rounded-lg hover:bg-emerald-50/60"
+                >
+                  Ver histórico →
+                </button>
+              )}
+            </div>
+
+            <div
+              onClick={() => {
+                if (onSelectFinishedPurchase) {
+                  onSelectFinishedPurchase(latestFinishedPurchase);
+                } else if (onNavigateToAnalytics) {
+                  onNavigateToAnalytics();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  if (onSelectFinishedPurchase) {
+                    onSelectFinishedPurchase(latestFinishedPurchase);
+                  } else if (onNavigateToAnalytics) {
+                    onNavigateToAnalytics();
+                  }
+                }
+              }}
+              className="w-full bg-white border border-zinc-200/90 hover:border-emerald-300 rounded-2xl p-3.5 shadow-2xs hover:shadow-xs transition-all cursor-pointer flex items-center justify-between gap-3 group"
+            >
+              {/* Ícone de recibo/check verde à esquerda + Nome e data/quantidade */}
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200/70 text-emerald-600 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="text-sm font-bold text-zinc-900 group-hover:text-emerald-700 transition-colors truncate">
+                      {latestFinishedPurchase.name || 'Compra Finalizada'}
+                    </h4>
+                    {latestFinishedPurchase.storeName && (
+                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 rounded-md truncate max-w-[110px] shrink-0">
+                        {latestFinishedPurchase.storeName}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-400 font-medium mt-0.5">
+                    <Receipt className="w-3 h-3 text-zinc-400 shrink-0" />
+                    <span>
+                      {new Date(
+                        latestFinishedPurchase.finishedAt || latestFinishedPurchase.createdAt
+                      ).toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: 'short',
+                      })}
+                    </span>
+                    <span>•</span>
+                    <span>
+                      {latestFinishedPurchase.items?.length || 0}{' '}
+                      {(latestFinishedPurchase.items?.length || 0) === 1 ? 'item' : 'itens'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Valor total à direita */}
+              <div className="text-right shrink-0">
+                <span className="text-sm font-extrabold text-zinc-900 block">
+                  {formatCurrencyBRL(calculatePurchaseTotal(latestFinishedPurchase))}
+                </span>
+                <span className="text-[10px] font-semibold text-emerald-600 group-hover:underline">
+                  Ver recibo →
+                </span>
+              </div>
+            </div>
+          </section>
+        )}
       </main>
 
       {/* ========================================================================= */}
@@ -663,7 +973,6 @@ export function HomeScreen({
         hasSentInSession={hasSentFeedbackInSession}
         onSendFeedback={handleSendFeedback}
       />
-
     </div>
   );
 }

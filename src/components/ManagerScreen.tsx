@@ -20,18 +20,31 @@ import {
   Check,
   X,
   Loader2,
+  Settings,
+  MessageSquare,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useMotionConfig } from '../styles/motionSystem';
 import { Purchase, List } from '../types';
 import { calculatePurchaseTotal, formatCurrencyBRL, formatDateBRL } from '../utils/purchaseHelpers';
 import { AnalyticsTab } from './AnalyticsTab';
+import { User } from '@supabase/supabase-js';
+import { useToast } from './Toast';
+import {
+  FeedbackModal,
+  FeedbackCategory,
+  MAX_FEEDBACK_LENGTH,
+  FEEDBACK_SESSION_LOCK_KEY,
+} from './FeedbackModal';
 
 export type ManagerTab = 'history' | 'lists' | 'analytics';
 
 export interface ManagerScreenProps {
+  user?: User | null;
+  onNavigateToProfile?: () => void;
   initialTab?: ManagerTab;
   activeTab?: ManagerTab;
+  analyticsInitialPeriod?: 'week' | 'month' | 'year' | 'all';
   onTabChange?: (tab: ManagerTab) => void;
   // Props de Histórico
   finishedPurchases: Purchase[];
@@ -52,8 +65,11 @@ const sanitizeTab = (tab: unknown): ManagerTab => {
 };
 
 export function ManagerScreen({
+  user,
+  onNavigateToProfile,
   initialTab = 'lists',
   activeTab: controlledTab,
+  analyticsInitialPeriod = 'month',
   onTabChange,
   finishedPurchases = [],
   onSelectPurchase,
@@ -66,6 +82,86 @@ export function ManagerScreen({
   onStartPurchaseFromList,
 }: ManagerScreenProps) {
   const motionConfig = useMotionConfig();
+  const { showToast } = useToast();
+
+  // Identificação do Usuário para a Top Bar fixa
+  const userName =
+    user?.user_metadata?.name ||
+    user?.user_metadata?.full_name ||
+    (user?.email ? user.email.split('@')[0] : 'Usuário');
+  const shortUserName = String(userName || 'Usuário').trim().split(/\s+/)[0] || 'Usuário';
+  const userInitial = (userName || user?.email || 'U').charAt(0).toUpperCase();
+
+  // Estado do Modal de Feedback na Top Bar
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [hasSentFeedbackInSession, setHasSentFeedbackInSession] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(FEEDBACK_SESSION_LOCK_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleSendFeedback = async ({
+    category,
+    message,
+    email,
+    name,
+  }: {
+    category: FeedbackCategory;
+    message: string;
+    email: string;
+    name: string;
+  }) => {
+    const alreadySentInSession =
+      hasSentFeedbackInSession ||
+      (() => {
+        try {
+          return sessionStorage.getItem(FEEDBACK_SESSION_LOCK_KEY) === 'true';
+        } catch {
+          return false;
+        }
+      })();
+
+    if (alreadySentInSession) {
+      throw new Error('Você já enviou um feedback nesta sessão.');
+    }
+
+    const sanitizedMessage = (message || '').replace(/<[^>]*>/g, '').trim();
+    if (!sanitizedMessage) {
+      throw new Error('A mensagem de feedback não pode estar vazia.');
+    }
+
+    const cappedMessage = sanitizedMessage.slice(0, MAX_FEEDBACK_LENGTH);
+
+    const response = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        category,
+        message: cappedMessage,
+        email: (email || '').trim().slice(0, 120),
+        name: (name || '').trim().slice(0, 80),
+        metadata: {
+          url: window.location.href,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Falha ao enviar feedback.');
+    }
+
+    setHasSentFeedbackInSession(true);
+    try {
+      sessionStorage.setItem(FEEDBACK_SESSION_LOCK_KEY, 'true');
+    } catch {
+      // ignore
+    }
+  };
 
   // Gerenciamento de abas (controlada externamente se fornecido, ou interna)
   const safeControlledTab = controlledTab !== undefined ? sanitizeTab(controlledTab) : undefined;
@@ -176,21 +272,87 @@ export function ManagerScreen({
   };
 
   return (
-    <div className="w-full min-h-screen bg-zinc-50 text-zinc-900 flex flex-col selection:bg-emerald-500 selection:text-white font-sans pb-28 sm:pb-32">
-      {/* Topo Fixo com Tabs Horizontais */}
+    <div className="w-full min-h-screen bg-zinc-50 text-zinc-900 flex flex-col selection:bg-emerald-500 selection:text-white font-sans">
+      {/* Topo Fixo (Sticky): Top Bar da Página Inicial + Abas de Gestão */}
       <header className="sticky top-0 z-30 w-full bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-2xs">
-        <div className="w-full max-w-md md:max-w-xl mx-auto px-4 pt-3.5 pb-3 sm:px-6">
+        {/* 1. Top Bar Compacta da Página Inicial */}
+        <div className="w-full border-b border-zinc-100">
+          <div className="w-full max-w-md md:max-w-xl mx-auto px-4 pt-3 pb-2.5 sm:px-6 flex items-center justify-between gap-2">
+            {/* Esquerda: Avatar + Saudação + Badge Seja Premium */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                onClick={onNavigateToProfile}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onNavigateToProfile?.();
+                  }
+                }}
+                aria-label="Abrir perfil"
+                className="w-10 h-10 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shadow-xs shrink-0 select-none cursor-pointer active:scale-95 transition-transform"
+              >
+                {userInitial}
+              </div>
+
+              <div className="min-w-0 flex flex-col items-start">
+                <span className="text-sm font-bold text-zinc-900 truncate max-w-[180px] sm:max-w-[240px] leading-tight">
+                  Olá, {shortUserName}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => showToast('EM BREVE')}
+                  className="mt-0.5 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100/80 border border-amber-200/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1 transition-colors cursor-pointer active:scale-95"
+                >
+                  <span>★ Seja Premium</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Direita: Botão Feedback + Botão Configurações/Perfil */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsFeedbackModalOpen(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-zinc-600" />
+                <span>Feedback</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onNavigateToProfile}
+                aria-label="Configurações de Perfil"
+                className="w-9 h-9 rounded-xl bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300 text-zinc-700 flex items-center justify-center transition-colors cursor-pointer active:scale-95"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Sub-barra Fixa de Gestão e Abas */}
+        <div className="w-full max-w-md md:max-w-xl mx-auto px-4 pt-2.5 pb-2.5 sm:px-6">
           {/* Título & Identificação */}
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <div>
-              <h1 className="text-lg sm:text-xl font-black text-zinc-900 tracking-tight leading-tight">
+              <h1 className="text-base sm:text-lg font-black text-zinc-900 tracking-tight leading-tight">
                 Gestão
               </h1>
-              <p className="text-xs text-zinc-500 font-medium mt-0.5">
-                {currentTab === 'lists' && `${safeLists.length} listas de planejamento`}
-                {currentTab === 'analytics' && 'Visão analítica de gastos'}
-                {currentTab === 'history' && `${safeFinishedPurchases.length} compras concluídas`}
-              </p>
+              {currentTab === 'lists' && (
+                <p className="text-[11px] text-zinc-500 font-medium mt-0.5">
+                  {safeLists.length}{' '}
+                  {safeLists.length === 1 ? 'lista de planejamento' : 'listas de planejamento'}
+                </p>
+              )}
+              {currentTab === 'history' && (
+                <p className="text-[11px] text-zinc-500 font-medium mt-0.5">
+                  {safeFinishedPurchases.length}{' '}
+                  {safeFinishedPurchases.length === 1 ? 'compra concluída' : 'compras concluídas'}
+                </p>
+              )}
             </div>
 
             {/* Ação rápida contextual no header (ex: Nova Lista na aba de listas) */}
@@ -322,10 +484,10 @@ export function ManagerScreen({
       </header>
 
       {/* Conteúdo Principal Renderizado Conforme a Aba Ativa */}
-      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-4 sm:px-6 pt-4">
+      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-4 sm:px-6 pt-4 pb-28 space-y-4">
         {/* ================= ABA 1: HISTÓRICO ================= */}
         {currentTab === 'history' && (
-          <div className="space-y-3.5">
+          <div className="space-y-4">
             {safeFinishedPurchases.length > 3 && (
               <div className="relative">
                 <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -443,7 +605,7 @@ export function ManagerScreen({
 
         {/* ================= ABA 2: LISTAS ================= */}
         {currentTab === 'lists' && (
-          <div className="space-y-3.5">
+          <div className="space-y-4">
             {safeLists.length > 2 && (
               <div className="relative">
                 <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -487,14 +649,7 @@ export function ManagerScreen({
                 )}
               </div>
             ) : (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs text-zinc-500 font-semibold px-1">
-                  <span>LISTAS SALVAS</span>
-                  <span>
-                    {filteredLists.length} {filteredLists.length === 1 ? 'lista' : 'listas'}
-                  </span>
-                </div>
-
+              <div className="space-y-3.5">
                 {filteredLists.map((list) => {
                   const itemCount = list?.items ? list.items.length : 0;
                   const sampleItems = (list?.items || []).slice(0, 4);
@@ -589,6 +744,7 @@ export function ManagerScreen({
           <AnalyticsTab
             finishedPurchases={safeFinishedPurchases}
             onSelectPurchase={onSelectPurchase}
+            initialPeriod={analyticsInitialPeriod}
           />
         )}
       </main>
@@ -735,6 +891,15 @@ export function ManagerScreen({
           </div>
         )}
       </AnimatePresence>
+      {/* Modal: Enviar Feedback */}
+      <FeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
+        userEmail={user?.email || ''}
+        userName={userName}
+        hasSentInSession={hasSentFeedbackInSession}
+        onSendFeedback={handleSendFeedback}
+      />
     </div>
   );
 }

@@ -103,7 +103,7 @@ export function ListsOverviewScreen({
       </header>
 
       {/* Conteúdo Principal */}
-      <main className="w-full max-w-md md:max-w-xl mx-auto px-4 sm:px-6 pt-5 flex-1">
+      <main className="w-full max-w-md md:max-w-xl mx-auto px-4 sm:px-6 pt-4 pb-28 space-y-4 flex-1">
         {loading && lists.length === 0 ? (
           <div className="py-16 text-center text-zinc-400 text-sm">
             Carregando suas listas...
@@ -134,12 +134,7 @@ export function ListsOverviewScreen({
             )}
           </div>
         ) : (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-xs text-zinc-500 font-semibold px-1">
-              <span>MOLDES SALVOS</span>
-              <span>{filteredLists.length} {filteredLists.length === 1 ? 'lista' : 'listas'}</span>
-            </div>
-
+          <div className="space-y-4">
             {filteredLists.map((list) => {
               const itemCount = list.items ? list.items.length : 0;
               const sampleItems = (list.items || []).slice(0, 4);

@@ -86,8 +86,8 @@ export function HistoryScreen({
 
       {/* Main Content Area */}
       <main
-        className={`flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-4 sm:py-6 flex flex-col ${
-          selectionMode ? 'pb-8 sm:pb-12' : 'pb-28 sm:pb-32'
+        className={`flex-1 w-full max-w-md md:max-w-xl mx-auto px-4 pt-4 flex flex-col space-y-4 ${
+          selectionMode ? 'pb-12' : 'pb-28'
         }`}
       >
         {finishedPurchases.length === 0 ? (
@@ -121,9 +121,9 @@ export function HistoryScreen({
           </div>
         ) : (
           /* List of Finished Purchases */
-          <div className="space-y-3">
+          <div className="space-y-4">
             {/* Quick summary header */}
-            <div className="flex items-center justify-between px-1 mb-1">
+            <div className="flex items-center justify-between px-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 {selectionMode ? 'Selecione para clonar' : 'Compras Finalizadas'}
               </span>

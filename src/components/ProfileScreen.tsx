@@ -1,12 +1,24 @@
-import { useState } from 'react';
-import { ArrowLeft, User as UserIcon, LogOut, Loader2, Mail, Calendar } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import {
+  ArrowLeft,
+  User as UserIcon,
+  LogOut,
+  Loader2,
+  Mail,
+  Calendar,
+  Pencil,
+  Check,
+  X,
+} from 'lucide-react';
 import { motion } from 'motion/react';
 import { useMotionConfig } from '../styles/motionSystem';
 import { User } from '@supabase/supabase-js';
+import { useToast } from './Toast';
 
 interface ProfileScreenProps {
   user: User | null;
   onSignOut: () => Promise<void> | void;
+  onUpdateName?: (name: string) => Promise<{ error: string | null }>;
   onBack: () => void;
   onNavigateToHome?: () => void;
   onNavigateToHistory?: () => void;
@@ -17,10 +29,86 @@ interface ProfileScreenProps {
 export function ProfileScreen({
   user,
   onSignOut,
+  onUpdateName,
   onBack,
 }: ProfileScreenProps) {
   const motionConfig = useMotionConfig();
+  const { showToast } = useToast();
   const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const currentDisplayName =
+    user?.user_metadata?.name ||
+    user?.user_metadata?.full_name ||
+    (user?.email ? user.email.split('@')[0] : 'Usuário');
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(currentDisplayName);
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isEditingName) {
+      setNameInput(currentDisplayName);
+    }
+  }, [currentDisplayName, isEditingName]);
+
+  useEffect(() => {
+    if (isEditingName) {
+      setTimeout(() => {
+        nameInputRef.current?.focus();
+        nameInputRef.current?.select();
+      }, 40);
+    }
+  }, [isEditingName]);
+
+  const handleStartEditingName = () => {
+    setNameInput(currentDisplayName);
+    setNameError(null);
+    setIsEditingName(true);
+  };
+
+  const handleCancelEditName = () => {
+    setNameInput(currentDisplayName);
+    setNameError(null);
+    setIsEditingName(false);
+  };
+
+  const handleSaveName = async () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed) {
+      setNameError('O nome não pode ficar em branco.');
+      return;
+    }
+    if (trimmed.length < 2) {
+      setNameError('O nome deve ter pelo menos 2 caracteres.');
+      return;
+    }
+    if (trimmed === currentDisplayName) {
+      setIsEditingName(false);
+      setNameError(null);
+      return;
+    }
+    if (!onUpdateName) {
+      setIsEditingName(false);
+      return;
+    }
+
+    setIsSavingName(true);
+    setNameError(null);
+    try {
+      const { error } = await onUpdateName(trimmed);
+      if (error) {
+        setNameError(error);
+        showToast(error);
+      } else {
+        setIsEditingName(false);
+        showToast('Nome atualizado com sucesso!');
+      }
+    } finally {
+      setIsSavingName(false);
+    }
+  };
 
   const handleLogout = async () => {
     setIsSigningOut(true);
@@ -39,7 +127,7 @@ export function ProfileScreen({
       })
     : null;
 
-  const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'U';
+  const userInitial = (currentDisplayName || user?.email || 'U').charAt(0).toUpperCase();
 
   return (
     <div className="h-[100dvh] max-h-[100dvh] w-full bg-zinc-50 text-zinc-900 flex flex-col selection:bg-emerald-500 selection:text-white font-sans relative overflow-hidden">
@@ -67,8 +155,8 @@ export function ProfileScreen({
         </div>
       </header>
 
-      {/* Main Content Area - proporções mobile pensadas para não gerar scroll vertical */}
-      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-3 sm:py-4 pb-20 sm:pb-24 flex flex-col items-center justify-center overflow-hidden">
+      {/* Main Content Area */}
+      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-3.5 py-3 sm:py-4 pb-20 sm:pb-24 flex flex-col items-center justify-center overflow-y-auto">
         <motion.div
           initial={{ opacity: 0, scale: 0.97, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -79,16 +167,106 @@ export function ProfileScreen({
             className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 text-white font-extrabold text-xl sm:text-2xl flex items-center justify-center mb-2 shadow-md shadow-emerald-700/20 border-2 sm:border-3 border-white select-none"
             aria-label="Foto de perfil do usuário"
           >
-            {user?.email ? userInitial : <UserIcon className="w-7 h-7 stroke-[1.5]" />}
+            {user?.email || currentDisplayName ? userInitial : <UserIcon className="w-7 h-7 stroke-[1.5]" />}
           </div>
 
           {/* Dados do Usuário */}
-          <h2 className="text-sm sm:text-base font-extrabold text-zinc-900 tracking-tight break-all max-w-full leading-tight">
-            {user?.email || 'Usuário'}
+          <h2 className="text-sm sm:text-base font-extrabold text-zinc-900 tracking-tight truncate max-w-full leading-tight">
+            {currentDisplayName}
           </h2>
+          {user?.email && (
+            <p className="text-[11px] text-zinc-500 font-medium truncate max-w-full mt-0.5">
+              {user.email}
+            </p>
+          )}
 
           {/* Detalhes da Conta Compactados no estilo agrupado */}
           <div className="mt-3.5 w-full bg-zinc-50/90 rounded-xl border border-zinc-200/70 divide-y divide-zinc-200/60 overflow-hidden text-left">
+            {/* Nome de Exibição Editável */}
+            <div className="p-2.5 sm:p-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-7 h-7 rounded-lg bg-emerald-100/60 flex items-center justify-center shrink-0">
+                  <UserIcon className="w-3.5 h-3.5 text-emerald-700" />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-[9px] sm:text-[10px] text-zinc-400 font-bold uppercase tracking-wider leading-none mb-1">
+                    Nome
+                  </p>
+
+                  {isEditingName ? (
+                    <div className="flex items-center space-x-1.5">
+                      <input
+                        ref={nameInputRef}
+                        type="text"
+                        value={nameInput}
+                        onChange={(e) => {
+                          setNameInput(e.target.value);
+                          if (nameError) setNameError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSaveName();
+                          } else if (e.key === 'Escape') {
+                            handleCancelEditName();
+                          }
+                        }}
+                        maxLength={60}
+                        disabled={isSavingName}
+                        placeholder="Seu nome"
+                        aria-label="Editar nome"
+                        className="w-full text-xs font-semibold text-zinc-900 bg-white border border-emerald-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 rounded-lg px-2.5 py-1.5 outline-none transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveName}
+                        disabled={isSavingName}
+                        aria-label="Salvar nome"
+                        className="w-8 h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white flex items-center justify-center shrink-0 transition-colors cursor-pointer disabled:opacity-60"
+                      >
+                        {isSavingName ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelEditName}
+                        disabled={isSavingName}
+                        aria-label="Cancelar edição"
+                        className="w-8 h-8 rounded-lg bg-zinc-200/80 hover:bg-zinc-300 text-zinc-700 flex items-center justify-center shrink-0 transition-colors cursor-pointer disabled:opacity-60"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-zinc-800 truncate leading-tight">
+                        {currentDisplayName}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleStartEditingName}
+                        aria-label="Editar nome"
+                        className="inline-flex items-center space-x-1 px-2 py-1 rounded-lg bg-white hover:bg-emerald-50 border border-zinc-200/90 hover:border-emerald-300 text-[11px] font-semibold text-emerald-700 transition-colors cursor-pointer shrink-0"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Editar</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {nameError && (
+                <p className="mt-1.5 pl-9 text-[11px] font-medium text-rose-600">
+                  {nameError}
+                </p>
+              )}
+            </div>
+
             <div className="p-2.5 sm:p-3 flex items-center space-x-2.5">
               <div className="w-7 h-7 rounded-lg bg-emerald-100/60 flex items-center justify-center shrink-0">
                 <Mail className="w-3.5 h-3.5 text-emerald-700" />
@@ -167,4 +345,3 @@ export function ProfileScreen({
     </div>
   );
 }
-

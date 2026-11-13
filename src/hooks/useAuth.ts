@@ -9,6 +9,7 @@ export interface AuthState {
   isConfigured: boolean;
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, name?: string) => Promise<{ error: string | null; needsEmailConfirmation?: boolean }>;
+  updateProfileName: (name: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -161,6 +162,66 @@ export function useAuth(): AuthState {
     [configured]
   );
 
+  const updateProfileName = useCallback(
+    async (name: string): Promise<{ error: string | null }> => {
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        return { error: 'Por favor, informe um nome válido.' };
+      }
+
+      if (!configured) {
+        setUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                user_metadata: {
+                  ...prev.user_metadata,
+                  name: trimmedName,
+                  full_name: trimmedName,
+                },
+              }
+            : prev
+        );
+        return { error: null };
+      }
+
+      try {
+        const { data, error } = await supabase.auth.updateUser({
+          data: {
+            name: trimmedName,
+            full_name: trimmedName,
+          },
+        });
+
+        if (error) {
+          return { error: formatAuthError(error) };
+        }
+
+        if (data?.user) {
+          setUser(data.user);
+        } else {
+          setUser((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  user_metadata: {
+                    ...prev.user_metadata,
+                    name: trimmedName,
+                    full_name: trimmedName,
+                  },
+                }
+              : prev
+          );
+        }
+
+        return { error: null };
+      } catch (err: any) {
+        return { error: formatAuthError(err) };
+      }
+    },
+    [configured]
+  );
+
   const signOut = useCallback(async (): Promise<void> => {
     if (!configured) {
       setUser(null);
@@ -184,6 +245,7 @@ export function useAuth(): AuthState {
     isConfigured: configured,
     signInWithPassword,
     signUp,
+    updateProfileName,
     signOut,
   };
 }

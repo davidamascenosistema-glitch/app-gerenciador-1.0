@@ -173,6 +173,10 @@ interface PurchaseScreenProps {
   onDiscardPurchase?: (purchaseId: string) => void;
   onUpdateName?: (purchaseId: string, name: string) => void;
   onAddItem?: (purchaseId: string, itemData: Omit<Item, 'id' | 'bought'> & { bought?: boolean }) => void;
+  onAddItemsBatch?: (
+    purchaseId: string,
+    itemsData: Array<Omit<Item, 'id' | 'bought'> & { bought?: boolean }>
+  ) => Promise<void> | void;
   onImportItems?: (
     purchaseId: string,
     itemsData: Array<Omit<Item, 'id' | 'bought'> & { bought?: boolean }>
@@ -192,6 +196,7 @@ export function PurchaseScreen({
   onDiscardPurchase,
   onUpdateName,
   onAddItem,
+  onAddItemsBatch,
   onImportItems,
   onEditItem,
   onRemoveItem,
@@ -719,7 +724,8 @@ export function PurchaseScreen({
   };
 
   const handleImportList = (list: List) => {
-    if (!purchase || (!onImportItems && !onAddItem)) return;
+    const batchHandler = onAddItemsBatch || onImportItems;
+    if (!purchase || (!batchHandler && !onAddItem)) return;
     const itemsToImport = list.items || [];
     if (itemsToImport.length === 0) {
       showToast(`A lista "${list.name}" não possui itens cadastrados.`);
@@ -739,8 +745,8 @@ export function PurchaseScreen({
         pricingModeSource: item.pricingModeSource ?? null,
       }));
 
-    if (onImportItems) {
-      onImportItems(purchase.id, formattedItems);
+    if (batchHandler) {
+      batchHandler(purchase.id, formattedItems);
     } else if (onAddItem) {
       formattedItems.forEach((item) => {
         onAddItem(purchase.id, item);
@@ -888,8 +894,9 @@ export function PurchaseScreen({
       bought: false,
     }));
 
-    if (onImportItems) {
-      onImportItems(purchase.id, batchItems);
+    const batchHandler = onAddItemsBatch || onImportItems;
+    if (batchHandler) {
+      batchHandler(purchase.id, batchItems);
     } else if (onAddItem) {
       batchItems.forEach((item) => {
         onAddItem(purchase.id, item);

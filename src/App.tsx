@@ -32,6 +32,7 @@ function MainApp() {
   const { showToast } = useToast();
   const [activeScreen, setActiveScreen] = useState<'home' | 'manager' | 'lists' | 'cart' | 'history' | 'profile' | 'history_select'>('home');
   const [managerTab, setManagerTab] = useState<ManagerTab>('lists');
+  const [analyticsInitialPeriod, setAnalyticsInitialPeriod] = useState<'week' | 'month' | 'year' | 'all'>('month');
   const [showPurchaseChoice, setShowPurchaseChoice] = useState(false);
   const [purchaseStartMode, setPurchaseStartMode] = useState<'scratch' | 'list'>('scratch');
   const [showPurchaseSetup, setShowPurchaseSetup] = useState(false);
@@ -234,6 +235,7 @@ function MainApp() {
         }}
         onUpdateName={purchasesHook.updatePurchaseName}
         onAddItem={purchasesHook.addItemToPurchase}
+        onAddItemsBatch={purchasesHook.addItemsBatchToPurchase}
         onImportItems={purchasesHook.importItemsToPurchase}
         onEditItem={purchasesHook.editItemInPurchase}
         onRemoveItem={purchasesHook.removeItemFromPurchase}
@@ -361,8 +363,11 @@ function MainApp() {
     screenKey = 'manager';
     content = (
       <ManagerScreen
+        user={auth.user}
+        onNavigateToProfile={() => setActiveScreen('profile')}
         initialTab={managerTab}
         activeTab={managerTab}
+        analyticsInitialPeriod={analyticsInitialPeriod}
         onTabChange={(tab) => {
           const validTab: ManagerTab =
             tab === 'history' || tab === 'analytics' ? tab : 'lists';
@@ -388,6 +393,7 @@ function MainApp() {
       <ProfileScreen
         user={auth.user}
         onSignOut={handleSignOut}
+        onUpdateName={auth.updateProfileName}
         onBack={() => setActiveScreen('home')}
         onNavigateToHome={() => setActiveScreen('home')}
         onNavigateToHistory={() => handleNavigateToHistory()}
@@ -408,7 +414,21 @@ function MainApp() {
         onNavigateToPurchase={(id) => {
           setActivePurchaseId(id);
         }}
-        onNavigateToAnalytics={() => {
+        onStartNewPurchase={() => {
+          setPurchaseStartMode('scratch');
+          setShowPurchaseChoice(true);
+        }}
+        onStartPurchaseFromList={handleStartPurchaseFromListTemplate}
+        onSelectFinishedPurchase={(purchase) => {
+          setSelectedDetailPurchaseId(purchase.id);
+        }}
+        onNavigateToHistory={() => {
+          handleNavigateToManager('history');
+        }}
+        onNavigateToAnalytics={(period) => {
+          if (period) {
+            setAnalyticsInitialPeriod(period);
+          }
           handleNavigateToManager('analytics');
         }}
         onNavigateToProfile={() => {
@@ -437,7 +457,7 @@ function MainApp() {
   };
 
   return (
-    <div className="w-full min-h-screen bg-zinc-50 text-zinc-900 flex flex-col relative overflow-x-clip">
+    <div className="w-full min-h-screen bg-zinc-50 text-zinc-900 flex flex-col relative">
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={screenKey}
@@ -459,9 +479,16 @@ function MainApp() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 80, opacity: 0 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none"
           >
             <BottomNavBar
-              currentScreen={activeScreen === 'manager' || activeScreen === 'history' ? 'manager' : activeScreen === 'home' ? 'home' : undefined}
+              currentScreen={
+                activeScreen === 'manager' || activeScreen === 'history' || activeScreen === 'lists'
+                  ? 'manager'
+                  : activeScreen === 'home'
+                  ? 'home'
+                  : undefined
+              }
               onNavigateToHome={() => {
                 setActiveScreen('home');
                 setActivePurchaseId(null);

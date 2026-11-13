@@ -1,3 +1,5 @@
+export const GEMINI_RECEIPT_MODEL = 'gemini-2.5-flash';
+
 export interface ExtractedReceiptItem {
   id: string;
   name: string;
@@ -7,7 +9,7 @@ export interface ExtractedReceiptItem {
 }
 
 /**
- * Servico para interacao com a API Gemini de visao para leitura de nota fiscal.
+ * Servico para interacao com a API Gemini ('gemini-2.5-flash') de visao para leitura de nota fiscal.
  */
 export async function parseReceiptImage(base64DataUrl: string): Promise<ExtractedReceiptItem[]> {
   try {
@@ -16,7 +18,7 @@ export async function parseReceiptImage(base64DataUrl: string): Promise<Extracte
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ base64DataUrl }),
+      body: JSON.stringify({ base64DataUrl, model: GEMINI_RECEIPT_MODEL }),
     });
 
     if (!res.ok) {
@@ -29,8 +31,8 @@ export async function parseReceiptImage(base64DataUrl: string): Promise<Extracte
 
     return items
       .filter((item) => item && typeof item.name === 'string' && item.name.trim().length > 0)
-      .map((item, index) => ({
-        id: `extracted-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 7)}`,
+      .map((item) => ({
+        id: crypto.randomUUID(),
         name: item.name!.trim(),
         quantity: typeof item.quantity === 'number' && item.quantity > 0 ? Number(item.quantity) : 1,
         price: typeof item.price === 'number' && item.price >= 0 ? Number(item.price) : 0,

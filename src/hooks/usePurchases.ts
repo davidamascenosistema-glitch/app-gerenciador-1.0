@@ -11,6 +11,11 @@ import {
 
 const STORAGE_KEY_PURCHASES = 'lista_e_compra_purchases_cache';
 
+const isUUID = (str?: string): boolean =>
+  Boolean(
+    str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str))
+  );
+
 const loadLocalPurchases = (): Purchase[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_PURCHASES);
@@ -36,6 +41,7 @@ export function usePurchases(userId?: string | null) {
   const [purchases, setPurchasesState] = useState<Purchase[]>(loadLocalPurchases);
   const [loading, setLoading] = useState<boolean>(false);
   const purchasesRef = useRef<Purchase[]>(purchases);
+  const pendingPurchaseCreationsRef = useRef<Map<string, Promise<string>>>(new Map());
 
   const setPurchases = useCallback((action: Purchase[] | ((prev: Purchase[]) => Purchase[])) => {
     setPurchasesState((prev) => {
@@ -45,6 +51,12 @@ export function usePurchases(userId?: string | null) {
       return next;
     });
   }, []);
+
+  // Garante persistência imediata no localStorage sempre que o estado purchases mudar
+  useEffect(() => {
+    purchasesRef.current = purchases;
+    saveLocalPurchases(purchases);
+  }, [purchases]);
 
   /**
    * Converte o item da tabela purchase_items do Supabase para a interface TypeScript Item
@@ -72,7 +84,7 @@ export function usePurchases(userId?: string | null) {
         : undefined;
 
     return {
-      id: String(dbItem.id),
+      id: String(dbItem.id || fallbackSource?.id || crypto.randomUUID()),
       name: dbItem.name || fallbackSource?.name || '',
       category: dbItem.category || fallbackSource?.category || 'Geral',
       quantity: Number(dbItem.quantity) || fallbackSource?.quantity || 1,
@@ -116,29 +128,44 @@ export function usePurchases(userId?: string | null) {
   };
 
   /**
-   * Helper resiliente para inserir itens em lote ou individualmente na tabela `purchase_items`.
-   * Nunca envia `id` antigo da lista nem `list_id` (deixa o Supabase gerar um novo UUID).
-   * Tenta o payload completo: { purchase_id, name, category, quantity, price, is_weighted, weight, bought }.
+   * Helper resiliente para inserir itens em lote (bulk insert único) ou individualmente na tabela `purchase_items`.
+   * Inclui explicitamente o UUID v4 gerado no cliente (`id: item.id`) no payload para manter sincronia 1:1 com o estado React.
+   * Tenta o payload completo: { id, purchase_id, name, category, quantity, price, is_weighted, weight, bought }.
    * Se houver erro de coluna inexistente (PGRST204 / 42703), faz fallback automático para:
-   * { purchase_id, name, category, quantity, price: 0, bought: false }.
+   * { id, purchase_id, name, category, quantity, price, bought }.
    */
   const insertPurchaseItemsWithFallback = useCallback(
     async (currentPurchaseId: string, itemsToInsert: Item[]): Promise<Item[] | null> => {
       if (!isSupabaseConfigured() || itemsToInsert.length === 0) return null;
 
-      const fullPayloads = itemsToInsert.map((item) => ({
-        purchase_id: currentPurchaseId,
-        name: sanitizeItemName(item.name) || 'Item',
-        category: sanitizeItemCategory(item.category, 'Geral'),
-        quantity: Number(item.quantity) || 1,
-        price: Number(item.price) || 0,
-        is_weighted: Boolean(item.isWeighted || (item as any).is_weighted),
-        weight:
-          item.weight !== undefined && item.weight !== null && !isNaN(Number(item.weight))
-            ? Number(item.weight)
-            : null,
-        bought: Boolean(item.bought ?? false),
-      }));
+      // Se a compra pai ainda estiver sendo gravada no Supabase, aguarda a conclusão (Ordem Estrita Pai -> Filhos)
+      let resolvedPurchaseId = currentPurchaseId;
+      const pendingParent = pendingPurchaseCreationsRef.current.get(currentPurchaseId);
+      if (pendingParent) {
+        try {
+          resolvedPurchaseId = await pendingParent;
+        } catch {
+          // fallback para currentPurchaseId
+        }
+      }
+
+      const fullPayloads = itemsToInsert.map((item) => {
+        const validId = isUUID(item.id) ? item.id : crypto.randomUUID();
+        return {
+          id: validId,
+          purchase_id: resolvedPurchaseId,
+          name: sanitizeItemName(item.name) || 'Item',
+          category: sanitizeItemCategory(item.category, 'Geral'),
+          quantity: Number(item.quantity) || 1,
+          price: Number(item.price) || 0,
+          is_weighted: Boolean(item.isWeighted || (item as any).is_weighted),
+          weight:
+            item.weight !== undefined && item.weight !== null && !isNaN(Number(item.weight))
+              ? Number(item.weight)
+              : null,
+          bought: Boolean(item.bought ?? false),
+        };
+      });
 
       let { data: insertedRows, error: insertErr } = await supabase
         .from('purchase_items')
@@ -147,11 +174,12 @@ export function usePurchases(userId?: string | null) {
 
       if (insertErr) {
         console.warn(
-          'Fallback em purchase_items: tentando inserir sem is_weighted/weight devido a erro de schema:',
+          'Fallback em purchase_items: tentando inserir colunas universais devido a erro de schema:',
           insertErr?.message || insertErr
         );
-        const fallbackPayloads = itemsToInsert.map((item) => ({
-          purchase_id: currentPurchaseId,
+        const fallbackPayloads = itemsToInsert.map((item, idx) => ({
+          id: fullPayloads[idx].id,
+          purchase_id: resolvedPurchaseId,
           name: sanitizeItemName(item.name) || 'Item',
           category: sanitizeItemCategory(item.category, 'Geral'),
           quantity: Number(item.quantity) || 1,
@@ -166,6 +194,16 @@ export function usePurchases(userId?: string | null) {
 
         insertedRows = retryRes.data;
         insertErr = retryRes.error;
+
+        // Se houve conflito de chave primária (ex: re-sincronização), tenta upsert
+        if (insertErr && insertErr.code === '23505') {
+          const upsertRes = await supabase
+            .from('purchase_items')
+            .upsert(fallbackPayloads, { onConflict: 'id' })
+            .select();
+          insertedRows = upsertRes.data;
+          insertErr = upsertRes.error;
+        }
       }
 
       if (insertErr) {
@@ -262,10 +300,14 @@ export function usePurchases(userId?: string | null) {
 
         if (appPurchase.items.length === 0) {
           if (matchingLocal && matchingLocal.items && matchingLocal.items.length > 0) {
-            appPurchase.items = matchingLocal.items;
+            const normalizedLocalItems = matchingLocal.items.map((locIt) => ({
+              ...locIt,
+              id: isUUID(locIt.id) ? locIt.id : crypto.randomUUID(),
+            }));
+            appPurchase.items = normalizedLocalItems;
             purchasesNeedingAutoSync.push({
               purchaseId: pIdStr,
-              localItems: matchingLocal.items,
+              localItems: normalizedLocalItems,
             });
           }
         } else if (matchingLocal && matchingLocal.items && matchingLocal.items.length > 0) {
@@ -414,11 +456,11 @@ export function usePurchases(userId?: string | null) {
 
   /**
    * Cria e armazena uma nova compra a partir de um modelo existente (compra finalizada),
-   * clonando todos os itens com bought=false na tabela purchase_items.
+   * clonando todos os itens com novos UUIDs v4 gerados no cliente e bought=false.
    */
   const createPurchaseFromTemplate = (originalPurchase: Purchase): Purchase => {
     const clonedItems: Item[] = (originalPurchase.items || []).map((item) => ({
-      id: `temp-${crypto.randomUUID()}`,
+      id: crypto.randomUUID(),
       name: item.name,
       category: item.category || 'Geral',
       quantity: item.quantity || 1,
@@ -438,20 +480,21 @@ export function usePurchases(userId?: string | null) {
   };
 
   /**
-   * Cria e armazena uma nova compra no Supabase e no estado em memória,
-   * inserindo na tabela purchases com status 'pending' e copiando os itens em lote
-   * para purchase_items (substituindo IDs temporários pelos UUIDs reais do banco).
+   * Cria e armazena uma nova compra no Supabase e no estado em memória.
+   * Garante ordem estrita Pai -> Filhos: aguarda o insert na tabela `purchases`
+   * antes de disparar o bulk insert único na tabela `purchase_items`.
    */
   const createPurchase = (
     purchaseData: Omit<Purchase, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
   ): Purchase => {
     const origin = 'list';
-    const newPurchaseId = purchaseData.id || crypto.randomUUID();
+    const newPurchaseId = isUUID(purchaseData.id) ? purchaseData.id! : crypto.randomUUID();
     const createdAt = purchaseData.createdAt || new Date().toISOString();
 
+    // Gera sempre um novo UUID v4 válido no cliente para cada item da compra
     const initialItems: Item[] = (purchaseData.items || []).map((item) => ({
       ...item,
-      id: item.id && !String(item.id).startsWith('temp-') ? `temp-${crypto.randomUUID()}` : (item.id || `temp-${crypto.randomUUID()}`),
+      id: crypto.randomUUID(),
       name: sanitizeItemName(item.name) || 'Item',
       category: sanitizeItemCategory(item.category, 'Geral'),
       quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
@@ -483,14 +526,8 @@ export function usePurchases(userId?: string | null) {
     setPurchases((prev) => [newPurchase, ...prev.filter((p) => p.id !== newPurchaseId)]);
 
     if (isSupabaseConfigured() && userId) {
-      (async () => {
+      const parentCreationPromise = (async (): Promise<string> => {
         try {
-          const isUUID = (str?: string) =>
-            Boolean(
-              str &&
-                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
-            );
-
           const validFromListId = isUUID(newPurchase.fromListId) ? newPurchase.fromListId : null;
           let actualPurchaseId = newPurchase.id;
 
@@ -507,7 +544,7 @@ export function usePurchases(userId?: string | null) {
             from_list_id: validFromListId,
           };
 
-          // 1. Insere a compra na tabela purchases
+          // 1. Insere e aguarda a compra pai na tabela purchases ANTES de inserir itens filhos
           let { data: insertedPurchase, error: pError } = await supabase
             .from('purchases')
             .insert(purchasePayload)
@@ -549,7 +586,7 @@ export function usePurchases(userId?: string | null) {
 
           if (pError) {
             console.error('Erro ao inserir compra na tabela purchases do Supabase:', pError);
-            return;
+            return actualPurchaseId;
           }
 
           if (insertedPurchase && insertedPurchase[0]?.id) {
@@ -562,7 +599,21 @@ export function usePurchases(userId?: string | null) {
             }
           }
 
-          // 2. Cópia em lote (bulk insert) dos itens para purchase_items
+          return actualPurchaseId;
+        } catch (dbErr) {
+          console.error('Exceção na criação da compra pai no Supabase:', dbErr);
+          return newPurchase.id;
+        }
+      })();
+
+      pendingPurchaseCreationsRef.current.set(newPurchaseId, parentCreationPromise);
+
+      (async () => {
+        try {
+          const actualPurchaseId = await parentCreationPromise;
+          pendingPurchaseCreationsRef.current.delete(newPurchaseId);
+
+          // 2. Cópia em lote (bulk insert único) dos itens para purchase_items após confirmação do pai
           let itemsToInsert: Item[] = [...initialItems];
 
           if (itemsToInsert.length === 0 && newPurchase.fromListId) {
@@ -573,7 +624,7 @@ export function usePurchases(userId?: string | null) {
 
             if (!fetchItemsErr && listItemsData && listItemsData.length > 0) {
               itemsToInsert = listItemsData.map((li: any) => ({
-                id: `temp-${crypto.randomUUID()}`,
+                id: crypto.randomUUID(),
                 name: sanitizeItemName(li.name) || 'Item',
                 category: sanitizeItemCategory(li.category, 'Geral'),
                 quantity: Number(li.quantity) || 1,
@@ -582,6 +633,12 @@ export function usePurchases(userId?: string | null) {
                 price: undefined,
                 bought: false,
               }));
+
+              setPurchases((prev) =>
+                prev.map((p) =>
+                  p.id === actualPurchaseId ? { ...p, items: itemsToInsert } : p
+                )
+              );
             }
           }
 
@@ -600,8 +657,9 @@ export function usePurchases(userId?: string | null) {
               );
             }
           }
-        } catch (dbErr) {
-          console.error('Exceção na sincronização de nova compra no Supabase:', dbErr);
+        } catch (childErr) {
+          pendingPurchaseCreationsRef.current.delete(newPurchaseId);
+          console.error('Exceção ao sincronizar itens iniciais da compra no Supabase:', childErr);
         }
       })();
     }
@@ -628,18 +686,18 @@ export function usePurchases(userId?: string | null) {
   };
 
   /**
-   * Importa/adiciona uma lista de itens em lote (bulk insert) para dentro de uma compra ativa
-   * na tabela `purchase_items` do Supabase e substitui os IDs temporários pelos UUIDs reais do banco.
+   * Adiciona múltiplos itens de uma só vez (Bulk Insert Único) para dentro de uma compra ativa
+   * na tabela `purchase_items` do Supabase, usando UUIDs v4 gerados no cliente.
    */
-  const importItemsToPurchase = useCallback(
+  const addItemsBatchToPurchase = useCallback(
     async (
       purchaseId: string,
-      itemsToImport: Array<Omit<Item, 'id' | 'bought'> & { bought?: boolean }>
+      itemsToBatch: Array<Omit<Item, 'id' | 'bought'> & { id?: string; bought?: boolean }>
     ): Promise<void> => {
-      if (!purchaseId || !itemsToImport || itemsToImport.length === 0) return;
+      if (!purchaseId || !itemsToBatch || itemsToBatch.length === 0) return;
 
       const preparedItems: Item[] = [];
-      for (const rawItem of itemsToImport) {
+      for (const rawItem of itemsToBatch) {
         const safeName = sanitizeItemName(rawItem.name);
         if (!safeName) continue;
 
@@ -655,7 +713,7 @@ export function usePurchases(userId?: string | null) {
         const safePrice = validateItemPrice(rawItem.price);
 
         preparedItems.push({
-          id: `temp-${crypto.randomUUID()}`,
+          id: crypto.randomUUID(),
           name: safeName,
           category: safeCategory,
           quantity: safeQuantity,
@@ -669,7 +727,7 @@ export function usePurchases(userId?: string | null) {
 
       if (preparedItems.length === 0) return;
 
-      // 1. Atualiza imediatamente o estado React e o localStorage
+      // 1. Atualiza imediatamente o estado React e o localStorage de uma só vez
       setPurchases((prev) =>
         prev.map((p) => {
           if (p.id !== purchaseId) return p;
@@ -680,12 +738,12 @@ export function usePurchases(userId?: string | null) {
         })
       );
 
-      // 2. Faz o bulk insert imediato na tabela purchase_items do Supabase e substitui os IDs temporários
+      // 2. Faz 1 único comando .insert(payloadArray) na tabela purchase_items do Supabase
       if (isSupabaseConfigured()) {
         try {
           const syncedItems = await insertPurchaseItemsWithFallback(purchaseId, preparedItems);
           if (syncedItems && syncedItems.length > 0) {
-            const tempIds = new Set(preparedItems.map((it) => it.id));
+            const batchIds = new Set(preparedItems.map((it) => it.id));
             setPurchases((prev) =>
               prev.map((p) => {
                 if (p.id !== purchaseId) return p;
@@ -693,7 +751,7 @@ export function usePurchases(userId?: string | null) {
                 return {
                   ...p,
                   items: p.items.map((it) => {
-                    if (tempIds.has(it.id) && syncedItems[replaceIdx]) {
+                    if (batchIds.has(it.id) && syncedItems[replaceIdx]) {
                       const official = syncedItems[replaceIdx++];
                       return { ...it, ...official, id: official.id };
                     }
@@ -704,12 +762,15 @@ export function usePurchases(userId?: string | null) {
             );
           }
         } catch (err) {
-          console.error('Exceção ao importar itens em lote para purchase_items no Supabase:', err);
+          console.error('Exceção ao inserir lote de itens em purchase_items no Supabase:', err);
         }
       }
     },
     [insertPurchaseItemsWithFallback, setPurchases]
   );
+
+  // Mantém importItemsToPurchase como alias direto para compatibilidade
+  const importItemsToPurchase = addItemsBatchToPurchase;
 
   /**
    * Retorna todas as compras registradas
@@ -748,7 +809,7 @@ export function usePurchases(userId?: string | null) {
   };
 
   /**
-   * Adiciona um novo item à tabela purchase_items e atualiza o estado com o UUID real retornado pelo Supabase
+   * Adiciona um novo item à tabela purchase_items usando UUID v4 gerado no cliente
    */
   const addItemToPurchase = (
     purchaseId: string,
@@ -767,11 +828,11 @@ export function usePurchases(userId?: string | null) {
         ? safeQuantity
         : undefined;
     const safePrice = validateItemPrice(itemData.price);
-    const tempItemId = `temp-${crypto.randomUUID()}`;
+    const clientItemId = isUUID(itemData.id) ? itemData.id! : crypto.randomUUID();
 
     const defaultBought = itemData.bought !== undefined ? Boolean(itemData.bought) : false;
     const newItem: Item = {
-      id: tempItemId,
+      id: clientItemId,
       name: safeName,
       category: safeCategory,
       quantity: safeQuantity,
@@ -803,7 +864,7 @@ export function usePurchases(userId?: string | null) {
                 return {
                   ...p,
                   items: p.items.map((it) =>
-                    it.id === tempItemId ? { ...it, ...official, id: official.id } : it
+                    it.id === clientItemId ? { ...it, ...official, id: official.id } : it
                   ),
                 };
               })
@@ -866,8 +927,7 @@ export function usePurchases(userId?: string | null) {
     );
 
     if (isSupabaseConfigured()) {
-      // Se o item ainda estiver com ID temporário, insere-o no banco e substitui pelo UUID oficial
-      if (String(itemId).startsWith('temp-') && updatedItemSnapshot) {
+      if (!isUUID(itemId) && updatedItemSnapshot) {
         insertPurchaseItemsWithFallback(purchaseId, [updatedItemSnapshot]).then((inserted) => {
           if (inserted && inserted[0]?.id) {
             const official = inserted[0];
@@ -905,24 +965,34 @@ export function usePurchases(userId?: string | null) {
       }
 
       if (Object.keys(dbUpdate).length > 0) {
-        supabase
-          .from('purchase_items')
-          .update(dbUpdate)
-          .eq('id', itemId)
-          .then(async ({ error }) => {
-            if (error) {
-              const { is_weighted, weight, ...minimalUpdate } = dbUpdate;
-              if (Object.keys(minimalUpdate).length > 0) {
-                const { error: retryErr } = await supabase
-                  .from('purchase_items')
-                  .update(minimalUpdate)
-                  .eq('id', itemId);
-                if (retryErr) {
-                  console.error('Erro ao atualizar item em purchase_items no Supabase:', retryErr);
-                }
+        (async () => {
+          const pendingParent = pendingPurchaseCreationsRef.current.get(purchaseId);
+          if (pendingParent) {
+            try {
+              await pendingParent;
+            } catch {
+              // ignore
+            }
+          }
+
+          const { error } = await supabase
+            .from('purchase_items')
+            .update(dbUpdate)
+            .eq('id', itemId);
+
+          if (error) {
+            const { is_weighted, weight, ...minimalUpdate } = dbUpdate;
+            if (Object.keys(minimalUpdate).length > 0) {
+              const { error: retryErr } = await supabase
+                .from('purchase_items')
+                .update(minimalUpdate)
+                .eq('id', itemId);
+              if (retryErr) {
+                console.error('Erro ao atualizar item em purchase_items no Supabase:', retryErr);
               }
             }
-          });
+          }
+        })();
       }
     }
   };
@@ -946,7 +1016,7 @@ export function usePurchases(userId?: string | null) {
     );
 
     if (isSupabaseConfigured()) {
-      if (!String(itemId).startsWith('temp-')) {
+      if (isUUID(itemId)) {
         supabase
           .from('purchase_items')
           .delete()
@@ -961,7 +1031,7 @@ export function usePurchases(userId?: string | null) {
           .eq('purchase_id', purchaseId)
           .eq('name', itemToRemove.name)
           .then(({ error }) => {
-            if (error) console.error('Erro ao remover item temporário de purchase_items:', error);
+            if (error) console.error('Erro ao remover item de purchase_items:', error);
           });
       }
     }
@@ -996,7 +1066,7 @@ export function usePurchases(userId?: string | null) {
     );
 
     if (isSupabaseConfigured()) {
-      if (String(itemId).startsWith('temp-') && toggledItemSnapshot) {
+      if (!isUUID(itemId) && toggledItemSnapshot) {
         insertPurchaseItemsWithFallback(purchaseId, [toggledItemSnapshot]).then((inserted) => {
           if (inserted && inserted[0]?.id) {
             const official = inserted[0];
@@ -1016,13 +1086,25 @@ export function usePurchases(userId?: string | null) {
         return;
       }
 
-      supabase
-        .from('purchase_items')
-        .update({ bought: newBoughtVal })
-        .eq('id', itemId)
-        .then(({ error }) => {
-          if (error) console.error('Erro ao alternar status comprado em purchase_items:', error);
-        });
+      (async () => {
+        const pendingParent = pendingPurchaseCreationsRef.current.get(purchaseId);
+        if (pendingParent) {
+          try {
+            await pendingParent;
+          } catch {
+            // ignore
+          }
+        }
+
+        const { error } = await supabase
+          .from('purchase_items')
+          .update({ bought: newBoughtVal })
+          .eq('id', itemId);
+
+        if (error) {
+          console.error('Erro ao alternar status comprado em purchase_items:', error);
+        }
+      })();
     }
   };
 
@@ -1127,6 +1209,7 @@ export function usePurchases(userId?: string | null) {
     createPurchase,
     createPurchaseFromTemplate,
     createPurchaseFromList,
+    addItemsBatchToPurchase,
     importItemsToPurchase,
     updatePurchaseName,
     addItemToPurchase,
@@ -1139,4 +1222,3 @@ export function usePurchases(userId?: string | null) {
     refreshPurchases: fetchPurchasesFromSupabase,
   };
 }
-
